@@ -1,0 +1,10 @@
+stages:
+  - publish
+
+publish:
+  stage: publish
+  image: eclipse-temurin:21-jdk
+  script:
+    - ./gradlew publish
+  only:
+    - main
