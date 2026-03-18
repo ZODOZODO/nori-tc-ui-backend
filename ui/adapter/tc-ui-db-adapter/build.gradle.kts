@@ -31,7 +31,7 @@ dependencies {
     /*
      * DB 어댑터는 코어 Port를 구현하므로 코어를 공개 의존성으로 노출합니다.
      */
-    api(project(":libs:ui:tc-ui-core"))
+    api(project(":ui:tc-ui-core"))
 
     /*
      * tc-db-core: Store/Domain 인터페이스 계약

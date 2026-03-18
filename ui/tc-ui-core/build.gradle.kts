@@ -42,7 +42,7 @@ dependencies {
     /*
      * 도메인 모델(AuthToken, UserPrincipal, UiTaskResult)을 Port 시그니처에서 사용합니다.
      */
-    api(project(":libs:ui:tc-ui-domain"))
+    api(project(":ui:tc-ui-domain"))
 
     /*
      * DB 도메인 레코드(TcUserInfo, TcUiAuthSession)를 Port 시그니처에서 사용합니다.

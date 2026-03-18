@@ -47,31 +47,31 @@ dependencyResolutionManagement {
  * 1. UI Backend Base Modules
  * =================================================== */
 
-include(":libs:ui:tc-ui-domain")
-project(":libs:ui:tc-ui-domain").projectDir = file("libs/ui/tc-ui-domain")
+include(":ui:tc-ui-domain")
+project(":ui:tc-ui-domain").projectDir = file("ui/tc-ui-domain")
 
-include(":libs:ui:tc-ui-core")
-project(":libs:ui:tc-ui-core").projectDir = file("libs/ui/tc-ui-core")
+include(":ui:tc-ui-core")
+project(":ui:tc-ui-core").projectDir = file("ui/tc-ui-core")
 
 /* ===================================================
  * 2. UI Backend Adapter Modules
  * =================================================== */
 
-include(":libs:ui:adapter:tc-ui-db-adapter")
-project(":libs:ui:adapter:tc-ui-db-adapter").projectDir = file("libs/ui/adapter/tc-ui-db-adapter")
+include(":ui:adapter:tc-ui-db-adapter")
+project(":ui:adapter:tc-ui-db-adapter").projectDir = file("ui/adapter/tc-ui-db-adapter")
 
-include(":libs:ui:adapter:tc-ui-kafka-adapter")
-project(":libs:ui:adapter:tc-ui-kafka-adapter").projectDir = file("libs/ui/adapter/tc-ui-kafka-adapter")
+include(":ui:adapter:tc-ui-kafka-adapter")
+project(":ui:adapter:tc-ui-kafka-adapter").projectDir = file("ui/adapter/tc-ui-kafka-adapter")
 
-include(":libs:ui:adapter:tc-ui-redis-adapter")
-project(":libs:ui:adapter:tc-ui-redis-adapter").projectDir = file("libs/ui/adapter/tc-ui-redis-adapter")
+include(":ui:adapter:tc-ui-redis-adapter")
+project(":ui:adapter:tc-ui-redis-adapter").projectDir = file("ui/adapter/tc-ui-redis-adapter")
 
-include(":libs:ui:adapter:tc-ui-web-adapter")
-project(":libs:ui:adapter:tc-ui-web-adapter").projectDir = file("libs/ui/adapter/tc-ui-web-adapter")
+include(":ui:adapter:tc-ui-web-adapter")
+project(":ui:adapter:tc-ui-web-adapter").projectDir = file("ui/adapter/tc-ui-web-adapter")
 
 /* ===================================================
  * 3. UI Backend Starter Modules
  * =================================================== */
 
-include(":libs:ui:starter:tc-ui-backend-starter")
-project(":libs:ui:starter:tc-ui-backend-starter").projectDir = file("libs/ui/starter/tc-ui-backend-starter")
+include(":ui:starter:tc-ui-backend-starter")
+project(":ui:starter:tc-ui-backend-starter").projectDir = file("ui/starter/tc-ui-backend-starter")

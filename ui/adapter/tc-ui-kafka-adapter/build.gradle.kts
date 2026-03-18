@@ -36,7 +36,7 @@ dependencies {
     /*
      * Kafka 어댑터는 코어 Port를 구현하고 UseCase를 호출합니다.
      */
-    api(project(":libs:ui:tc-ui-core"))
+    api(project(":ui:tc-ui-core"))
 
     /*
      * Kafka 메시지 계약 (KafkaUiTaskMessage, KafkaUiTaskReplyMessage, KafkaUiTaskReplyEventType)

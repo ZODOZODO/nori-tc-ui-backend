@@ -37,7 +37,7 @@ dependencies {
      * - TokenCachePort, AsyncResultStorePort 구현체가 위치합니다.
      * - UiAuthProperties(tokenCacheTtlSeconds) 도 이 모듈을 통해 사용합니다.
      */
-    api(project(":libs:ui:tc-ui-core"))
+    api(project(":ui:tc-ui-core"))
 
     /*
      * Redis DLQ/Quarantine 엔트리 역직렬화 계약입니다.
