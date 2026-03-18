@@ -164,7 +164,7 @@ class EqpManagementDbSupport {
         return loadAllEqps().stream()
                 .map(TcEqp::eqpKey)
                 .filter(Objects::nonNull)
-                .map(jarGatewayStore::findByEqpKey)
+                .map(key -> jarGatewayStore.findByEqpKey(key))
                 .flatMap(Optional::stream)
                 .filter(jar -> sameText(jar.jarFileName(), jarFileName))
                 .max(Comparator.comparing(TcJarGateway::updatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
@@ -174,7 +174,7 @@ class EqpManagementDbSupport {
         return loadAllEqps().stream()
                 .map(TcEqp::eqpKey)
                 .filter(Objects::nonNull)
-                .map(jarBusinessStore::findByEqpKey)
+                .map(key -> jarBusinessStore.findByEqpKey(key))
                 .flatMap(Optional::stream)
                 .filter(jar -> sameText(jar.jarFileName(), jarFileName))
                 .max(Comparator.comparing(TcJarBusiness::updatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
