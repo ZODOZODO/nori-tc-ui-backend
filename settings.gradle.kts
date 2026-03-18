@@ -22,6 +22,15 @@ dependencyResolutionManagement {
     // 프로젝트 레벨 repositories {} 블록을 금지합니다.
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        /*
+         * 로컬 개발 환경 전용: -PuseLocalMaven 옵션으로 활성화합니다.
+         * CI 환경에서는 이 옵션을 사용하지 않으므로 registry만 참조합니다.
+         * 예) ./gradlew build -PuseLocalMaven
+         */
+        if (settings.providers.gradleProperty("useLocalMaven").isPresent) {
+            mavenLocal()
+        }
+
         val gitlabToken = settings.providers.gradleProperty("gitlabToken")
             .orElse(System.getenv("GITLAB_TOKEN") ?: "")
             .get()
