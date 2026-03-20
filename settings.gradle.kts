@@ -31,17 +31,26 @@ dependencyResolutionManagement {
             mavenLocal()
         }
 
-        val gitlabToken = settings.providers.gradleProperty("gitlabToken")
+        /*
+         * GitLab Package Registry 인증 정책
+         * - CI 환경: GitLab이 자동 주입하는 CI_JOB_TOKEN 을 Job-Token 헤더로 사용합니다.
+         * - 로컬 개발: gitlabToken gradle property 또는 GITLAB_TOKEN 환경변수를 Private-Token 헤더로 사용합니다.
+         * - 교차 프로젝트 패키지 조회는 대상 프로젝트의 Job token permissions allowlist 설정이 선행되어야 합니다.
+         */
+        val ciJobToken = System.getenv("CI_JOB_TOKEN")
+        val privateToken = settings.providers.gradleProperty("gitlabToken")
             .orElse(System.getenv("GITLAB_TOKEN") ?: "")
             .get()
+        val authHeaderName = if (ciJobToken.isNullOrBlank()) "Private-Token" else "Job-Token"
+        val authHeaderValue = if (ciJobToken.isNullOrBlank()) privateToken else ciJobToken
 
         // nori-tc-common (project ID: 80364130) — DB/Messaging/Common 모듈
         maven {
             name = "GitLabCommon"
             url = uri("https://gitlab.com/api/v4/projects/80364130/packages/maven")
             credentials(HttpHeaderCredentials::class) {
-                name = "Private-Token"
-                value = gitlabToken
+                name = authHeaderName
+                value = authHeaderValue
             }
             authentication {
                 create<HttpHeaderAuthentication>("header")
