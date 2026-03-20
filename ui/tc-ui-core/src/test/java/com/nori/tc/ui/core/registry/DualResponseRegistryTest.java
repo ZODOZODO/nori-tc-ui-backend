@@ -51,7 +51,7 @@ class DualResponseRegistryTest {
 
         final UiDualTaskFinalResult result = future.get(1, TimeUnit.SECONDS);
         assertTrue(result.success());
-        assertEquals(0, registry.pendingCount());
+        awaitPendingCount(registry, 0);
         assertFalse(registry.isPending(traceId));
     }
 
@@ -73,7 +73,7 @@ class DualResponseRegistryTest {
         );
         assertTrue(executionException.getCause() instanceof TimeoutException);
 
-        assertEquals(0, registry.pendingCount());
+        awaitPendingCount(registry, 0);
         assertTrue(redisPort.cancelledTraceIds.contains(traceId));
     }
 
@@ -216,7 +216,7 @@ class DualResponseRegistryTest {
                 () -> future.get(2, TimeUnit.SECONDS)
         );
         assertTrue(executionException.getCause() instanceof TimeoutException);
-        assertEquals(0, registry.pendingCount());
+        awaitPendingCount(registry, 0);
     }
 
     /**
@@ -285,6 +285,31 @@ class DualResponseRegistryTest {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("동시성 테스트 스레드 인터럽트 발생", ex);
         }
+    }
+
+    /**
+     * 타이머 기반 정리 콜백은 스케줄링 시점에 따라 아주 짧게 지연될 수 있으므로,
+     * pendingCount가 기대값으로 수렴하는지 짧은 시간 재시도합니다.
+     *
+     * @param registry 조회 대상 레지스트리
+     * @param expectedCount 기대 pending 개수
+     */
+    private static void awaitPendingCount(
+            final DualResponseRegistry registry,
+            final int expectedCount
+    ) {
+        for (int i = 0; i < 20; i++) {
+            if (registry.pendingCount() == expectedCount) {
+                return;
+            }
+            try {
+                Thread.sleep(25L);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("pendingCount 대기 중 인터럽트 발생", ex);
+            }
+        }
+        assertEquals(expectedCount, registry.pendingCount());
     }
 
     /**

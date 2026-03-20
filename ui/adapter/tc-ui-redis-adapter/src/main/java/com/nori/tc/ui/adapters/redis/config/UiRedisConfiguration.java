@@ -1,7 +1,5 @@
 package com.nori.tc.ui.adapters.redis.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.nori.tc.ui.adapters.redis.registry.DualResponsePubSubListener;
 import com.nori.tc.ui.adapters.redis.registry.DualResponseRedisAdapter;
 import org.slf4j.Logger;
@@ -18,6 +16,8 @@ import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * UI Backend Redis 이중 연결 + 직렬화 + Pub/Sub 설정 클래스입니다.
@@ -57,10 +57,9 @@ public class UiRedisConfiguration {
      */
     @Bean(name = "uiRedisObjectMapper")
     public ObjectMapper uiRedisObjectMapper() {
-        final ObjectMapper mapper = new ObjectMapper();
-        mapper.findAndRegisterModules();
-        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        return mapper;
+        return JsonMapper.builder()
+                .findAndAddModules()
+                .build();
     }
 
     /**

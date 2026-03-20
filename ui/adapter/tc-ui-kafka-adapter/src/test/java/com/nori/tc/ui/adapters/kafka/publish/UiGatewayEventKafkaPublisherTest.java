@@ -1,6 +1,8 @@
 package com.nori.tc.ui.adapters.kafka.publish;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.ObjectMapper;
 import com.nori.tc.ui.adapters.kafka.config.UiKafkaPublishProperties;
 import com.nori.tc.ui.adapters.kafka.config.UiKafkaTopicProperties;
 import com.nori.tc.ui.adapters.kafka.exception.UiKafkaPublishException;
@@ -57,13 +59,16 @@ class UiGatewayEventKafkaPublisherTest {
 
         when(routePartitionLookupPort.findRoutePartition("EQP-OVERSIZE")).thenReturn(Optional.of(0));
 
+        final ObjectNode uiMessage = JsonNodeFactory.instance.objectNode();
+        uiMessage.put("rawMessage", "X".repeat(1024));
+
         final UiCommandMessage oversized = new UiCommandMessage(
                 UiCommandEventType.EQP_CREATE,
                 "trace-oversize",
-                "TC-UI-BACKEND",
+                "TC-UI-APP",
                 "EQP-OVERSIZE",
                 "SECS",
-                "X".repeat(1024),
+                uiMessage,
                 null
         );
 

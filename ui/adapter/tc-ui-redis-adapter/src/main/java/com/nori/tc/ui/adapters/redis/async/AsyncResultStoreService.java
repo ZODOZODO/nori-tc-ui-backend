@@ -1,6 +1,6 @@
 package com.nori.tc.ui.adapters.redis.async;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.nori.tc.ui.core.model.AsyncResultEntry;
 import com.nori.tc.ui.core.model.AsyncStatus;
 import com.nori.tc.ui.core.model.UiCommandReply;

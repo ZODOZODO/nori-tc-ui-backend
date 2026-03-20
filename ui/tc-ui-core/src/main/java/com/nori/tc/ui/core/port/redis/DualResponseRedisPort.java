@@ -27,7 +27,7 @@ public interface DualResponseRedisPort {
      * 수신된 응답을 Redis 상태에 기록합니다.
      *
      * @param traceId 추적 ID
-     * @param source 응답 출처 (TC-COMM-GATEWAY 또는 TC-BUSINESS-CORE)
+     * @param source 응답 출처 (TC-GATEWAY-APP 또는 TC-BUSINESS-APP)
      * @param result 기록할 응답 결과
      */
     void record(String traceId, String source, UiTaskResult result);

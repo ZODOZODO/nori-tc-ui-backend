@@ -12,7 +12,10 @@ public enum UiCommandEventType {
     EQP_START,
     EQP_END,
     EQP_SEND_MESSAGE,
-    EQP_UPDATE_JARFILE;
+    EQP_RECONNECT,
+    EQP_PARAMETER_UPDATE,
+    EQP_GATEWAY_JARFILE_UPDATE,
+    EQP_BUSINESS_JARFILE_UPDATE;
 
     /**
      * 문자열 eventType을 enum으로 변환합니다.

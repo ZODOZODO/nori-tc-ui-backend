@@ -39,6 +39,7 @@ dependencies {
      * 런타임 주입은 tc-ui-backend-app(starter)에서 담당합니다.
      */
     implementation("com.nori.tc:tc-db-core:0.0.1-SNAPSHOT")
+    implementation("org.springframework:spring-jdbc")
 
     /*
      * Spring 컴포넌트/설정 바인딩 컴파일 의존성

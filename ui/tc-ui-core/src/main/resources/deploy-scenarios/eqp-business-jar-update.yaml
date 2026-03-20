@@ -1,0 +1,47 @@
+version: 1
+
+scenario:
+  code: EQP_BUSINESS_JARFILE_UPDATE
+  name: Business Jar Update
+  summary: business jar/plugin/runtime을 재적재하고 binding을 최신 runtime으로 연결한다.
+
+appliesTo:
+  eventTypes:
+    - EQP_BUSINESS_JARFILE_UPDATE
+  deltaAll:
+    - BUSINESS_JAR_CHANGED
+
+steps:
+  - order: 10
+    code: RELOAD_BUSINESS_PLUGIN
+    name: Business plugin 재적재
+    targetApp: BUSINESS
+    description: 새 business jar를 다운로드/검증 후 runtime을 준비한다.
+    run:
+      action: RELOAD_BUSINESS_PLUGIN
+      timeoutMs: 60000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: AUTO_COMPENSATABLE
+      action: RESTORE_PREVIOUS_BUSINESS_PLUGIN
+
+  - order: 20
+    code: UPDATE_MODEL_BINDING
+    name: Business model binding 전환
+    targetApp: BUSINESS
+    description: 새 pluginFingerprint에 해당하는 runtime으로 설비 binding을 이동한다.
+    run:
+      action: UPDATE_MODEL_BINDING
+      timeoutMs: 10000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: AUTO_COMPENSATABLE
+      action: RESTORE_PREVIOUS_MODEL_BINDING

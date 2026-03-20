@@ -1,5 +1,6 @@
 package com.nori.tc.ui.core.model;
 
+import tools.jackson.databind.JsonNode;
 import com.nori.tc.messaging.kafka.contract.GatewayEquipmentProfileSnapshot;
 
 /**
@@ -13,10 +14,10 @@ import com.nori.tc.messaging.kafka.contract.GatewayEquipmentProfileSnapshot;
  *
  * @param eventType 발행 이벤트 타입
  * @param traceId 요청/응답 상관관계 추적 ID
- * @param source 발행 주체(예: TC-UI-BACKEND)
+ * @param source 발행 주체(예: TC-UI-APP)
  * @param eqpId 설비 ID
  * @param interfaceType 인터페이스 타입(HSMS/SOCKET 등)
- * @param uiMessage 부가 요청 메시지(선택)
+ * @param uiMessage eventType별 업무 payload(JSON object, 선택)
  * @param equipmentProfile 설비 프로파일 스냅샷(선택, EQP_CREATE/EQP_UPDATE에서 사용)
  */
 public record UiCommandMessage(
@@ -25,7 +26,7 @@ public record UiCommandMessage(
         String source,
         String eqpId,
         String interfaceType,
-        String uiMessage,
+        JsonNode uiMessage,
         GatewayEquipmentProfileSnapshot equipmentProfile
 ) {
 

@@ -1,5 +1,8 @@
 package com.nori.tc.ui.core.service;
 
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 import com.nori.tc.messaging.kafka.contract.GatewayEquipmentProfileSnapshot;
 import com.nori.tc.db.domain.common.eqp.EqpState;
 import com.nori.tc.db.domain.common.model.ModelStatus;
@@ -7,7 +10,6 @@ import com.nori.tc.db.domain.common.model.ProtocolType;
 import com.nori.tc.db.domain.eqp.TcEqpParam;
 import com.nori.tc.db.domain.eqp.TcEqpPortStatus;
 import com.nori.tc.db.domain.model.TcModel;
-import com.nori.tc.messaging.domain.kafka.TcKafkaSources;
 import com.nori.tc.ui.core.eqp.EqpCommandResult;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementOptions;
@@ -65,6 +67,7 @@ public class EqpManagementService {
     private static final int INTERNAL_ERROR_STATUS = 500;
     private static final int TIMEOUT_STATUS = 504;
     private static final long ASYNC_POLL_INTERVAL_MS = 100L;
+    private static final String UI_SOURCE = "TC-UI-APP";
 
     private final EqpCrudPort eqpCrudPort;
     private final EqpManageQueryPort eqpManageQueryPort;
@@ -179,7 +182,7 @@ public class EqpManagementService {
             awaitDualSuccess(UiCommandEventType.EQP_CREATE, createdSnapshot, timeoutMs);
 
             if (requiresJarReload(null, createdSnapshot)) {
-                awaitDualSuccess(UiCommandEventType.EQP_UPDATE_JARFILE, createdSnapshot, timeoutMs);
+                awaitJarReloadSuccess(createdSnapshot, timeoutMs);
             }
 
             return EqpCommandResult.ok();
@@ -216,7 +219,7 @@ public class EqpManagementService {
             awaitDualSuccess(UiCommandEventType.EQP_UPDATE, updatedSnapshot, timeoutMs);
 
             if (requiresJarReload(existingSnapshot, updatedSnapshot)) {
-                awaitDualSuccess(UiCommandEventType.EQP_UPDATE_JARFILE, updatedSnapshot, timeoutMs);
+                awaitJarReloadSuccess(updatedSnapshot, timeoutMs);
             }
 
             return EqpCommandResult.ok();
@@ -418,7 +421,7 @@ public class EqpManagementService {
         final String traceId = UUID.randomUUID().toString();
         final String eqpId = snapshot.eqp().eqpId();
         final String interfaceType = snapshot.eqp().commInterface().name();
-        final String uiMessage = buildUiMessage(snapshot.eqp().modelVersionKey());
+        final JsonNode uiMessage = buildUiMessage(snapshot.eqp().modelVersionKey());
         final GatewayEquipmentProfileSnapshot equipmentProfile =
                 (eventType == UiCommandEventType.EQP_CREATE || eventType == UiCommandEventType.EQP_UPDATE)
                         ? toEquipmentProfile(snapshot)
@@ -428,7 +431,7 @@ public class EqpManagementService {
         final UiCommandMessage message = new UiCommandMessage(
                 eventType,
                 traceId,
-                TcKafkaSources.UI_BACKEND,
+                UI_SOURCE,
                 eqpId,
                 interfaceType,
                 uiMessage,
@@ -507,7 +510,7 @@ public class EqpManagementService {
         final UiCommandMessage message = new UiCommandMessage(
                 eventType,
                 traceId,
-                TcKafkaSources.UI_BACKEND,
+                UI_SOURCE,
                 snapshot.eqp().eqpId(),
                 snapshot.eqp().commInterface().name(),
                 buildUiMessage(snapshot.eqp().modelVersionKey()),
@@ -670,8 +673,105 @@ public class EqpManagementService {
         );
     }
 
-    private String buildUiMessage(final long modelVersionKey) {
-        return "modelVersionKey=" + modelVersionKey;
+    private void awaitJarReloadSuccess(
+            final EqpManagementSnapshot snapshot,
+            final long timeoutMs
+    ) throws Exception {
+        final String traceId = UUID.randomUUID().toString();
+        final String eqpId = snapshot.eqp().eqpId();
+        final String interfaceType = snapshot.eqp().commInterface().name();
+        final JsonNode uiMessage = buildUiMessage(snapshot.eqp().modelVersionKey());
+
+        final CompletableFuture<UiDualTaskFinalResult> future = dualResponseRegistry.register(traceId, timeoutMs);
+        final UiCommandMessage gatewayMessage = new UiCommandMessage(
+                UiCommandEventType.EQP_GATEWAY_JARFILE_UPDATE,
+                traceId,
+                UI_SOURCE,
+                eqpId,
+                interfaceType,
+                uiMessage,
+                null
+        );
+        final UiCommandMessage businessMessage = new UiCommandMessage(
+                UiCommandEventType.EQP_BUSINESS_JARFILE_UPDATE,
+                traceId,
+                UI_SOURCE,
+                eqpId,
+                interfaceType,
+                uiMessage,
+                null
+        );
+
+        boolean gatewayPublished = false;
+        try {
+            gatewayEventPublishPort.publish(gatewayMessage);
+            gatewayPublished = true;
+            businessEventPublishPort.publish(businessMessage);
+        } catch (Exception publishException) {
+            dualResponseRegistry.cancel(traceId);
+            throw new CommandFailureException(
+                    INTERNAL_ERROR_STATUS,
+                    "PUBLISH_FAILED",
+                    "Kafka 발행 중 오류가 발생했습니다.",
+                    publishException
+            );
+        }
+
+        try {
+            final UiDualTaskFinalResult finalResult = future.join();
+            if (!finalResult.success()) {
+                final UiTaskResult failed = finalResult.firstFailedResult().orElse(null);
+                final String errorCode = failed == null ? "PROCESSING_FAILED" : failed.errorCode();
+                final String errorMessage = failed == null ? "설비 JAR 동기화에 실패했습니다." : failed.errorMsg();
+                throw new CommandFailureException(
+                        INTERNAL_ERROR_STATUS,
+                        errorCode,
+                        errorMessage,
+                        null
+                );
+            }
+        } catch (CompletionException completionException) {
+            final Throwable cause = completionException.getCause();
+            if (cause instanceof TimeoutException) {
+                throw new CommandFailureException(
+                        TIMEOUT_STATUS,
+                        "TIMEOUT",
+                        "Gateway/Business 응답 대기 시간이 초과되었습니다.",
+                        cause
+                );
+            }
+            if (cause instanceof CancellationException) {
+                throw new CommandFailureException(
+                        INTERNAL_ERROR_STATUS,
+                        "PUBLISH_FAILED",
+                        "Kafka 발행 중 오류가 발생했습니다.",
+                        cause
+                );
+            }
+            if (cause instanceof CommandFailureException commandFailureException) {
+                throw commandFailureException;
+            }
+
+            throw new CommandFailureException(
+                    INTERNAL_ERROR_STATUS,
+                    "INTERNAL_ERROR",
+                    "설비 JAR 동기화 처리 중 내부 오류가 발생했습니다.",
+                    cause
+            );
+        } finally {
+            if (!gatewayPublished) {
+                dualResponseRegistry.cancel(traceId);
+            }
+        }
+    }
+
+    private JsonNode buildUiMessage(final long modelVersionKey) {
+        final ObjectNode modelInfo = JsonNodeFactory.instance.objectNode();
+        modelInfo.put("modelVersionKey", modelVersionKey);
+
+        final ObjectNode uiMessage = JsonNodeFactory.instance.objectNode();
+        uiMessage.set("modelInfo", modelInfo);
+        return uiMessage;
     }
 
     private void safeRuntimeDelete(final EqpManagementSnapshot snapshot, final long timeoutMs) {
@@ -700,7 +800,7 @@ public class EqpManagementService {
 
     private void safeJarReload(final EqpManagementSnapshot snapshot, final long timeoutMs) {
         try {
-            awaitDualSuccess(UiCommandEventType.EQP_UPDATE_JARFILE, snapshot, timeoutMs);
+            awaitJarReloadSuccess(snapshot, timeoutMs);
         } catch (Exception exception) {
             log.error("EQP jar reload 보상 실패. eqpId={}", snapshot.eqp().eqpId(), exception);
         }

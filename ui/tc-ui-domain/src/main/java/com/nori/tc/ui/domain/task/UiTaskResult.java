@@ -14,12 +14,12 @@ import java.util.Objects;
  * <p>{@code KafkaUiTaskReplyMessage.metadata.source} 값을 그대로 보관합니다.
  * DualResponseRegistry에서 gateway 응답과 business 응답을 구분하는 데 사용합니다.</p>
  * <ul>
- *   <li>{@code TC-COMM-GATEWAY}: gateway가 발행한 응답</li>
- *   <li>{@code TC-BUSINESS-CORE}: business가 발행한 응답</li>
+ *   <li>{@code TC-GATEWAY-APP}: gateway가 발행한 응답</li>
+ *   <li>{@code TC-BUSINESS-APP}: business가 발행한 응답</li>
  * </ul>
  *
  * @param traceId   작업 추적 ID (ULID, UI Backend가 작업 요청 시 발급)
- * @param source    응답 출처 ({@code TC-COMM-GATEWAY} 또는 {@code TC-BUSINESS-CORE})
+ * @param source    응답 출처 ({@code TC-GATEWAY-APP} 또는 {@code TC-BUSINESS-APP})
  * @param status    처리 결과 상태 ({@link UiTaskStatus#PASS} 또는 {@link UiTaskStatus#FAIL})
  * @param errorCode 오류 코드 (status=FAIL일 때 원인 식별용, nullable)
  * @param errorMsg  오류 메시지 (status=FAIL일 때 상세 설명, nullable)

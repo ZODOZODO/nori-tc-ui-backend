@@ -57,14 +57,6 @@ dependencies {
     compileOnly(libs.spring.boot.autoconfigure)
     compileOnly(libs.spring.context)
 
-    /*
-     * Spring Boot 4.x는 Jackson 3.x(tools.jackson)를 기본으로 사용하므로
-     * com.fasterxml.jackson.databind.ObjectMapper 빈이 자동 등록되지 않습니다.
-     * TcUiBackendAutoConfiguration에서 Jackson 2.x ObjectMapper 빈을 명시 제공하기 위해
-     * 컴파일 의존성으로 선언합니다. 런타임에는 tc-ui-web-adapter의 의존성으로 제공됩니다.
-     */
-    compileOnly(libs.jackson.databind)
-
     testImplementation(libs.spring.boot.starter.test)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

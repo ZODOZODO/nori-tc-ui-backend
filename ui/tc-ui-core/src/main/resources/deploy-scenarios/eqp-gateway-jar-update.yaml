@@ -1,0 +1,30 @@
+version: 1
+
+scenario:
+  code: EQP_GATEWAY_JARFILE_UPDATE
+  name: Gateway Jar Update
+  summary: gateway jar/plugin/runtime을 재적재한다.
+
+appliesTo:
+  eventTypes:
+    - EQP_GATEWAY_JARFILE_UPDATE
+  deltaAll:
+    - GATEWAY_JAR_CHANGED
+
+steps:
+  - order: 10
+    code: RELOAD_GATEWAY_PLUGIN
+    name: Gateway plugin 재적재
+    targetApp: GATEWAY
+    description: 새 gateway jar를 다운로드/검증 후 runtime에 반영한다.
+    run:
+      action: RELOAD_GATEWAY_PLUGIN
+      timeoutMs: 60000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: AUTO_COMPENSATABLE
+      action: RESTORE_PREVIOUS_GATEWAY_PLUGIN

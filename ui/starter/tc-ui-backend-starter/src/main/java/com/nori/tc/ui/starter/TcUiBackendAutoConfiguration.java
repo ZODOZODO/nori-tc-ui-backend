@@ -6,13 +6,13 @@ import com.nori.tc.ui.adapters.kafka.config.UiKafkaTopicProperties;
 import com.nori.tc.ui.adapters.redis.config.UiRedisAdapterAutoConfiguration;
 import com.nori.tc.ui.adapters.redis.config.UiRedisProperties;
 import com.nori.tc.ui.adapters.web.config.UiWebAdapterAutoConfiguration;
+import com.nori.tc.ui.core.properties.UiDeployProperties;
 import com.nori.tc.ui.core.service.EqpManagementService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
@@ -48,6 +48,7 @@ import java.util.concurrent.Executor;
  */
 @AutoConfiguration
 @EnableScheduling
+@EnableConfigurationProperties(UiDeployProperties.class)
 @ComponentScan(basePackages = "com.nori.tc.ui.core")
 @Import({
         UiWebAdapterAutoConfiguration.class,   // Web: Controller + Security
@@ -73,27 +74,6 @@ public class TcUiBackendAutoConfiguration {
     public TcUiBackendAutoConfiguration() {
         log.info("UI_BOOT_STARTING. imports=[UiWebAdapterAutoConfiguration, UiKafkaAdapterAutoConfiguration, "
                 + "UiRedisAdapterAutoConfiguration, UiDbAdapterAutoConfiguration]");
-    }
-
-    /**
-     * UI Backend 전용 Jackson 2.x ObjectMapper 빈을 등록합니다.
-     *
-     * <p>Spring Boot 4.x는 Jackson 3.x({@code tools.jackson.databind.ObjectMapper})를 기본으로
-     * 사용하므로 {@code com.fasterxml.jackson.databind.ObjectMapper} 빈이 자동으로 등록되지 않습니다.
-     * {@link com.nori.tc.ui.adapters.web.security.UiTokenAuthenticationFilter}와
-     * {@link com.nori.tc.ui.adapters.kafka.subscribe.UiCommandKafkaSubscriber}가
-     * Jackson 2.x {@code ObjectMapper}를 생성자 주입으로 요구하므로 명시적으로 빈을 제공합니다.</p>
-     *
-     * <p>{@code @ConditionalOnMissingBean}으로 동일 타입의 빈이 이미 존재하는 경우(예: 다른 스타터가
-     * 등록한 경우) 중복 생성을 방지합니다. Business Core Starter의 {@code businessUiObjectMapper}와
-     * 동일한 패턴을 따릅니다.</p>
-     *
-     * @return 기본 설정의 Jackson 2.x ObjectMapper
-     */
-    @Bean
-    @ConditionalOnMissingBean(ObjectMapper.class)
-    public ObjectMapper uiObjectMapper() {
-        return new ObjectMapper();
     }
 
     /**

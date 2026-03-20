@@ -8,7 +8,7 @@ import com.nori.tc.ui.domain.task.UiTaskStatus;
  * <p>Kafka 계약 타입을 core 포트 시그니처에서 제거하기 위해 정의했습니다.</p>
  *
  * @param traceId 요청/응답 상관관계 추적 ID
- * @param source 응답 출처(예: TC-COMM-GATEWAY, TC-BUSINESS-CORE)
+ * @param source 응답 출처(예: TC-GATEWAY-APP, TC-BUSINESS-APP)
  * @param eventType 응답 이벤트 타입(예: EQP_CREATE_REP)
  * @param eqpId 설비 ID
  * @param interfaceType 인터페이스 타입

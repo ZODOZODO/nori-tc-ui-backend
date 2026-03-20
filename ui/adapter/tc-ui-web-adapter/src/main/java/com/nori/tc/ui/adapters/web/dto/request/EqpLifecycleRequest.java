@@ -1,5 +1,6 @@
 package com.nori.tc.ui.adapters.web.dto.request;
 
+import tools.jackson.databind.JsonNode;
 import jakarta.validation.constraints.NotBlank;
 
 /**
@@ -12,13 +13,13 @@ import jakarta.validation.constraints.NotBlank;
  * 즉시 202 Accepted를 반환하고 traceId로 결과를 polling 합니다.</p>
  *
  * @param interfaceType 통신 인터페이스 타입 (필수)
- * @param uiMessage     UI 메시지 (선택)
+ * @param uiMessage     eventType별 UI payload(JSON object, 선택)
  */
 public record EqpLifecycleRequest(
 
         @NotBlank(message = "interfaceType은 필수입니다.")
         String interfaceType,
 
-        String uiMessage
+        JsonNode uiMessage
 ) {
 }

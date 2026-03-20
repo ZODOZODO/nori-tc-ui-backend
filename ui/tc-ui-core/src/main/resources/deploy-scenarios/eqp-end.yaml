@@ -1,0 +1,26 @@
+version: 1
+
+scenario:
+  code: EQP_END
+  name: EQP End
+  summary: Gateway runtime을 종료한다.
+
+appliesTo:
+  eventTypes:
+    - EQP_END
+
+steps:
+  - order: 10
+    code: END_GATEWAY_RUNTIME
+    name: Gateway runtime 종료
+    targetApp: GATEWAY
+    description: 설비 runtime을 종료한다.
+    run:
+      action: END_GATEWAY_RUNTIME
+      timeoutMs: 30000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: false

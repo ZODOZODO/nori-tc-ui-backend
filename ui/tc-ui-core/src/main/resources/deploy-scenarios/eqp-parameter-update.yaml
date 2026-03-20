@@ -1,0 +1,30 @@
+version: 1
+
+scenario:
+  code: EQP_PARAMETER_UPDATE
+  name: EQP Parameter Update
+  summary: Business eqp parameter만 갱신한다.
+
+appliesTo:
+  eventTypes:
+    - EQP_PARAMETER_UPDATE
+  deltaAll:
+    - EQP_PARAM_CHANGED
+
+steps:
+  - order: 10
+    code: UPDATE_EQP_PARAM
+    name: EQP parameter 갱신
+    targetApp: BUSINESS
+    description: eqp parameter snapshot/version을 반영한다.
+    run:
+      action: UPDATE_EQP_PARAM
+      timeoutMs: 10000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: CONDITIONAL_COMPENSATABLE
+      action: RESTORE_PREVIOUS_EQP_PARAM

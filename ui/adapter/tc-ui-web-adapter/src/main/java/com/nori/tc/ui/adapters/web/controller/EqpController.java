@@ -1,9 +1,9 @@
 package com.nori.tc.ui.adapters.web.controller;
 
+import tools.jackson.databind.JsonNode;
 import com.nori.tc.messaging.kafka.contract.GatewayEquipmentProfileSnapshot;
 import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.domain.eqp.TcEqp;
-import com.nori.tc.messaging.domain.kafka.TcKafkaSources;
 import com.nori.tc.ui.adapters.web.config.UiDualRequestProperties;
 import com.nori.tc.ui.adapters.web.controller.support.UiPageRequestSupport;
 import com.nori.tc.ui.adapters.web.dto.request.EqpCreateRequest;
@@ -68,6 +68,7 @@ public class EqpController {
     private static final Logger log = LoggerFactory.getLogger(EqpController.class);
     private static final String TRACE_ID_MDC_KEY = "traceId";
     private static final String EDIT_PARAM_VERSION = "EDIT";
+    private static final String UI_SOURCE = "TC-UI-APP";
 
     private final EqpQueryPort eqpQueryPort;
     private final EqpManagementService eqpManagementService;
@@ -406,7 +407,7 @@ public class EqpController {
      * @param traceId trace id
      * @param eqpId 설비 ID
      * @param interfaceType 통신 인터페이스 문자열
-     * @param uiMessage UI 메시지
+     * @param uiMessage UI payload(JSON object)
      * @param equipmentProfile 설비 프로파일
      * @return UI 명령 메시지
      */
@@ -415,13 +416,13 @@ public class EqpController {
             final String traceId,
             final String eqpId,
             final String interfaceType,
-            final String uiMessage,
+            final JsonNode uiMessage,
             final GatewayEquipmentProfileSnapshot equipmentProfile
     ) {
         return new UiCommandMessage(
                 eventType,
                 traceId,
-                TcKafkaSources.UI_BACKEND,
+                UI_SOURCE,
                 eqpId,
                 interfaceType,
                 uiMessage,

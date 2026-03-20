@@ -20,10 +20,12 @@ import org.springframework.stereotype.Component;
  *
  * <p>라우팅 규칙:</p>
  * <ul>
- *   <li>EQP_CREATE_REP / EQP_UPDATE_REP / EQP_DELETE_REP →
- *       {@link DualResponseRegistry}: Gateway와 Business Core 양쪽 응답을 수집하여
+ *   <li>EQP_CREATE_REP / EQP_UPDATE_REP / EQP_DELETE_REP /
+ *       EQP_GATEWAY_JARFILE_UPDATE_REP / EQP_BUSINESS_JARFILE_UPDATE_REP →
+ *       {@link DualResponseRegistry}: Gateway와 Business 양쪽 응답을 수집하여
  *       DeferredResult 완료 처리</li>
- *   <li>EQP_START_REP / EQP_END_REP →
+ *   <li>EQP_START_REP / EQP_END_REP / EQP_RECONNECT_REP /
+ *       EQP_SEND_MESSAGE_REP / EQP_PARAMETER_UPDATE_REP →
  *       {@link AsyncResultStorePort}: Gateway 단일 응답을 Redis에 저장,
  *       front가 polling으로 확인</li>
  * </ul>
@@ -37,6 +39,7 @@ public class UiCommandIngressService implements UiCommandIngressPort {
 
     private static final Logger log = LoggerFactory.getLogger(UiCommandIngressService.class);
 
+    private final DeployService deployService;
     private final DualResponseRegistry dualResponseRegistry;
     private final AsyncResultStorePort asyncResultStorePort;
 
@@ -47,9 +50,11 @@ public class UiCommandIngressService implements UiCommandIngressPort {
      * @param asyncResultStorePort eqp_start/end 비동기 결과 Redis 저장 포트
      */
     public UiCommandIngressService(
+            final DeployService deployService,
             final DualResponseRegistry dualResponseRegistry,
             final AsyncResultStorePort asyncResultStorePort
     ) {
+        this.deployService = deployService;
         this.dualResponseRegistry = dualResponseRegistry;
         this.asyncResultStorePort = asyncResultStorePort;
     }
@@ -65,17 +70,29 @@ public class UiCommandIngressService implements UiCommandIngressPort {
      */
     @Override
     public void handle(final UiCommandReply reply) {
+        if (deployService.handleReply(reply)) {
+            return;
+        }
+
         final String eventType = reply.eventType().trim().toUpperCase();
         final String traceId   = reply.traceId();
         final String source    = reply.source();
 
         switch (eventType) {
-            // eqp_create/update/delete: Gateway + Business Core 양방향 응답 수집
-            case "EQP_CREATE_REP", "EQP_UPDATE_REP", "EQP_DELETE_REP" ->
+            // dual-response: Gateway + Business 양방향 응답 수집
+            case "EQP_CREATE_REP",
+                 "EQP_UPDATE_REP",
+                 "EQP_DELETE_REP",
+                 "EQP_GATEWAY_JARFILE_UPDATE_REP",
+                 "EQP_BUSINESS_JARFILE_UPDATE_REP" ->
                 handleDualResponse(traceId, source, reply);
 
-            // eqp_start/end: Gateway 단일 응답을 Redis에 임시 저장, front polling 방식
-            case "EQP_START_REP", "EQP_END_REP" ->
+            // 단일 응답: polling 결과 저장
+            case "EQP_START_REP",
+                 "EQP_END_REP",
+                 "EQP_RECONNECT_REP",
+                 "EQP_SEND_MESSAGE_REP",
+                 "EQP_PARAMETER_UPDATE_REP" ->
                 handleAsyncResult(traceId, reply);
 
             default -> log.warn("처리되지 않은 eventType - 무시. eventType={}, traceId={}, source={}",
@@ -86,12 +103,12 @@ public class UiCommandIngressService implements UiCommandIngressPort {
     /**
      * eqp_create / eqp_update / eqp_delete 응답을 DualResponseRegistry에 기록합니다.
      *
-     * <p>Gateway(TC-COMM-GATEWAY)와 Business Core(TC-BUSINESS-CORE) 양쪽 응답을
+     * <p>Gateway(TC-GATEWAY-APP)와 Business(TC-BUSINESS-APP) 양쪽 응답을
      * traceId + source 조합으로 매핑합니다. 양쪽 모두 수신 완료 시 Registry가
      * 자동으로 CompletableFuture를 완료시킵니다.</p>
      *
      * @param traceId 작업 추적 ID
-     * @param source  응답 출처 (TC-COMM-GATEWAY 또는 TC-BUSINESS-CORE)
+     * @param source  응답 출처 (TC-GATEWAY-APP 또는 TC-BUSINESS-APP)
      * @param reply   수신된 reply 메시지
      */
     private void handleDualResponse(

@@ -1,0 +1,60 @@
+version: 1
+
+scenario:
+  code: EQP_DELETE_SAFE
+  name: EQP Delete Safe
+  summary: 설비 종료 확인 후 Gateway와 Business 메모리를 안전하게 정리한다.
+
+appliesTo:
+  eventTypes:
+    - EQP_DELETE
+
+steps:
+  - order: 10
+    code: END_EQP_IF_RUNNING
+    name: 설비 종료 보장
+    targetApp: GATEWAY
+    description: 삭제 전 설비가 실행 중이면 먼저 종료한다.
+    run:
+      action: END_EQP_IF_RUNNING
+      timeoutMs: 30000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: false
+
+  - order: 20
+    code: DELETE_GATEWAY_MEMORY
+    name: Gateway 메모리 삭제
+    targetApp: GATEWAY
+    description: channel, mailbox, context를 정리한다.
+    run:
+      action: DELETE_GATEWAY_MEMORY
+      timeoutMs: 10000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: CONDITIONAL_COMPENSATABLE
+      action: RESTORE_PREVIOUS_GATEWAY_CONTEXT
+
+  - order: 30
+    code: DELETE_BUSINESS_BINDING
+    name: Business binding 삭제
+    targetApp: BUSINESS
+    description: eqpId 바인딩과 eqp parameter를 정리하고 ref 0 runtime만 unload한다.
+    run:
+      action: DELETE_BUSINESS_BINDING
+      timeoutMs: 10000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: AUTO_COMPENSATABLE
+      action: RESTORE_PREVIOUS_BUSINESS_BINDING

@@ -1,0 +1,26 @@
+version: 1
+
+scenario:
+  code: EQP_SEND_MESSAGE
+  name: EQP Send Message
+  summary: 설비에 단건 메시지를 송신한다.
+
+appliesTo:
+  eventTypes:
+    - EQP_SEND_MESSAGE
+
+steps:
+  - order: 10
+    code: SEND_MESSAGE
+    name: 설비 메시지 송신
+    targetApp: GATEWAY
+    description: SOCKET/HSMS payload를 Gateway를 통해 설비로 송신한다.
+    run:
+      action: SEND_MESSAGE
+      timeoutMs: 60000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: false

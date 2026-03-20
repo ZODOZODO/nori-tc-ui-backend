@@ -1,0 +1,26 @@
+version: 1
+
+scenario:
+  code: EQP_START
+  name: EQP Start
+  summary: Gateway runtime을 시작한다.
+
+appliesTo:
+  eventTypes:
+    - EQP_START
+
+steps:
+  - order: 10
+    code: START_GATEWAY_RUNTIME
+    name: Gateway runtime 시작
+    targetApp: GATEWAY
+    description: 설비 runtime을 시작한다.
+    run:
+      action: START_GATEWAY_RUNTIME
+      timeoutMs: 30000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: false

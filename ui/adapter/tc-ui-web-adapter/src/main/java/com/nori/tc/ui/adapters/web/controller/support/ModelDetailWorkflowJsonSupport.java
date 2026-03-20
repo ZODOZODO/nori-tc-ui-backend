@@ -1,7 +1,8 @@
 package com.nori.tc.ui.adapters.web.controller.support;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -31,7 +32,9 @@ import java.util.Set;
  */
 public final class ModelDetailWorkflowJsonSupport {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final ObjectMapper OBJECT_MAPPER = JsonMapper.builder()
+            .findAndAddModules()
+            .build();
 
     private static final Set<String> WORKFLOW_CONDITION_KEYS = Set.of("from", "path", "comparison", "expected", "transforms");
     private static final Set<String> ACTION_DATA_INDEX_ROOT_KEYS = Set.of("mdfTemplateName", "fields");
@@ -153,7 +156,7 @@ public final class ModelDetailWorkflowJsonSupport {
         // 저장 시점에 미리 거부하여 런타임 오류를 예방합니다.
         final JsonNode mdfTemplateNameNode = root.path("mdfTemplateName");
         final String mdfTemplateName = (!mdfTemplateNameNode.isMissingNode() && !mdfTemplateNameNode.isNull())
-                ? normalizeOptionalText(mdfTemplateNameNode.asText())
+                ? normalizeOptionalText(mdfTemplateNameNode.asString())
                 : null;
         if (mdfTemplateName == null) {
             throw new IllegalArgumentException("action_data_index의 mdfTemplateName은 필수입니다.");
@@ -276,10 +279,10 @@ public final class ModelDetailWorkflowJsonSupport {
             throw new IllegalArgumentException("action_data_index 필드 " + fieldName + "는 null일 수 없습니다.");
         }
 
-        if (fieldNode.isTextual()) {
+        if (fieldNode.isString()) {
             return new ActionFieldSpec(
                     "data",
-                    parseRelativePath(fieldNode.asText(), "action_data_index 필드 " + fieldName + "의 path는 from 기준 상대 경로여야 합니다."),
+                    parseRelativePath(fieldNode.asString(), "action_data_index 필드 " + fieldName + "의 path는 from 기준 상대 경로여야 합니다."),
                     List.of()
             );
         }
@@ -335,8 +338,8 @@ public final class ModelDetailWorkflowJsonSupport {
             throw new IllegalArgumentException("transform은 null일 수 없습니다.");
         }
 
-        if (transformNode.isTextual()) {
-            final String transformText = normalizeOptionalText(transformNode.asText());
+        if (transformNode.isString()) {
+            final String transformText = normalizeOptionalText(transformNode.asString());
             if (transformText == null) {
                 throw new IllegalArgumentException("transform 문자열은 비어 있을 수 없습니다.");
             }
@@ -478,9 +481,7 @@ public final class ModelDetailWorkflowJsonSupport {
             final String baseMessage
     ) {
         final Set<String> invalidKeys = new LinkedHashSet<>();
-        final Iterator<String> fieldNames = node.fieldNames();
-        while (fieldNames.hasNext()) {
-            final String fieldName = fieldNames.next();
+        for (String fieldName : node.propertyNames()) {
             if (!allowedKeys.contains(fieldName)) {
                 invalidKeys.add(fieldName);
             }
@@ -496,7 +497,7 @@ public final class ModelDetailWorkflowJsonSupport {
      */
     private static String requiredText(final JsonNode node, final String fieldName, final String requiredMessage) {
         final JsonNode child = requiredNode(node, fieldName, requiredMessage);
-        final String text = child.isTextual() ? child.asText() : child.asText(null);
+        final String text = child.isString() ? child.asString() : child.asString(null);
         final String normalized = normalizeOptionalText(text);
         if (normalized == null) {
             throw new IllegalArgumentException(requiredMessage);
@@ -529,10 +530,7 @@ public final class ModelDetailWorkflowJsonSupport {
      */
     private static Set<String> fieldNames(final JsonNode node) {
         final Set<String> target = new LinkedHashSet<>();
-        final Iterator<String> iterator = node.fieldNames();
-        while (iterator.hasNext()) {
-            target.add(iterator.next());
-        }
+        target.addAll(node.propertyNames());
         return target;
     }
 
@@ -543,8 +541,8 @@ public final class ModelDetailWorkflowJsonSupport {
         if (node == null || node.isNull() || node.isMissingNode()) {
             return null;
         }
-        if (node.isTextual()) {
-            return node.asText();
+        if (node.isString()) {
+            return node.asString();
         }
         if (node.isNumber()) {
             return node.numberValue();
@@ -568,7 +566,7 @@ public final class ModelDetailWorkflowJsonSupport {
             }
             return Map.copyOf(values);
         }
-        return node.asText();
+        return node.asString();
     }
 
     /**

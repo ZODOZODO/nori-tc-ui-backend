@@ -1,6 +1,6 @@
 package com.nori.tc.ui.adapters.kafka.subscribe;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.nori.tc.messaging.kafka.contract.KafkaUiTaskMessage;
 import com.nori.tc.messaging.kafka.contract.KafkaUiTaskReplyMessage;
 import com.nori.tc.ui.core.model.UiCommandReply;
@@ -71,7 +71,7 @@ class UiCommandKafkaSubscriberTest {
                 new KafkaUiTaskMessage.KafkaUiTaskMetadata(
                         "EQP_START_REP",
                         OffsetDateTime.now().toString(),
-                        "TC-COMM-GATEWAY",
+                        "TC-GATEWAY-APP",
                         traceId
                 ),
                 new KafkaUiTaskReplyMessage.KafkaUiTaskReplyData(
@@ -103,7 +103,7 @@ class UiCommandKafkaSubscriberTest {
 
         final UiCommandReply mapped = captor.getValue();
         assertEquals(traceId, mapped.traceId());
-        assertEquals("TC-COMM-GATEWAY", mapped.source());
+        assertEquals("TC-GATEWAY-APP", mapped.source());
         assertEquals("EQP_START_REP", mapped.eventType());
         assertEquals("EQP-001", mapped.eqpId());
         assertEquals(UiTaskStatus.PASS, mapped.status());

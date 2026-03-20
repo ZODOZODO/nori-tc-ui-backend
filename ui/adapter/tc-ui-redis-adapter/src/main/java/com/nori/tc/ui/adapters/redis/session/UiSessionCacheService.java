@@ -1,6 +1,5 @@
 package com.nori.tc.ui.adapters.redis.session;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import com.nori.tc.ui.core.port.redis.TokenCachePort;
@@ -20,6 +19,7 @@ import java.time.Duration;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Optional;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Business Redis(6380)를 이용한 인증 토큰 캐시 서비스입니다.

@@ -69,6 +69,14 @@ dependencies {
     api("com.nori.tc:tc-messaging-domain:0.0.1-SNAPSHOT")
 
     /*
+     * Deploy orchestration T3:
+     * - JsonNode 기반 desired state merge / step plan 직렬화를 위해 Jackson을 직접 사용합니다.
+     * - scenario YAML 파일을 fail-fast 로딩하기 위해 SnakeYAML을 사용합니다.
+     */
+    implementation(libs.jackson.databind)
+    implementation("org.yaml:snakeyaml:2.2")
+
+    /*
      * Phase 4 OPS-01:
      * - DualResponseRegistry 메트릭(카운터/타이머) 기록을 위해 Micrometer API를 사용합니다.
      * - 실제 registry 구현체는 앱 계층(Actuator/Prometheus)에서 주입합니다.
@@ -86,6 +94,7 @@ dependencies {
 
     testImplementation(platform(libs.junit.bom))
     testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation(libs.spring.boot.starter.test)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

@@ -1,0 +1,28 @@
+version: 1
+
+scenario:
+  code: EQP_RECONNECT
+  name: EQP Reconnect
+  summary: Gateway transport를 재연결한다.
+
+appliesTo:
+  eventTypes:
+    - EQP_RECONNECT
+
+steps:
+  - order: 10
+    code: RECONNECT_GATEWAY
+    name: Gateway 재연결
+    targetApp: GATEWAY
+    description: active channel/transport를 재수립한다.
+    run:
+      action: RECONNECT_GATEWAY
+      timeoutMs: 30000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: CONDITIONAL_COMPENSATABLE
+      action: RESTORE_PREVIOUS_GATEWAY_CONTEXT

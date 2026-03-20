@@ -1,7 +1,7 @@
 package com.nori.tc.ui.adapters.kafka.subscribe;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.nori.tc.messaging.kafka.contract.KafkaUiTaskReplyMessage;
 import com.nori.tc.ui.core.model.UiCommandReply;
 import com.nori.tc.ui.core.port.messaging.UiCommandIngressPort;
@@ -106,7 +106,7 @@ public class UiCommandKafkaSubscriber {
             final KafkaUiTaskReplyMessage rawReply =
                     objectMapper.readValue(record.value(), KafkaUiTaskReplyMessage.class);
             commandReply = toCommandReply(rawReply);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             handleParseFailureAndAck(record, ack, ex, "json_deserialize");
             return;
         } catch (RuntimeException ex) {

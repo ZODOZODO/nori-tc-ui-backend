@@ -37,10 +37,10 @@ public class DualResponseRegistry {
     private static final Logger log = LoggerFactory.getLogger(DualResponseRegistry.class);
 
     /** Gateway가 tc.ui.commands에 발행하는 응답 source 값 */
-    public static final String SOURCE_GATEWAY = "TC-COMM-GATEWAY";
+    public static final String SOURCE_GATEWAY = "TC-GATEWAY-APP";
 
     /** Business Core가 tc.ui.commands에 발행하는 응답 source 값 */
-    public static final String SOURCE_BUSINESS = "TC-BUSINESS-CORE";
+    public static final String SOURCE_BUSINESS = "TC-BUSINESS-APP";
 
     /**
      * 로컬 인스턴스 대기 Future 맵입니다.

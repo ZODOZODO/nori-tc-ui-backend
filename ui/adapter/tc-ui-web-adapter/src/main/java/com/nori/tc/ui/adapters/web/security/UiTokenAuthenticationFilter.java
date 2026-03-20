@@ -1,6 +1,6 @@
 package com.nori.tc.ui.adapters.web.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.core.exception.UiAuthenticationException;
 import com.nori.tc.ui.core.properties.UiAuthProperties;
