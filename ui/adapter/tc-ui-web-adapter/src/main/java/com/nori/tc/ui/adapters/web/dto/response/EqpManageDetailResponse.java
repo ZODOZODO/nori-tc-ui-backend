@@ -5,7 +5,6 @@ import com.nori.tc.db.domain.common.eqp.CarrierType;
 import com.nori.tc.db.domain.common.eqp.ControlState;
 import com.nori.tc.db.domain.common.eqp.EqpState;
 import com.nori.tc.db.domain.common.eqp.LogLevel;
-import com.nori.tc.db.domain.common.eqp.PortState;
 import com.nori.tc.db.domain.common.eqp.PortType;
 import com.nori.tc.db.domain.common.model.ModelStatus;
 import com.nori.tc.db.domain.common.model.ProtocolType;
@@ -145,7 +144,7 @@ public record EqpManageDetailResponse(
     public record PortStatusResponse(
             String portId,
             PortType portType,
-            PortState portState,
+            String portState,
             String carrierId,
             CarrierType carrierType,
             CarrierState carrierState,

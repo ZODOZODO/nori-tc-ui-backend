@@ -1329,7 +1329,7 @@ public class DeployService {
                         .map(port -> new GatewayEquipmentProfileSnapshot.PortStatusSnapshot(
                                 port.portId(),
                                 port.portType() == null ? null : port.portType().name(),
-                                port.portState() == null ? null : port.portState().name(),
+                                port.portState(),
                                 port.carrierId(),
                                 port.carrierType() == null ? null : port.carrierType().name(),
                                 port.carrierState() == null ? null : port.carrierState().name(),

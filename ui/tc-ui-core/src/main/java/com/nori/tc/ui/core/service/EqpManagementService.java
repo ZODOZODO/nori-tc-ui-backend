@@ -655,7 +655,7 @@ public class EqpManagementService {
         return new GatewayEquipmentProfileSnapshot.PortStatusSnapshot(
                 status.portId(),
                 status.portType() == null ? null : status.portType().name(),
-                status.portState() == null ? null : status.portState().name(),
+                status.portState(),
                 status.carrierId(),
                 status.carrierType() == null ? null : status.carrierType().name(),
                 status.carrierState() == null ? null : status.carrierState().name(),
