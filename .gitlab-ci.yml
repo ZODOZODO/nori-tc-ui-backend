@@ -8,3 +8,4 @@ publish:
     - ./gradlew publish
   only:
     - main
+  when: manual
