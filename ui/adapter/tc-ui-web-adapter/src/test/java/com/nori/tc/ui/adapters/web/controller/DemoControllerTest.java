@@ -1,8 +1,5 @@
 package com.nori.tc.ui.adapters.web.controller;
 
-import com.nori.tc.db.domain.common.model.ProtocolType;
-import com.nori.tc.db.domain.eqp.TcEqp;
-import com.nori.tc.db.domain.eqp.TcEqpPortStatus;
 import com.nori.tc.ui.adapters.web.demo.DemoRunResponse;
 import com.nori.tc.ui.adapters.web.demo.DemoTargetResponse;
 import com.nori.tc.ui.adapters.web.demo.DemoTesterClient;
@@ -13,6 +10,9 @@ import com.nori.tc.ui.adapters.web.dto.request.DemoTargetStartRequest;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.service.EqpManagementService;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
+import com.nori.tc.ui.domain.eqp.UiEqp;
+import com.nori.tc.ui.domain.eqp.UiEqpPortStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -111,7 +111,7 @@ class DemoControllerTest {
 
     private static EqpManagementSnapshot snapshot(String eqpId, String... portIds) {
         return new EqpManagementSnapshot(
-                new TcEqp(1L, eqpId, ProtocolType.SOCKET, "ACTIVE", false, 0, "127.0.0.1", 6101, 1L, "EDIT", true, OffsetDateTime.now(), OffsetDateTime.now(), "SYSTEM", "SYSTEM"),
+                new UiEqp(1L, eqpId, UiProtocolType.SOCKET, "ACTIVE", false, 0, "127.0.0.1", 6101, 1L, "EDIT", null, null, true, OffsetDateTime.now(), OffsetDateTime.now(), "SYSTEM", "SYSTEM"),
                 null,
                 null,
                 null,
@@ -119,7 +119,7 @@ class DemoControllerTest {
                 null,
                 "CONNECTED",
                 java.util.Arrays.stream(portIds)
-                        .map(portId -> new TcEqpPortStatus(1L, 1L, portId, null, "IDLE", null, null, null, OffsetDateTime.now()))
+                        .map(portId -> new UiEqpPortStatus(1L, 1L, portId, null, "IDLE", null, null, null, OffsetDateTime.now()))
                         .toList(),
                 List.of(),
                 List.of(),

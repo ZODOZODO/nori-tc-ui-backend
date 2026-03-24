@@ -3,11 +3,12 @@ package com.nori.tc.ui.adapter.db;
 import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.model.store.TcModelStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModel;
-import com.nori.tc.db.domain.model.TcModel;
+import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.port.db.ModelCrudPort;
+import com.nori.tc.ui.domain.model.UiModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -53,7 +54,7 @@ public class JpaModelCrudPort implements ModelCrudPort {
      * @return 저장 후 모델 스냅샷
      */
     @Override
-    public TcModel upsert(final UpsertTcModel command) {
+    public UiModel upsert(final UpsertTcModel command) {
         if (log.isDebugEnabled()) {
             log.debug("모델 업서트 시작. modelVersionKeyCompatibility={}, modelName={}, modelVersion={}",
                     command == null ? null : command.modelKey(),
@@ -62,7 +63,7 @@ public class JpaModelCrudPort implements ModelCrudPort {
         }
 
         try {
-            final TcModel saved = modelStore.upsert(command);
+            final UiModel saved = UiModelDbMapper.toDomain(modelStore.upsert(command));
             if (log.isDebugEnabled()) {
                 log.debug("모델 업서트 완료. modelVersionKey={}, modelKey={}, modelName={}, modelVersion={}",
                         saved.modelVersionKey(), saved.modelKey(), saved.modelName(), saved.modelVersion());
@@ -91,7 +92,7 @@ public class JpaModelCrudPort implements ModelCrudPort {
      * @return 조회 결과(없으면 빈 Optional)
      */
     @Override
-    public Optional<TcModel> findByModelVersionKey(final long modelVersionKey) {
+    public Optional<UiModel> findByModelVersionKey(final long modelVersionKey) {
         if (modelVersionKey <= 0) {
             log.warn("모델 단건 조회 요청 거부 - modelVersionKey는 1 이상이어야 합니다. modelVersionKey={}", modelVersionKey);
             throw new UiBadRequestException("modelVersionKey는 1 이상이어야 합니다.");
@@ -102,7 +103,8 @@ public class JpaModelCrudPort implements ModelCrudPort {
         }
 
         try {
-            final Optional<TcModel> result = modelStore.findByModelVersionKey(modelVersionKey);
+            final Optional<UiModel> result = modelStore.findByModelVersionKey(modelVersionKey)
+                    .map(UiModelDbMapper::toDomain);
             if (log.isDebugEnabled()) {
                 log.debug("모델 단건 조회 완료. modelVersionKey={}, found={}", modelVersionKey, result.isPresent());
             }
@@ -125,7 +127,7 @@ public class JpaModelCrudPort implements ModelCrudPort {
      * @return 목록 + count 페이지 응답
      */
     @Override
-    public PagedResponse<TcModel> findAll(final PageRequest pageRequest) {
+    public PagedResponse<UiModel> findAll(final PageRequest pageRequest) {
         final PageRequest effectivePage = (pageRequest == null) ? PageRequest.defaultPage() : pageRequest;
 
         if (log.isDebugEnabled()) {
@@ -133,15 +135,18 @@ public class JpaModelCrudPort implements ModelCrudPort {
         }
 
         try {
-            final List<TcModel> items = modelStore.findAll(effectivePage);
+            final List<com.nori.tc.db.domain.model.TcModel> dbItems = modelStore.findAll(effectivePage);
             final long totalCount = UiDbPagedCountSupport.resolveTotalCount(
-                    items,
+                    dbItems,
                     effectivePage,
                     UiDbPagedCountSupport.DEFAULT_COUNT_SCAN_LIMIT,
                     modelStore::findAll,
                     log,
                     "model"
             );
+            final List<UiModel> items = dbItems.stream()
+                    .map(UiModelDbMapper::toDomain)
+                    .toList();
 
             if (log.isDebugEnabled()) {
                 log.debug("모델 목록 조회 완료. offset={}, limit={}, pageSize={}, totalCount={}",

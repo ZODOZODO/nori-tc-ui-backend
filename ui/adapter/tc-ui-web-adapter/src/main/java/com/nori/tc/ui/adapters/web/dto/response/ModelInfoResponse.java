@@ -1,7 +1,7 @@
 package com.nori.tc.ui.adapters.web.dto.response;
 
-import com.nori.tc.db.domain.common.model.ModelStatus;
-import com.nori.tc.db.domain.common.model.ProtocolType;
+import com.nori.tc.ui.domain.common.model.UiModelStatus;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
 
 import java.time.OffsetDateTime;
 
@@ -28,8 +28,8 @@ public record ModelInfoResponse(
         String modelName,
         String parentModel,
         String modelVersion,
-        ProtocolType commInterface,
-        ModelStatus status,
+        UiProtocolType commInterface,
+        UiModelStatus status,
         String description,
         String maker,
         OffsetDateTime createdAt,

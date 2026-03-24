@@ -6,6 +6,7 @@ import com.nori.tc.ui.adapters.kafka.config.UiKafkaTopicProperties;
 import com.nori.tc.ui.adapters.redis.config.UiRedisAdapterAutoConfiguration;
 import com.nori.tc.ui.adapters.redis.config.UiRedisProperties;
 import com.nori.tc.ui.adapters.web.config.UiWebAdapterAutoConfiguration;
+import com.nori.tc.ui.core.auth.UiAuthAsyncExecutor;
 import com.nori.tc.ui.core.properties.UiDeployProperties;
 import com.nori.tc.ui.core.service.EqpManagementService;
 import org.slf4j.Logger;
@@ -18,6 +19,7 @@ import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Import;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskDecorator;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -64,6 +66,11 @@ public class TcUiBackendAutoConfiguration {
     private static final int EQP_MANAGEMENT_EXECUTOR_QUEUE_CAPACITY = 128;
     private static final int EQP_MANAGEMENT_EXECUTOR_AWAIT_TERMINATION_SECONDS = 10;
     private static final String EQP_MANAGEMENT_EXECUTOR_THREAD_PREFIX = "ui-eqp-management-";
+    private static final int AUTH_EXECUTOR_CORE_POOL_SIZE = 2;
+    private static final int AUTH_EXECUTOR_MAX_POOL_SIZE = 2;
+    private static final int AUTH_EXECUTOR_QUEUE_CAPACITY = 256;
+    private static final int AUTH_EXECUTOR_AWAIT_TERMINATION_SECONDS = 10;
+    private static final String AUTH_EXECUTOR_THREAD_PREFIX = "ui-auth-";
 
     /**
      * AutoConfiguration 클래스 인스턴스화 시점에 기동 시작 로그를 출력합니다.
@@ -113,6 +120,45 @@ public class TcUiBackendAutoConfiguration {
     }
 
     /**
+     * 인증 세션 후처리(lastSeenAt 등) 전용 ThreadPoolTaskExecutor를 등록합니다.
+     *
+     * <p>인증 경로에서 {@code ForkJoinPool.commonPool}을 사용하지 않도록 전용 executor를 분리합니다.</p>
+     *
+     * @return 인증 비동기 처리 전용 ThreadPoolTaskExecutor
+     */
+    @Bean(name = "uiAuthTaskExecutor")
+    public ThreadPoolTaskExecutor uiAuthTaskExecutor() {
+        final ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(AUTH_EXECUTOR_CORE_POOL_SIZE);
+        executor.setMaxPoolSize(AUTH_EXECUTOR_MAX_POOL_SIZE);
+        executor.setQueueCapacity(AUTH_EXECUTOR_QUEUE_CAPACITY);
+        executor.setThreadNamePrefix(AUTH_EXECUTOR_THREAD_PREFIX);
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(AUTH_EXECUTOR_AWAIT_TERMINATION_SECONDS);
+        executor.setTaskDecorator(copyMdcAndContextClassLoaderTaskDecorator());
+        executor.initialize();
+
+        log.info("인증 비동기 executor 초기화 완료. corePoolSize={}, maxPoolSize={}, queueCapacity={}",
+                AUTH_EXECUTOR_CORE_POOL_SIZE,
+                AUTH_EXECUTOR_MAX_POOL_SIZE,
+                AUTH_EXECUTOR_QUEUE_CAPACITY);
+        return executor;
+    }
+
+    /**
+     * 코어 계층이 사용할 인증 비동기 executor 추상화를 노출합니다.
+     *
+     * @param taskExecutor Spring이 관리하는 인증 executor
+     * @return 코어가 사용하는 executor 추상화
+     */
+    @Bean
+    public UiAuthAsyncExecutor uiAuthAsyncExecutor(
+            @Qualifier("uiAuthTaskExecutor") final ThreadPoolTaskExecutor taskExecutor
+    ) {
+        return taskExecutor::execute;
+    }
+
+    /**
      * 애플리케이션 기동 완료 후 UI Backend 구성 요약을 로그로 출력합니다.
      *
      * <p>운영자가 기동 직후 로그 한 줄로 주요 구성(토픽, Redis 연결) 이상 유무를
@@ -132,6 +178,7 @@ public class TcUiBackendAutoConfiguration {
             log.info("UI_BOOT_COMPONENT_READY. component=WebSecurity");
             log.info("UI_BOOT_COMPONENT_READY. component=KafkaTopics");
             log.info("UI_BOOT_COMPONENT_READY. component=DualRedis");
+            log.info("UI_BOOT_COMPONENT_READY. component=AuthExecutor");
 
             final String appName = event.getApplicationContext()
                     .getEnvironment()

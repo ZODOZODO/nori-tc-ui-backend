@@ -1,6 +1,6 @@
 package com.nori.tc.ui.core.port.db;
 
-import com.nori.tc.db.domain.model.TcModelMdf;
+import com.nori.tc.ui.domain.model.UiModelMdf;
 
 import java.util.List;
 
@@ -32,7 +32,7 @@ public interface ModelDetailCommandPort {
      * @param mdfFile UTF-8 XML 바이트
      * @return 저장된 MDF
      */
-    TcModelMdf saveMdf(long modelVersionKey, String mdfName, byte[] mdfFile);
+    UiModelMdf saveMdf(long modelVersionKey, String mdfName, byte[] mdfFile);
 
     /**
      * 일반 상세 테이블 row 저장 명령입니다.

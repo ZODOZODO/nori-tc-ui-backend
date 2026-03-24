@@ -1,6 +1,6 @@
 package com.nori.tc.ui.core.port.db;
 
-import com.nori.tc.db.domain.user.TcUiPermission;
+import com.nori.tc.ui.domain.useradmin.UiPermission;
 
 import java.util.List;
 
@@ -30,5 +30,5 @@ public interface UiApiPermissionPort {
      *
      * @return 활성 API 권한 목록 (순서 미보장, 비어있을 수 있음)
      */
-    List<TcUiPermission> findAllActiveApiPermissions();
+    List<UiPermission> findAllActiveApiPermissions();
 }

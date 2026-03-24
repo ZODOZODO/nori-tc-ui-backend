@@ -1,20 +1,22 @@
 package com.nori.tc.ui.core.usecase;
 
-import com.nori.tc.db.domain.common.user.UserStatus;
-import com.nori.tc.db.domain.user.TcUiAuthSession;
-import com.nori.tc.db.domain.user.TcUserInfo;
+import com.nori.tc.ui.core.auth.UiAuthMetrics;
 import com.nori.tc.ui.core.exception.UiAuthenticationException;
 import com.nori.tc.ui.core.port.db.PasswordVerifierPort;
 import com.nori.tc.ui.core.port.db.SessionPort;
 import com.nori.tc.ui.core.port.db.UserPort;
 import com.nori.tc.ui.core.properties.UiAuthProperties;
 import com.nori.tc.ui.domain.auth.AuthToken;
+import com.nori.tc.ui.domain.auth.UiAuthSessionCreateCommand;
+import com.nori.tc.ui.domain.auth.UiUserAccount;
+import com.nori.tc.ui.domain.auth.UiUserStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.security.SecureRandom;
 import java.time.OffsetDateTime;
+import java.util.Objects;
 
 /**
  * 로그인(인증 세션 발급) 유스케이스입니다.
@@ -50,17 +52,20 @@ public class LoginUseCase {
     private final SessionPort sessionPort;
     private final PasswordVerifierPort passwordVerifierPort;
     private final UiAuthProperties authProperties;
+    private final UiAuthMetrics authMetrics;
 
     public LoginUseCase(
             final UserPort userPort,
             final SessionPort sessionPort,
             final PasswordVerifierPort passwordVerifierPort,
-            final UiAuthProperties authProperties
+            final UiAuthProperties authProperties,
+            final UiAuthMetrics authMetrics
     ) {
-        this.userPort = userPort;
-        this.sessionPort = sessionPort;
-        this.passwordVerifierPort = passwordVerifierPort;
-        this.authProperties = authProperties;
+        this.userPort = Objects.requireNonNull(userPort, "userPort is null");
+        this.sessionPort = Objects.requireNonNull(sessionPort, "sessionPort is null");
+        this.passwordVerifierPort = Objects.requireNonNull(passwordVerifierPort, "passwordVerifierPort is null");
+        this.authProperties = Objects.requireNonNull(authProperties, "authProperties is null");
+        this.authMetrics = Objects.requireNonNull(authMetrics, "authMetrics is null");
     }
 
     /**
@@ -77,21 +82,24 @@ public class LoginUseCase {
         log.debug("로그인 시도. userIdNorm={}", userIdNorm);
 
         // 사용자 조회: 존재하지 않으면 인증 실패
-        final TcUserInfo userInfo = userPort.findByUserIdNorm(userIdNorm)
+        final UiUserAccount userInfo = userPort.findByUserIdNorm(userIdNorm)
                 .orElseThrow(() -> {
                     // 사용자 미존재 여부를 외부에 노출하지 않기 위해 동일 메시지 사용
+                    authMetrics.recordLoginFailure("user_not_found");
                     log.warn("로그인 실패 - 사용자 없음. userIdNorm={}", userIdNorm);
                     return new UiAuthenticationException("아이디 또는 비밀번호가 올바르지 않습니다.");
                 });
 
         // 계정 상태 확인: ACTIVE가 아니면 로그인 불가
-        if (userInfo.status() != UserStatus.ACTIVE) {
+        if (userInfo.status() != UiUserStatus.ACTIVE) {
+            authMetrics.recordLoginFailure("inactive_account");
             log.warn("로그인 실패 - 비활성 계정. userIdNorm={}, status={}", userIdNorm, userInfo.status());
             throw new UiAuthenticationException("사용 불가능한 계정입니다.");
         }
 
         // 비밀번호 검증: BCrypt 비교 (PasswordVerifierPort가 BCrypt 구현 제공)
         if (!passwordVerifierPort.matches(rawPassword, userInfo.passwordHash())) {
+            authMetrics.recordLoginFailure("password_mismatch");
             log.warn("로그인 실패 - 비밀번호 불일치. userIdNorm={}", userIdNorm);
             throw new UiAuthenticationException("아이디 또는 비밀번호가 올바르지 않습니다.");
         }
@@ -102,8 +110,16 @@ public class LoginUseCase {
         final OffsetDateTime expiresAt = now.plusHours(authProperties.sessionTtlHours());
         final long userPk = userInfo.userPk();
 
-        final TcUiAuthSession session = new TcUiAuthSession(token, userPk, now, expiresAt, null, false);
+        final UiAuthSessionCreateCommand session = new UiAuthSessionCreateCommand(
+                token,
+                userPk,
+                now,
+                expiresAt,
+                null,
+                false
+        );
         sessionPort.save(session);
+        authMetrics.recordLoginSuccess();
 
         log.info("로그인 성공. userIdNorm={}, userPk={}, expiresAt={}", userIdNorm, userPk, expiresAt);
         return new AuthToken(token, userPk, now, expiresAt);

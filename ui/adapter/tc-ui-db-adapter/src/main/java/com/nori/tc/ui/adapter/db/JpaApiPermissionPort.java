@@ -4,7 +4,9 @@ import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.user.store.TcUiPermissionStore;
 import com.nori.tc.db.domain.common.user.TcUiPermissionResourceType;
 import com.nori.tc.db.domain.user.TcUiPermission;
+import com.nori.tc.ui.adapter.db.mapper.UiUserAdminDbMapper;
 import com.nori.tc.ui.core.port.db.UiApiPermissionPort;
+import com.nori.tc.ui.domain.useradmin.UiPermission;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -61,12 +63,13 @@ public class JpaApiPermissionPort implements UiApiPermissionPort {
      * @return 활성 API 권한 목록
      */
     @Override
-    public List<TcUiPermission> findAllActiveApiPermissions() {
+    public List<UiPermission> findAllActiveApiPermissions() {
         final List<TcUiPermission> all = permissionStore.findAll(PageRequest.of(0, MAX_PERMISSION_LOAD));
 
-        final List<TcUiPermission> apiPermissions = all.stream()
+        final List<UiPermission> apiPermissions = all.stream()
                 .filter(TcUiPermission::isActive)
                 .filter(p -> p.resourceType() == TcUiPermissionResourceType.API)
+                .map(UiUserAdminDbMapper::toDomain)
                 .toList();
 
         log.debug("활성 API 권한 로드. 전체={}건, API 활성={}건", all.size(), apiPermissions.size());

@@ -1,6 +1,6 @@
 package com.nori.tc.ui.adapters.web.dto.request;
 
-import com.nori.tc.db.domain.common.eqp.LogLevel;
+import com.nori.tc.ui.domain.common.eqp.UiLogLevel;
 
 /**
  * EQP 관리 요청 DTO에서 공통으로 사용하는 중첩 설정 모델 모음입니다.
@@ -19,7 +19,7 @@ public final class EqpManagementRequestSupport {
      * @param logPath 로그 경로
      */
     public record LogSettingsRequest(
-            LogLevel logLevel,
+            UiLogLevel logLevel,
             Integer logRetentionDays,
             String logPath
     ) {

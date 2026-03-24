@@ -1,7 +1,7 @@
 package com.nori.tc.ui.core.port.db;
 
-import com.nori.tc.db.domain.common.model.ProtocolType;
-import com.nori.tc.db.domain.model.TcModel;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
+import com.nori.tc.ui.domain.model.UiModel;
 
 /**
  * root model 생성/수정/삭제를 담당하는 관리 포트입니다.
@@ -25,7 +25,7 @@ public interface ModelRootCommandPort {
      */
     record CreateRootModelCommand(
             String modelName,
-            ProtocolType commInterface,
+            UiProtocolType commInterface,
             String maker,
             String currentUser
     ) {
@@ -53,7 +53,7 @@ public interface ModelRootCommandPort {
      * @param command 생성 명령
      * @return 생성된 최신 모델 버전 스냅샷
      */
-    TcModel createRootModel(CreateRootModelCommand command);
+    UiModel createRootModel(CreateRootModelCommand command);
 
     /**
      * root model의 공통 정보를 수정합니다.
@@ -61,7 +61,7 @@ public interface ModelRootCommandPort {
      * @param command 수정 명령
      * @return 수정 후 최신 모델 버전 스냅샷
      */
-    TcModel updateRootModelInfo(UpdateRootModelInfoCommand command);
+    UiModel updateRootModelInfo(UpdateRootModelInfoCommand command);
 
     /**
      * model_key 기준으로 모델을 삭제합니다.

@@ -1,6 +1,5 @@
 package com.nori.tc.ui.adapters.web.controller;
 
-import com.nori.tc.db.domain.eqp.TcEqpPortStatus;
 import com.nori.tc.ui.adapters.web.demo.DemoRunResponse;
 import com.nori.tc.ui.adapters.web.demo.DemoTargetResponse;
 import com.nori.tc.ui.adapters.web.demo.DemoTesterClient;
@@ -13,6 +12,7 @@ import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.core.service.EqpManagementService;
+import com.nori.tc.ui.domain.eqp.UiEqpPortStatus;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -114,7 +114,7 @@ public class DemoController {
 
     private List<String> resolveAvailablePortIds(final EqpManagementSnapshot snapshot) {
         final List<String> portIds = snapshot.portStatuses().stream()
-                .map(TcEqpPortStatus::portId)
+                .map(UiEqpPortStatus::portId)
                 .filter(portId -> portId != null && !portId.isBlank())
                 .collect(java.util.stream.Collectors.collectingAndThen(
                         java.util.stream.Collectors.toCollection(LinkedHashSet::new),

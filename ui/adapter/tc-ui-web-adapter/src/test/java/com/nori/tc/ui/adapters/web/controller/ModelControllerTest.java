@@ -1,10 +1,5 @@
 package com.nori.tc.ui.adapters.web.controller;
 
-import com.nori.tc.db.domain.common.model.ModelStatus;
-import com.nori.tc.db.domain.common.model.ProtocolType;
-import com.nori.tc.db.domain.model.TcModel;
-import com.nori.tc.db.domain.model.TcModelMdf;
-import com.nori.tc.db.domain.model.TcModelWorkflow;
 import com.nori.tc.ui.adapters.web.dto.request.ModelDetailSaveRequest;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.adapters.web.dto.response.ModelDetailDataResponse;
@@ -15,6 +10,11 @@ import com.nori.tc.ui.core.port.db.ModelDetailCommandPort;
 import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
 import com.nori.tc.ui.core.port.db.ModelParentCommitPort;
 import com.nori.tc.ui.core.port.db.ModelRootCommandPort;
+import com.nori.tc.ui.domain.common.model.UiModelStatus;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
+import com.nori.tc.ui.domain.model.UiModel;
+import com.nori.tc.ui.domain.model.UiModelMdf;
+import com.nori.tc.ui.domain.model.UiModelWorkflow;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -45,8 +45,8 @@ class ModelControllerTest {
     @DisplayName("workflow 상세 조회는 filter/data index preview 값을 함께 반환합니다")
     void getDetailReturnsWorkflowPreviewValues() {
         final Fixture fixture = new Fixture();
-        final TcModel model = model(101L);
-        final TcModelWorkflow workflow = new TcModelWorkflow(
+        final UiModel model = model(101L);
+        final UiModelWorkflow workflow = new UiModelWorkflow(
                 77L,
                 101L,
                 "WF_READY",
@@ -189,8 +189,8 @@ class ModelControllerTest {
     @DisplayName("MDF 업로드는 기존 이름을 유지해 저장하고 저장 결과를 반환합니다")
     void uploadMdfSavesValidatedXml() {
         final Fixture fixture = new Fixture();
-        final TcModel model = model(101L);
-        final TcModelMdf existing = mdf(88L, 101L, "EXISTING_MDF", "<mdf><old/></mdf>");
+        final UiModel model = model(101L);
+        final UiModelMdf existing = mdf(88L, 101L, "EXISTING_MDF", "<mdf><old/></mdf>");
         final String xml = "<mdf><message name=\"REQ\">OK</message></mdf>";
         final MockMultipartFile file = new MockMultipartFile(
                 "file",
@@ -218,16 +218,16 @@ class ModelControllerTest {
         assertEquals(xml, new String(xmlCaptor.getValue(), StandardCharsets.UTF_8));
     }
 
-    private static TcModel model(final long modelVersionKey) {
+    private static UiModel model(final long modelVersionKey) {
         final OffsetDateTime now = OffsetDateTime.parse("2026-03-13T10:15:30+09:00");
-        return new TcModel(
+        return new UiModel(
                 modelVersionKey,
                 11L,
                 "MODEL-A",
                 null,
                 "EDIT",
-                ProtocolType.SECS,
-                ModelStatus.OPERATE,
+                UiProtocolType.SECS,
+                UiModelStatus.OPERATE,
                 "desc",
                 "NORI",
                 now,
@@ -237,13 +237,13 @@ class ModelControllerTest {
         );
     }
 
-    private static TcModelMdf mdf(
+    private static UiModelMdf mdf(
             final long mdfKey,
             final long modelVersionKey,
             final String mdfName,
             final String xml
     ) {
-        return new TcModelMdf(
+        return new UiModelMdf(
                 mdfKey,
                 modelVersionKey,
                 mdfName,

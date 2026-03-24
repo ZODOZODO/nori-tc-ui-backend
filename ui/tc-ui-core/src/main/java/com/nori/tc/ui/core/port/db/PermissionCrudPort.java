@@ -2,8 +2,8 @@ package com.nori.tc.ui.core.port.db;
 
 import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.user.upsert.UpsertTcUiPermission;
-import com.nori.tc.db.domain.user.TcUiPermission;
 import com.nori.tc.ui.core.model.PagedResponse;
+import com.nori.tc.ui.domain.useradmin.UiPermission;
 
 import java.util.Optional;
 
@@ -30,7 +30,7 @@ public interface PermissionCrudPort {
      * @param command 저장/수정 입력 명령
      * @return 저장 후 권한 정보
      */
-    TcUiPermission upsert(UpsertTcUiPermission command);
+    UiPermission upsert(UpsertTcUiPermission command);
 
     /**
      * 권한 PK 기준 단건을 조회합니다.
@@ -38,7 +38,7 @@ public interface PermissionCrudPort {
      * @param permId 권한 기본 키
      * @return 조회 결과, 미존재 시 빈 Optional
      */
-    Optional<TcUiPermission> findByPermId(long permId);
+    Optional<UiPermission> findByPermId(long permId);
 
     /**
      * 권한 목록을 페이지 단위로 조회합니다.
@@ -46,7 +46,7 @@ public interface PermissionCrudPort {
      * @param pageRequest offset/limit 기반 페이지 요청
      * @return 페이지 응답(목록 + 전체 건수)
      */
-    PagedResponse<TcUiPermission> findAll(PageRequest pageRequest);
+    PagedResponse<UiPermission> findAll(PageRequest pageRequest);
 
     /**
      * 권한 PK 기준으로 삭제합니다.

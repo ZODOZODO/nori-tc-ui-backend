@@ -1,6 +1,6 @@
 package com.nori.tc.ui.adapters.web.controller.support;
 
-import com.nori.tc.db.domain.model.TcModelWorkflow;
+import com.nori.tc.ui.domain.model.UiModelWorkflow;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,7 +22,7 @@ public final class ModelDetailPreviewSupport {
      * @param workflow workflow 원본 row
      * @return 컬럼 순서에 맞는 preview 값 목록
      */
-    public static List<String> buildWorkflowPreviewValues(final TcModelWorkflow workflow) {
+    public static List<String> buildWorkflowPreviewValues(final UiModelWorkflow workflow) {
         final List<String> previewValues = new ArrayList<>(List.of(
                 nullToEmpty(workflow.workflowName()),
                 nullToEmpty(workflow.messageName()),

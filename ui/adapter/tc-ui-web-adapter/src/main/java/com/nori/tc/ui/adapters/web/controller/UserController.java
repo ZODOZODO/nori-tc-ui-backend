@@ -4,8 +4,6 @@ import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.user.upsert.UpsertTcUserGroupMember;
 import com.nori.tc.db.core.user.upsert.UpsertTcUserInfo;
 import com.nori.tc.db.domain.common.user.UserStatus;
-import com.nori.tc.db.domain.user.TcUserGroupMember;
-import com.nori.tc.db.domain.user.TcUserInfo;
 import com.nori.tc.ui.adapters.web.controller.support.UiPageRequestSupport;
 import com.nori.tc.ui.adapters.web.dto.request.UserPasswordResetRequest;
 import com.nori.tc.ui.adapters.web.dto.request.UserUpsertRequest;
@@ -16,6 +14,8 @@ import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.port.db.UserCrudPort;
 import com.nori.tc.ui.core.port.db.UserGroupMappingPort;
+import com.nori.tc.ui.domain.useradmin.UiManagedUser;
+import com.nori.tc.ui.domain.useradmin.UiUserGroupMember;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -105,7 +105,7 @@ public class UserController {
             log.debug("사용자 목록 조회 요청. offset={}, limit={}", pageRequest.offset(), pageRequest.limit());
         }
 
-        final PagedResponse<TcUserInfo> page = userCrudPort.findAll(pageRequest);
+        final PagedResponse<UiManagedUser> page = userCrudPort.findAll(pageRequest);
         final PagedResponse<UserInfoResponse> responsePage = toUserPage(page);
 
         if (log.isDebugEnabled()) {
@@ -130,7 +130,7 @@ public class UserController {
             log.debug("사용자 단건 조회 요청. userPk={}", userPk);
         }
 
-        final Optional<TcUserInfo> optionalUser = userCrudPort.findByUserPk(userPk);
+        final Optional<UiManagedUser> optionalUser = userCrudPort.findByUserPk(userPk);
         if (optionalUser.isEmpty()) {
             log.warn("사용자 단건 조회 결과 없음. userPk={}", userPk);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -160,7 +160,7 @@ public class UserController {
                 resolveStatusForCreate(request.status())
         );
 
-        final TcUserInfo created = userCrudPort.upsert(command);
+        final UiManagedUser created = userCrudPort.upsert(command);
         log.info("사용자 등록 완료. userPk={}, userIdNorm={}", created.userPk(), created.userIdNorm());
 
         return ResponseEntity.ok(ApiResponse.success(toUserInfoResponse(created)));
@@ -180,18 +180,20 @@ public class UserController {
     ) {
         log.info("사용자 수정 요청. userPk={}, userId={}, email={}", userPk, request.userId(), request.email());
 
-        final Optional<TcUserInfo> optionalExisting = userCrudPort.findByUserPk(userPk);
+        final Optional<UiManagedUser> optionalExisting = userCrudPort.findByUserPk(userPk);
         if (optionalExisting.isEmpty()) {
             log.warn("사용자 수정 대상 없음. userPk={}", userPk);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ApiResponse.error("NOT_FOUND", "수정할 사용자를 찾을 수 없습니다."));
         }
 
-        final TcUserInfo existing = optionalExisting.get();
+        final UiManagedUser existing = optionalExisting.get();
         final String passwordHash = hasText(request.password())
                 ? PASSWORD_ENCODER.encode(request.password().trim())
                 : existing.passwordHash();
-        final UserStatus status = (request.status() == null) ? existing.status() : request.status();
+        final UserStatus status = (request.status() == null)
+                ? UserStatus.valueOf(existing.status().name())
+                : request.status();
 
         final UpsertTcUserInfo command = buildUserUpsertCommand(
                 userPk,
@@ -200,7 +202,7 @@ public class UserController {
                 status
         );
 
-        final TcUserInfo updated = userCrudPort.upsert(command);
+        final UiManagedUser updated = userCrudPort.upsert(command);
         log.info("사용자 수정 완료. userPk={}, userIdNorm={}", updated.userPk(), updated.userIdNorm());
 
         return ResponseEntity.ok(ApiResponse.success(toUserInfoResponse(updated)));
@@ -243,7 +245,7 @@ public class UserController {
                 null,
                 DEFAULT_GRANTED_BY
         );
-        final TcUserGroupMember saved = userGroupMappingPort.upsert(command);
+        final UiUserGroupMember saved = userGroupMappingPort.upsert(command);
 
         log.info("사용자-그룹 매핑 생성 완료. ugmKey={}, userPk={}, groupId={}",
                 saved.ugmKey(), saved.userPk(), saved.groupId());
@@ -283,14 +285,14 @@ public class UserController {
     ) {
         log.info("사용자 비밀번호 초기화 요청. userPk={}", userPk);
 
-        final Optional<TcUserInfo> optionalExisting = userCrudPort.findByUserPk(userPk);
+        final Optional<UiManagedUser> optionalExisting = userCrudPort.findByUserPk(userPk);
         if (optionalExisting.isEmpty()) {
             log.warn("사용자 비밀번호 초기화 대상 없음. userPk={}", userPk);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ApiResponse.error("NOT_FOUND", "비밀번호를 초기화할 사용자를 찾을 수 없습니다."));
         }
 
-        final TcUserInfo existing = optionalExisting.get();
+        final UiManagedUser existing = optionalExisting.get();
         final String passwordHash = PASSWORD_ENCODER.encode(request.newPassword().trim());
 
         final UpsertTcUserInfo command = new UpsertTcUserInfo(
@@ -302,7 +304,7 @@ public class UserController {
                 existing.userIdNorm(),
                 passwordHash,
                 existing.email(),
-                existing.status(),
+                UserStatus.valueOf(existing.status().name()),
                 existing.createdBy(),
                 request.updatedBy()
         );
@@ -408,7 +410,7 @@ public class UserController {
      * @param page 도메인 페이지 응답
      * @return API 응답 페이지
      */
-    private static PagedResponse<UserInfoResponse> toUserPage(final PagedResponse<TcUserInfo> page) {
+    private static PagedResponse<UserInfoResponse> toUserPage(final PagedResponse<UiManagedUser> page) {
         final List<UserInfoResponse> items = page.items().stream()
                 .map(UserController::toUserInfoResponse)
                 .toList();
@@ -421,7 +423,7 @@ public class UserController {
      * @param user 도메인 사용자 객체
      * @return 응답 DTO
      */
-    private static UserInfoResponse toUserInfoResponse(final TcUserInfo user) {
+    private static UserInfoResponse toUserInfoResponse(final UiManagedUser user) {
         return new UserInfoResponse(
                 user.userPk(),
                 user.company(),
@@ -444,7 +446,7 @@ public class UserController {
      * @param mapping 도메인 매핑 객체
      * @return 응답 DTO
      */
-    private static UserGroupMappingResponse toUserGroupMappingResponse(final TcUserGroupMember mapping) {
+    private static UserGroupMappingResponse toUserGroupMappingResponse(final UiUserGroupMember mapping) {
         return new UserGroupMappingResponse(
                 mapping.ugmKey(),
                 mapping.userPk(),
@@ -454,4 +456,3 @@ public class UserController {
         );
     }
 }
-

@@ -1,12 +1,11 @@
 package com.nori.tc.ui.adapter.db;
 
-import com.nori.tc.db.domain.common.model.ModelStatus;
 import com.nori.tc.ui.core.eqp.EqpManagementOptions;
 import com.nori.tc.ui.core.port.db.EqpOptionsQueryPort;
+import com.nori.tc.ui.domain.common.model.UiModelStatus;
 import org.springframework.stereotype.Repository;
 
 import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 
@@ -31,21 +30,19 @@ public class JpaEqpOptionsQueryPort implements EqpOptionsQueryPort {
                 .sorted(String::compareToIgnoreCase)
                 .toList();
 
-        final List<String> gatewayJarFileNames = new LinkedHashSet<>(dbSupport.loadAllEqps().stream()
-                .map(eqp -> eqp.eqpKey() == null ? null : dbSupport.findLatestGatewayJarByFileName(
-                        dbSupport.loadSnapshotByEqpId(eqp.eqpId())
-                                .map(snapshot -> snapshot.gatewayJar() == null ? null : snapshot.gatewayJar().jarFileName())
-                                .orElse(null)
-                ).map(jar -> jar.jarFileName()).orElse(null))
-                .filter(Objects::nonNull)
-                .toList()).stream().sorted(String::compareToIgnoreCase).toList();
+        final List<EqpManagementOptions.JarOption> gatewayJarOptions = dbSupport.loadAllGatewayJars().stream()
+                .map(jar -> new EqpManagementOptions.JarOption(jar.gatewayJarKey(), jar.jarFileName()))
+                .sorted(Comparator
+                        .comparing(EqpManagementOptions.JarOption::jarFileName, String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(EqpManagementOptions.JarOption::jarRef))
+                .toList();
 
-        final List<String> businessJarFileNames = new LinkedHashSet<>(dbSupport.loadAllEqps().stream()
-                .map(eqp -> eqp.eqpKey() == null ? null : dbSupport.loadSnapshotByEqpId(eqp.eqpId())
-                        .map(snapshot -> snapshot.businessJar() == null ? null : snapshot.businessJar().jarFileName())
-                        .orElse(null))
-                .filter(Objects::nonNull)
-                .toList()).stream().sorted(String::compareToIgnoreCase).toList();
+        final List<EqpManagementOptions.JarOption> businessJarOptions = dbSupport.loadAllBusinessJars().stream()
+                .map(jar -> new EqpManagementOptions.JarOption(jar.businessJarKey(), jar.jarFileName()))
+                .sorted(Comparator
+                        .comparing(EqpManagementOptions.JarOption::jarFileName, String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(EqpManagementOptions.JarOption::jarRef))
+                .toList();
 
         final List<EqpManagementOptions.ModelOption> allModelOptions = dbSupport.loadAllModels().stream()
                 .map(model -> new EqpManagementOptions.ModelOption(
@@ -57,24 +54,26 @@ public class JpaEqpOptionsQueryPort implements EqpOptionsQueryPort {
                         model.commInterface(),
                         model.status()
                 ))
-                .sorted(Comparator
-                        .comparing(EqpManagementOptions.ModelOption::commInterface)
+                .sorted(Comparator.<EqpManagementOptions.ModelOption, String>comparing(
+                                option -> option.commInterface() == null ? "" : option.commInterface().name(),
+                                String.CASE_INSENSITIVE_ORDER
+                        )
                         .thenComparing(EqpManagementOptions.ModelOption::modelName, String.CASE_INSENSITIVE_ORDER)
                         .thenComparing(option -> option.parentModel() == null ? "" : option.parentModel(), String.CASE_INSENSITIVE_ORDER)
                         .thenComparing(EqpManagementOptions.ModelOption::modelVersion, String.CASE_INSENSITIVE_ORDER))
                 .toList();
 
         final List<EqpManagementOptions.ModelOption> developModelOptions = allModelOptions.stream()
-                .filter(option -> option.status() == ModelStatus.DEVELOP)
+                .filter(option -> option.status() == UiModelStatus.DEVELOP)
                 .toList();
         final List<EqpManagementOptions.ModelOption> operateModelOptions = allModelOptions.stream()
-                .filter(option -> option.status() == ModelStatus.OPERATE)
+                .filter(option -> option.status() == UiModelStatus.OPERATE)
                 .toList();
 
         return new EqpManagementOptions(
                 socketProtocolTypes,
-                gatewayJarFileNames,
-                businessJarFileNames,
+                gatewayJarOptions,
+                businessJarOptions,
                 developModelOptions,
                 operateModelOptions
         );

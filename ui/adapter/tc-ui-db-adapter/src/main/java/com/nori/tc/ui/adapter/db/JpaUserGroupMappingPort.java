@@ -4,10 +4,12 @@ import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.user.store.TcUserGroupMemberStore;
 import com.nori.tc.db.core.user.upsert.UpsertTcUserGroupMember;
 import com.nori.tc.db.domain.user.TcUserGroupMember;
+import com.nori.tc.ui.adapter.db.mapper.UiUserAdminDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.port.db.UserGroupMappingPort;
+import com.nori.tc.ui.domain.useradmin.UiUserGroupMember;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -50,7 +52,7 @@ public class JpaUserGroupMappingPort implements UserGroupMappingPort {
      * @return 저장 후 매핑 정보
      */
     @Override
-    public TcUserGroupMember upsert(final UpsertTcUserGroupMember command) {
+    public UiUserGroupMember upsert(final UpsertTcUserGroupMember command) {
         if (log.isDebugEnabled()) {
             log.debug("사용자-그룹 매핑 업서트 시작. ugmKey={}, userPk={}, groupId={}",
                     command == null ? null : command.ugmKey(),
@@ -59,7 +61,7 @@ public class JpaUserGroupMappingPort implements UserGroupMappingPort {
         }
 
         try {
-            final TcUserGroupMember saved = userGroupMemberStore.upsert(command);
+            final UiUserGroupMember saved = UiUserAdminDbMapper.toDomain(userGroupMemberStore.upsert(command));
             if (log.isDebugEnabled()) {
                 log.debug("사용자-그룹 매핑 업서트 완료. ugmKey={}, userPk={}, groupId={}",
                         saved.ugmKey(), saved.userPk(), saved.groupId());
@@ -89,7 +91,7 @@ public class JpaUserGroupMappingPort implements UserGroupMappingPort {
      * @return 조회 결과(없으면 빈 Optional)
      */
     @Override
-    public Optional<TcUserGroupMember> findByUserPkAndGroupId(final long userPk, final long groupId) {
+    public Optional<UiUserGroupMember> findByUserPkAndGroupId(final long userPk, final long groupId) {
         if (userPk <= 0 || groupId <= 0) {
             log.warn("사용자-그룹 매핑 단건 조회 요청 거부 - userPk/groupId는 1 이상이어야 합니다. userPk={}, groupId={}",
                     userPk, groupId);
@@ -101,7 +103,8 @@ public class JpaUserGroupMappingPort implements UserGroupMappingPort {
         }
 
         try {
-            final Optional<TcUserGroupMember> result = userGroupMemberStore.findByUserPkAndGroupId(userPk, groupId);
+            final Optional<UiUserGroupMember> result = userGroupMemberStore.findByUserPkAndGroupId(userPk, groupId)
+                    .map(UiUserAdminDbMapper::toDomain);
             if (log.isDebugEnabled()) {
                 log.debug("사용자-그룹 매핑 단건 조회 완료. userPk={}, groupId={}, found={}",
                         userPk, groupId, result.isPresent());
@@ -126,7 +129,7 @@ public class JpaUserGroupMappingPort implements UserGroupMappingPort {
      * @return 목록 + count 페이지 응답
      */
     @Override
-    public PagedResponse<TcUserGroupMember> findAllByUserPk(final long userPk, final PageRequest pageRequest) {
+    public PagedResponse<UiUserGroupMember> findAllByUserPk(final long userPk, final PageRequest pageRequest) {
         if (userPk <= 0) {
             log.warn("사용자-그룹 매핑 목록 조회 요청 거부 - userPk는 1 이상이어야 합니다. userPk={}", userPk);
             throw new UiBadRequestException("userPk는 1 이상이어야 합니다.");
@@ -139,15 +142,18 @@ public class JpaUserGroupMappingPort implements UserGroupMappingPort {
         }
 
         try {
-            final List<TcUserGroupMember> items = userGroupMemberStore.findAllByUserPk(userPk, effectivePage);
+            final List<TcUserGroupMember> dbItems = userGroupMemberStore.findAllByUserPk(userPk, effectivePage);
             final long totalCount = UiDbPagedCountSupport.resolveTotalCount(
-                    items,
+                    dbItems,
                     effectivePage,
                     UiDbPagedCountSupport.DEFAULT_COUNT_SCAN_LIMIT,
                     page -> userGroupMemberStore.findAllByUserPk(userPk, page),
                     log,
                     "user-group-mapping"
             );
+            final List<UiUserGroupMember> items = dbItems.stream()
+                    .map(member -> UiUserAdminDbMapper.toDomain(member))
+                    .toList();
 
             if (log.isDebugEnabled()) {
                 log.debug("사용자-그룹 매핑 목록 조회 완료. userPk={}, offset={}, limit={}, pageSize={}, totalCount={}",

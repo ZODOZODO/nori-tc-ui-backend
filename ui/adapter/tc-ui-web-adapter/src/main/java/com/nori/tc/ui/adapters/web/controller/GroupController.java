@@ -3,8 +3,6 @@ package com.nori.tc.ui.adapters.web.controller;
 import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.user.upsert.UpsertTcUserGroup;
 import com.nori.tc.db.core.user.upsert.UpsertTcUserGroupPermission;
-import com.nori.tc.db.domain.user.TcUserGroup;
-import com.nori.tc.db.domain.user.TcUserGroupPermission;
 import com.nori.tc.ui.adapters.web.controller.support.UiPageRequestSupport;
 import com.nori.tc.ui.adapters.web.dto.request.GroupUpsertRequest;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
@@ -13,6 +11,8 @@ import com.nori.tc.ui.adapters.web.dto.response.GroupPermissionMappingResponse;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.port.db.GroupCrudPort;
 import com.nori.tc.ui.core.port.db.GroupPermissionMappingPort;
+import com.nori.tc.ui.domain.useradmin.UiUserGroup;
+import com.nori.tc.ui.domain.useradmin.UiUserGroupPermission;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -94,7 +94,7 @@ public class GroupController {
             log.debug("그룹 목록 조회 요청. offset={}, limit={}", pageRequest.offset(), pageRequest.limit());
         }
 
-        final PagedResponse<TcUserGroup> page = groupCrudPort.findAll(pageRequest);
+        final PagedResponse<UiUserGroup> page = groupCrudPort.findAll(pageRequest);
         final PagedResponse<GroupInfoResponse> responsePage = toGroupPage(page);
 
         if (log.isDebugEnabled()) {
@@ -119,7 +119,7 @@ public class GroupController {
             log.debug("그룹 단건 조회 요청. groupId={}", groupId);
         }
 
-        final Optional<TcUserGroup> optionalGroup = groupCrudPort.findByGroupId(groupId);
+        final Optional<UiUserGroup> optionalGroup = groupCrudPort.findByGroupId(groupId);
         if (optionalGroup.isEmpty()) {
             log.warn("그룹 단건 조회 결과 없음. groupId={}", groupId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -148,7 +148,7 @@ public class GroupController {
                 request.description(),
                 resolveIsActive(request.isActive())
         );
-        final TcUserGroup created = groupCrudPort.upsert(command);
+        final UiUserGroup created = groupCrudPort.upsert(command);
 
         log.info("그룹 등록 완료. groupId={}, groupCode={}", created.groupId(), created.groupCode());
         return ResponseEntity.ok(ApiResponse.success(toGroupInfoResponse(created)));
@@ -182,7 +182,7 @@ public class GroupController {
                 request.description(),
                 resolveIsActive(request.isActive())
         );
-        final TcUserGroup updated = groupCrudPort.upsert(command);
+        final UiUserGroup updated = groupCrudPort.upsert(command);
 
         log.info("그룹 수정 완료. groupId={}, groupCode={}", updated.groupId(), updated.groupCode());
         return ResponseEntity.ok(ApiResponse.success(toGroupInfoResponse(updated)));
@@ -231,7 +231,7 @@ public class GroupController {
                     groupId, pageRequest.offset(), pageRequest.limit());
         }
 
-        final PagedResponse<TcUserGroupPermission> page =
+        final PagedResponse<UiUserGroupPermission> page =
                 groupPermissionMappingPort.findAllByGroupId(groupId, pageRequest);
         final PagedResponse<GroupPermissionMappingResponse> responsePage = toGroupPermissionPage(page);
 
@@ -263,7 +263,7 @@ public class GroupController {
                 null,
                 DEFAULT_GRANTED_BY
         );
-        final TcUserGroupPermission saved = groupPermissionMappingPort.upsert(command);
+        final UiUserGroupPermission saved = groupPermissionMappingPort.upsert(command);
 
         log.info("그룹-권한 매핑 생성 완료. ugpKey={}, groupId={}, permId={}",
                 saved.ugpKey(), saved.groupId(), saved.permId());
@@ -305,7 +305,7 @@ public class GroupController {
      * @param page 도메인 페이지 응답
      * @return API 응답 페이지
      */
-    private static PagedResponse<GroupInfoResponse> toGroupPage(final PagedResponse<TcUserGroup> page) {
+    private static PagedResponse<GroupInfoResponse> toGroupPage(final PagedResponse<UiUserGroup> page) {
         final List<GroupInfoResponse> items = page.items().stream()
                 .map(GroupController::toGroupInfoResponse)
                 .toList();
@@ -318,7 +318,7 @@ public class GroupController {
      * @param group 도메인 그룹 객체
      * @return 응답 DTO
      */
-    private static GroupInfoResponse toGroupInfoResponse(final TcUserGroup group) {
+    private static GroupInfoResponse toGroupInfoResponse(final UiUserGroup group) {
         return new GroupInfoResponse(
                 group.groupId(),
                 group.groupCode(),
@@ -337,7 +337,7 @@ public class GroupController {
      * @return API 응답 페이지
      */
     private static PagedResponse<GroupPermissionMappingResponse> toGroupPermissionPage(
-            final PagedResponse<TcUserGroupPermission> page
+            final PagedResponse<UiUserGroupPermission> page
     ) {
         final List<GroupPermissionMappingResponse> items = page.items().stream()
                 .map(GroupController::toGroupPermissionMappingResponse)
@@ -352,7 +352,7 @@ public class GroupController {
      * @return 응답 DTO
      */
     private static GroupPermissionMappingResponse toGroupPermissionMappingResponse(
-            final TcUserGroupPermission mapping
+            final UiUserGroupPermission mapping
     ) {
         return new GroupPermissionMappingResponse(
                 mapping.ugpKey(),
@@ -363,4 +363,3 @@ public class GroupController {
         );
     }
 }
-

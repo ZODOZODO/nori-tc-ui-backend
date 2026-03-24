@@ -272,6 +272,8 @@ class JpaEqpParamCommandPortTest {
                 5000,
                 101L,
                 "v1",
+                null,
+                null,
                 true,
                 now,
                 now,

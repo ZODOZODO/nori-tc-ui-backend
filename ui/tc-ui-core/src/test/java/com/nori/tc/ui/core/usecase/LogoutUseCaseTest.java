@@ -1,8 +1,11 @@
 package com.nori.tc.ui.core.usecase;
 
-import com.nori.tc.db.domain.user.TcUiAuthSession;
+import com.nori.tc.ui.core.auth.UiAuthMetrics;
+import com.nori.tc.ui.core.auth.UiTokenRecheckWindowCache;
 import com.nori.tc.ui.core.port.db.SessionPort;
 import com.nori.tc.ui.core.port.redis.TokenCachePort;
+import com.nori.tc.ui.domain.auth.UiAuthSessionCreateCommand;
+import com.nori.tc.ui.domain.auth.UiAuthSessionSnapshot;
 import com.nori.tc.ui.domain.auth.UserPrincipal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,7 +38,12 @@ class LogoutUseCaseTest {
     void 정상_로그아웃_DBRevoke_캐시Evict() {
         final CountingSessionPort sessionPort = new CountingSessionPort();
         final StubTokenCachePort tokenCachePort = new StubTokenCachePort(false);
-        final LogoutUseCase useCase = new LogoutUseCase(sessionPort, tokenCachePort);
+        final LogoutUseCase useCase = new LogoutUseCase(
+                sessionPort,
+                tokenCachePort,
+                UiTokenRecheckWindowCache.createStandalone(30, 100),
+                UiAuthMetrics.noop()
+        );
 
         useCase.execute(TEST_TOKEN);
 
@@ -51,7 +59,12 @@ class LogoutUseCaseTest {
     void redis_evict_실패_예외비전파() {
         final CountingSessionPort sessionPort = new CountingSessionPort();
         final StubTokenCachePort tokenCachePort = new StubTokenCachePort(true);
-        final LogoutUseCase useCase = new LogoutUseCase(sessionPort, tokenCachePort);
+        final LogoutUseCase useCase = new LogoutUseCase(
+                sessionPort,
+                tokenCachePort,
+                UiTokenRecheckWindowCache.createStandalone(30, 100),
+                UiAuthMetrics.noop()
+        );
 
         assertDoesNotThrow(() -> useCase.execute(TEST_TOKEN));
         assertEquals(1, sessionPort.revokeCallCount.get());
@@ -65,12 +78,12 @@ class LogoutUseCaseTest {
         private final AtomicInteger revokeCallCount = new AtomicInteger();
 
         @Override
-        public void save(final TcUiAuthSession session) {
+        public void save(final UiAuthSessionCreateCommand session) {
             // not used
         }
 
         @Override
-        public Optional<TcUiAuthSession> findValidByToken(final String token) {
+        public Optional<UiAuthSessionSnapshot> findValidByToken(final String token) {
             return Optional.empty();
         }
 

@@ -11,9 +11,12 @@ import com.nori.tc.db.domain.eqp.TcEqp;
 import com.nori.tc.db.domain.eqp.TcEqpParam;
 import com.nori.tc.db.domain.eqp.TcEqpParamVersion;
 import com.nori.tc.db.domain.eqp.TcEqpState;
+import com.nori.tc.ui.adapter.db.mapper.UiEqpDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
+import com.nori.tc.ui.domain.eqp.UiEqp;
+import com.nori.tc.ui.domain.eqp.UiEqpParam;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -92,7 +95,7 @@ public class JpaEqpQueryPort implements EqpQueryPort {
      * @return 목록 + count를 포함한 페이지 응답
      */
     @Override
-    public PagedResponse<TcEqp> findAll(final PageRequest pageRequest) {
+    public PagedResponse<UiEqp> findAll(final PageRequest pageRequest) {
         final PageRequest effectivePage = (pageRequest == null) ? PageRequest.defaultPage() : pageRequest;
 
         if (log.isDebugEnabled()) {
@@ -101,15 +104,18 @@ public class JpaEqpQueryPort implements EqpQueryPort {
         }
 
         try {
-            final List<TcEqp> items = eqpStore.findAll(effectivePage);
+            final List<TcEqp> dbItems = eqpStore.findAll(effectivePage);
             final long totalCount = UiDbPagedCountSupport.resolveTotalCount(
-                    items,
+                    dbItems,
                     effectivePage,
                     UiDbPagedCountSupport.DEFAULT_COUNT_SCAN_LIMIT,
                     eqpStore::findAll,
                     log,
                     "eqp"
             );
+            final List<UiEqp> items = dbItems.stream()
+                    .map(UiEqpDbMapper::toDomain)
+                    .toList();
 
             if (log.isDebugEnabled()) {
                 log.debug("설비 목록 조회 완료. offset={}, limit={}, pageSize={}, totalCount={}",
@@ -137,7 +143,7 @@ public class JpaEqpQueryPort implements EqpQueryPort {
      * @return 조회 결과(없으면 빈 Optional)
      */
     @Override
-    public Optional<TcEqp> findByEqpId(final String eqpId) {
+    public Optional<UiEqp> findByEqpId(final String eqpId) {
         if (eqpId == null || eqpId.isBlank()) {
             log.warn("설비 단건 조회 요청 거부 - eqpId가 비어 있습니다.");
             throw new UiBadRequestException("eqpId는 비어 있을 수 없습니다.");
@@ -148,7 +154,8 @@ public class JpaEqpQueryPort implements EqpQueryPort {
         }
 
         try {
-            final Optional<TcEqp> result = eqpStore.findByEqpId(eqpId);
+            final Optional<UiEqp> result = eqpStore.findByEqpId(eqpId)
+                    .map(UiEqpDbMapper::toDomain);
             if (log.isDebugEnabled()) {
                 log.debug("설비 단건 조회 완료. eqpId={}, found={}", eqpId, result.isPresent());
             }
@@ -271,7 +278,7 @@ public class JpaEqpQueryPort implements EqpQueryPort {
      * @return 파라미터 목록(설비 미존재 또는 해당 버전 없으면 빈 목록)
      */
     @Override
-    public List<TcEqpParam> findParamsByEqpIdAndVersion(final String eqpId, final String version) {
+    public List<UiEqpParam> findParamsByEqpIdAndVersion(final String eqpId, final String version) {
         if (eqpId == null || eqpId.isBlank()) {
             throw new UiBadRequestException("eqpId는 비어 있을 수 없습니다.");
         }
@@ -289,7 +296,9 @@ public class JpaEqpQueryPort implements EqpQueryPort {
             }
 
             final long eqpKey = optionalEqp.get().eqpKey();
-            final List<TcEqpParam> params = eqpParamStore.findAllByEqpKeyAndVersion(eqpKey, version);
+            final List<UiEqpParam> params = eqpParamStore.findAllByEqpKeyAndVersion(eqpKey, version).stream()
+                    .map(UiEqpDbMapper::toDomain)
+                    .toList();
 
             if (log.isDebugEnabled()) {
                 log.debug("설비 파라미터 조회 완료. eqpId={}, version={}, count={}", eqpId, version, params.size());

@@ -14,6 +14,8 @@ import java.util.Locale;
  * <pre>
  * tc.ui.backend.auth.session-ttl-hours=8
  * tc.ui.backend.auth.token-cache-ttl-seconds=300
+ * tc.ui.backend.auth.token-recheck-interval-seconds=30
+ * tc.ui.backend.auth.token-recheck-max-entries=10000
  * tc.ui.backend.auth.cookie-name=TC_UI_AUTH
  * tc.ui.backend.auth.cookie-path=/
  * tc.ui.backend.auth.cookie-domain=
@@ -37,6 +39,8 @@ import java.util.Locale;
  *
  * @param sessionTtlHours      세션 유효 시간 (단위: 시간, 기본값 8)
  * @param tokenCacheTtlSeconds Redis 토큰 캐시 TTL (단위: 초, 기본값 300)
+ * @param tokenRecheckIntervalSeconds 캐시 히트 토큰 DB 재검증 최소 주기(초, 기본값 30)
+ * @param tokenRecheckMaxEntries 토큰 재검증 캐시 최대 엔트리 수(기본값 10000)
  * @param cookieName           인증 쿠키 이름 (기본값 TC_UI_AUTH)
  * @param cookiePath           인증 쿠키 Path (기본값 /)
  * @param cookieDomain         인증 쿠키 Domain (옵션, 비어 있으면 미지정)
@@ -50,6 +54,8 @@ import java.util.Locale;
 public record UiAuthProperties(
         int sessionTtlHours,
         int tokenCacheTtlSeconds,
+        int tokenRecheckIntervalSeconds,
+        int tokenRecheckMaxEntries,
         String cookieName,
         String cookiePath,
         String cookieDomain,
@@ -74,6 +80,14 @@ public record UiAuthProperties(
      * 토큰 캐시 TTL 기본값(초)입니다.
      */
     private static final int DEFAULT_TOKEN_CACHE_TTL_SECONDS = 300;
+    /**
+     * 토큰 재검증 주기 기본값(초)입니다.
+     */
+    private static final int DEFAULT_TOKEN_RECHECK_INTERVAL_SECONDS = 30;
+    /**
+     * 토큰 재검증 캐시 최대 엔트리 수 기본값입니다.
+     */
+    private static final int DEFAULT_TOKEN_RECHECK_MAX_ENTRIES = 10_000;
 
     /**
      * 인증 쿠키 이름 기본값입니다.
@@ -122,6 +136,16 @@ public record UiAuthProperties(
                     tokenCacheTtlSeconds, DEFAULT_TOKEN_CACHE_TTL_SECONDS);
             tokenCacheTtlSeconds = DEFAULT_TOKEN_CACHE_TTL_SECONDS;
         }
+        if (tokenRecheckIntervalSeconds <= 0) {
+            log.warn("인증 설정 보정 - token-recheck-interval-seconds 값이 0 이하입니다. 입력값={}, 적용값={}",
+                    tokenRecheckIntervalSeconds, DEFAULT_TOKEN_RECHECK_INTERVAL_SECONDS);
+            tokenRecheckIntervalSeconds = DEFAULT_TOKEN_RECHECK_INTERVAL_SECONDS;
+        }
+        if (tokenRecheckMaxEntries <= 0) {
+            log.warn("인증 설정 보정 - token-recheck-max-entries 값이 0 이하입니다. 입력값={}, 적용값={}",
+                    tokenRecheckMaxEntries, DEFAULT_TOKEN_RECHECK_MAX_ENTRIES);
+            tokenRecheckMaxEntries = DEFAULT_TOKEN_RECHECK_MAX_ENTRIES;
+        }
 
         cookieName = normalizeRequiredText(
                 "tc.ui.backend.auth.cookie-name",
@@ -167,11 +191,14 @@ public record UiAuthProperties(
             log.debug("인증 설정 점검 - cors-allowed-origins가 비어 있습니다. same-origin 배포가 아니라면 설정이 필요합니다.");
         }
 
-        log.info("UiAuthProperties 검증 완료. sessionTtlHours={}, tokenCacheTtlSeconds={}, cookieName={}, "
+        log.info("UiAuthProperties 검증 완료. sessionTtlHours={}, tokenCacheTtlSeconds={}, "
+                        + "tokenRecheckIntervalSeconds={}, tokenRecheckMaxEntries={}, cookieName={}, "
                         + "cookiePath={}, cookieDomain={}, cookieSecure={}, cookieSameSite={}, csrfCookieName={}, "
                         + "csrfHeaderName={}, corsAllowedOriginsCount={}",
                 sessionTtlHours,
                 tokenCacheTtlSeconds,
+                tokenRecheckIntervalSeconds,
+                tokenRecheckMaxEntries,
                 cookieName,
                 cookiePath,
                 cookieDomain == null ? "(none)" : cookieDomain,

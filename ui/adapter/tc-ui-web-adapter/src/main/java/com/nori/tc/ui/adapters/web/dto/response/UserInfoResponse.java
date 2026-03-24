@@ -1,6 +1,6 @@
 package com.nori.tc.ui.adapters.web.dto.response;
 
-import com.nori.tc.db.domain.common.user.UserStatus;
+import com.nori.tc.ui.domain.auth.UiUserStatus;
 
 import java.time.OffsetDateTime;
 
@@ -30,11 +30,10 @@ public record UserInfoResponse(
         String userId,
         String userIdNorm,
         String email,
-        UserStatus status,
+        UiUserStatus status,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
         String createdBy,
         String updatedBy
 ) {
 }
-

@@ -1,9 +1,9 @@
 package com.nori.tc.ui.adapters.web.security;
 
-import com.nori.tc.db.domain.common.user.TcUiPermissionMatchType;
-import com.nori.tc.db.domain.user.TcUiPermission;
 import com.nori.tc.ui.core.port.db.UiApiPermissionPort;
 import com.nori.tc.ui.domain.auth.UserPrincipal;
+import com.nori.tc.ui.domain.common.user.UiPermissionMatchType;
+import com.nori.tc.ui.domain.useradmin.UiPermission;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,7 +47,7 @@ public class UiApiPermissionCache {
      * volatile: 기동 후 단 1회 write가 발생하고 이후 read만 발생하므로
      * synchronized 없이 volatile만으로 가시성을 보장합니다.
      */
-    private volatile List<TcUiPermission> cachedPermissions = List.of();
+    private volatile List<UiPermission> cachedPermissions = List.of();
 
     /**
      * 초기화 실패 플래그입니다.
@@ -94,7 +94,7 @@ public class UiApiPermissionCache {
      */
     private void reloadPermissions(final boolean startup) {
         try {
-            final List<TcUiPermission> loaded = apiPermissionPort.findAllActiveApiPermissions();
+            final List<UiPermission> loaded = apiPermissionPort.findAllActiveApiPermissions();
             this.cachedPermissions = loaded;
             this.initializationFailed = false;
             if (startup) {
@@ -132,7 +132,7 @@ public class UiApiPermissionCache {
             return false;
         }
 
-        final List<TcUiPermission> matching = cachedPermissions.stream()
+        final List<UiPermission> matching = cachedPermissions.stream()
                 .filter(p -> matchUri(p, requestUri))
                 .filter(p -> matchMethod(p, httpMethod))
                 .toList();
@@ -151,7 +151,7 @@ public class UiApiPermissionCache {
         if (!allowed) {
             log.warn("API 권한 부족. uri={}, method={}, userPk={}, requiredPermCodes={}",
                     requestUri, httpMethod, principal.userPk(),
-                    matching.stream().map(TcUiPermission::permCode).toList());
+                    matching.stream().map(UiPermission::permCode).toList());
         } else {
             log.trace("API 권한 확인 완료 - 허용. uri={}, method={}, userPk={}",
                     requestUri, httpMethod, principal.userPk());
@@ -171,11 +171,11 @@ public class UiApiPermissionCache {
      * @param requestUri 요청 URI
      * @return 매칭되면 true
      */
-    private boolean matchUri(final TcUiPermission perm, final String requestUri) {
+    private boolean matchUri(final UiPermission perm, final String requestUri) {
         if (perm.resource() == null || perm.resource().isBlank()) {
             return false;
         }
-        if (perm.matchType() == TcUiPermissionMatchType.PREFIX) {
+        if (perm.matchType() == UiPermissionMatchType.PREFIX) {
             return requestUri.startsWith(perm.resource());
         }
         // EXACT 또는 기타: 완전 일치
@@ -191,7 +191,7 @@ public class UiApiPermissionCache {
      * @param httpMethod 요청 HTTP 메서드
      * @return 매칭되면 true
      */
-    private boolean matchMethod(final TcUiPermission perm, final String httpMethod) {
+    private boolean matchMethod(final UiPermission perm, final String httpMethod) {
         if (perm.httpMethod() == null || perm.httpMethod().isBlank()) {
             // httpMethod 미설정 → 모든 HTTP 메서드 허용
             return true;

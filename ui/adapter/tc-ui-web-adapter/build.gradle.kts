@@ -9,7 +9,7 @@ group = "com.nori.tc"
 version = "0.0.1-SNAPSHOT"
 
 dependencies {
-    api(project(":ui:tc-ui-core"))
+    implementation(project(":ui:tc-ui-core"))
     implementation(libs.spring.boot.starter.webmvc)
     implementation(libs.spring.boot.starter.security)
     implementation(libs.spring.boot.starter.actuator)

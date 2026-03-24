@@ -1,7 +1,7 @@
 package com.nori.tc.ui.core.eqp;
 
-import com.nori.tc.db.domain.common.eqp.LogLevel;
-import com.nori.tc.db.domain.common.model.ProtocolType;
+import com.nori.tc.ui.domain.common.eqp.UiLogLevel;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
 
 /**
  * EQP 관리 생성/수정 명령 모델입니다.
@@ -22,7 +22,7 @@ public final class EqpManagementCommand {
      * @param logPath 로그 저장 경로
      */
     public record LogSettings(
-            LogLevel logLevel,
+            UiLogLevel logLevel,
             Integer logRetentionDays,
             String logPath
     ) {
@@ -91,8 +91,8 @@ public final class EqpManagementCommand {
      * @param eqpPort 설비 port
      * @param modelVersionKey 연결 model version key
      * @param appliedParamVersion 현재 적용 파라미터 버전
-     * @param gatewayJarFileName gateway jar 파일명
-     * @param businessJarFileName business jar 파일명
+     * @param gatewayJarRef gateway jar 참조 키
+     * @param businessJarRef business jar 참조 키
      * @param logSettings 로그 정책
      * @param hsmsSettings SECS 설정
      * @param socketSettings SOCKET 설정
@@ -100,7 +100,7 @@ public final class EqpManagementCommand {
     public record Create(
             String actor,
             String eqpId,
-            ProtocolType interfaceType,
+            UiProtocolType interfaceType,
             String commMode,
             boolean isDev,
             Integer routePartition,
@@ -108,8 +108,8 @@ public final class EqpManagementCommand {
             Integer eqpPort,
             long modelVersionKey,
             String appliedParamVersion,
-            String gatewayJarFileName,
-            String businessJarFileName,
+            Long gatewayJarRef,
+            Long businessJarRef,
             LogSettings logSettings,
             HsmsSettings hsmsSettings,
             SocketSettings socketSettings
@@ -127,8 +127,8 @@ public final class EqpManagementCommand {
      * @param eqpPort 설비 port
      * @param modelVersionKey 연결 model version key
      * @param appliedParamVersion 현재 적용 파라미터 버전
-     * @param gatewayJarFileName gateway jar 파일명
-     * @param businessJarFileName business jar 파일명
+     * @param gatewayJarRef gateway jar 참조 키
+     * @param businessJarRef business jar 참조 키
      * @param logSettings 로그 정책
      * @param hsmsSettings SECS 설정
      * @param socketSettings SOCKET 설정
@@ -142,8 +142,8 @@ public final class EqpManagementCommand {
             Integer eqpPort,
             long modelVersionKey,
             String appliedParamVersion,
-            String gatewayJarFileName,
-            String businessJarFileName,
+            Long gatewayJarRef,
+            Long businessJarRef,
             LogSettings logSettings,
             HsmsSettings hsmsSettings,
             SocketSettings socketSettings

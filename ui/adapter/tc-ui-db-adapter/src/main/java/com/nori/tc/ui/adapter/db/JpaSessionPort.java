@@ -1,9 +1,11 @@
 package com.nori.tc.ui.adapter.db;
 
 import com.nori.tc.db.core.user.store.TcUiAuthSessionStore;
-import com.nori.tc.db.core.user.upsert.UpsertTcUiAuthSession;
-import com.nori.tc.db.domain.user.TcUiAuthSession;
+import com.nori.tc.ui.adapter.db.mapper.UiAuthSessionDbMapper;
 import com.nori.tc.ui.core.port.db.SessionPort;
+import com.nori.tc.ui.domain.auth.UiAuthSessionCreateCommand;
+import com.nori.tc.ui.domain.auth.UiAuthSessionSnapshot;
+import com.nori.tc.ui.domain.auth.UiAuthTokenFingerprint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -52,23 +54,16 @@ public class JpaSessionPort implements SessionPort {
      * @param session 저장할 세션 Domain Record
      */
     @Override
-    public void save(final TcUiAuthSession session) {
+    public void save(final UiAuthSessionCreateCommand session) {
         log.debug("세션 저장. token={}..., userPk={}, expiresAt={}",
-                session.token().substring(0, Math.min(8, session.token().length())),
+                UiAuthTokenFingerprint.mask(session.token()),
                 session.userPk(),
                 session.expiresAt());
 
-        sessionStore.upsert(new UpsertTcUiAuthSession(
-                session.token(),
-                session.userPk(),
-                session.issuedAt(),
-                session.expiresAt(),
-                session.lastSeenAt(),
-                session.revoked()
-        ));
+        sessionStore.upsert(UiAuthSessionDbMapper.toStoreCommand(session));
 
         log.info("세션 저장 완료. token={}..., userPk={}",
-                session.token().substring(0, Math.min(8, session.token().length())),
+                UiAuthTokenFingerprint.mask(session.token()),
                 session.userPk());
     }
 
@@ -87,9 +82,10 @@ public class JpaSessionPort implements SessionPort {
      * @return 유효한 세션 Domain Record, 없으면 빈 Optional
      */
     @Override
-    public Optional<TcUiAuthSession> findValidByToken(final String token) {
-        log.debug("유효 세션 조회. token={}...", token.substring(0, Math.min(8, token.length())));
-        return sessionStore.findValidByToken(token);
+    public Optional<UiAuthSessionSnapshot> findValidByToken(final String token) {
+        log.debug("유효 세션 조회. token={}...", UiAuthTokenFingerprint.mask(token));
+        return sessionStore.findValidByToken(UiAuthTokenFingerprint.sha256Hex(token))
+                .map(UiAuthSessionDbMapper::toSnapshot);
     }
 
     /**
@@ -102,9 +98,9 @@ public class JpaSessionPort implements SessionPort {
      */
     @Override
     public void revoke(final String token) {
-        log.debug("세션 폐기 요청. token={}...", token.substring(0, Math.min(8, token.length())));
-        sessionStore.revokeByToken(token);
-        log.info("세션 폐기 완료. token={}...", token.substring(0, Math.min(8, token.length())));
+        log.debug("세션 폐기 요청. token={}...", UiAuthTokenFingerprint.mask(token));
+        sessionStore.revokeByToken(UiAuthTokenFingerprint.sha256Hex(token));
+        log.info("세션 폐기 완료. token={}...", UiAuthTokenFingerprint.mask(token));
     }
 
     /**
@@ -119,8 +115,8 @@ public class JpaSessionPort implements SessionPort {
     @Override
     public void updateLastSeenAt(final String token, final OffsetDateTime lastSeenAt) {
         log.trace("lastSeenAt 업데이트. token={}..., lastSeenAt={}",
-                token.substring(0, Math.min(8, token.length())),
+                UiAuthTokenFingerprint.mask(token),
                 lastSeenAt);
-        sessionStore.updateLastSeenAt(token, lastSeenAt);
+        sessionStore.updateLastSeenAt(UiAuthTokenFingerprint.sha256Hex(token), lastSeenAt);
     }
 }

@@ -5,11 +5,12 @@ import com.nori.tc.db.core.user.store.TcUiAuthSessionStore;
 import com.nori.tc.db.core.user.store.TcUserInfoStore;
 import com.nori.tc.db.core.user.upsert.UpsertTcUserInfo;
 import com.nori.tc.db.domain.user.TcUiAuthSession;
-import com.nori.tc.db.domain.user.TcUserInfo;
+import com.nori.tc.ui.adapter.db.mapper.UiUserAdminDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.port.db.UserCrudPort;
+import com.nori.tc.ui.domain.useradmin.UiManagedUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -65,7 +66,7 @@ public class JpaUserCrudPort implements UserCrudPort {
      * @return 저장 후 사용자 정보
      */
     @Override
-    public TcUserInfo upsert(final UpsertTcUserInfo command) {
+    public UiManagedUser upsert(final UpsertTcUserInfo command) {
         if (log.isDebugEnabled()) {
             log.debug("사용자 업서트 시작. userPk={}, userIdNorm={}, email={}",
                     command == null ? null : command.userPk(),
@@ -74,7 +75,7 @@ public class JpaUserCrudPort implements UserCrudPort {
         }
 
         try {
-            final TcUserInfo saved = userInfoStore.upsert(command);
+            final UiManagedUser saved = UiUserAdminDbMapper.toDomain(userInfoStore.upsert(command));
             if (log.isDebugEnabled()) {
                 log.debug("사용자 업서트 완료. userPk={}, userIdNorm={}, status={}",
                         saved.userPk(), saved.userIdNorm(), saved.status());
@@ -103,7 +104,7 @@ public class JpaUserCrudPort implements UserCrudPort {
      * @return 조회 결과(없으면 빈 Optional)
      */
     @Override
-    public Optional<TcUserInfo> findByUserPk(final long userPk) {
+    public Optional<UiManagedUser> findByUserPk(final long userPk) {
         if (userPk <= 0) {
             log.warn("사용자 단건 조회 요청 거부 - userPk는 1 이상이어야 합니다. userPk={}", userPk);
             throw new UiBadRequestException("userPk는 1 이상이어야 합니다.");
@@ -114,7 +115,8 @@ public class JpaUserCrudPort implements UserCrudPort {
         }
 
         try {
-            final Optional<TcUserInfo> result = userInfoStore.findByUserPk(userPk);
+            final Optional<UiManagedUser> result = userInfoStore.findByUserPk(userPk)
+                    .map(UiUserAdminDbMapper::toDomain);
             if (log.isDebugEnabled()) {
                 log.debug("사용자 단건 조회 완료. userPk={}, found={}", userPk, result.isPresent());
             }
@@ -137,7 +139,7 @@ public class JpaUserCrudPort implements UserCrudPort {
      * @return 목록 + count 페이지 응답
      */
     @Override
-    public PagedResponse<TcUserInfo> findAll(final PageRequest pageRequest) {
+    public PagedResponse<UiManagedUser> findAll(final PageRequest pageRequest) {
         final PageRequest effectivePage = (pageRequest == null) ? PageRequest.defaultPage() : pageRequest;
 
         if (log.isDebugEnabled()) {
@@ -145,15 +147,18 @@ public class JpaUserCrudPort implements UserCrudPort {
         }
 
         try {
-            final List<TcUserInfo> items = userInfoStore.findAll(effectivePage);
+            final List<com.nori.tc.db.domain.user.TcUserInfo> dbItems = userInfoStore.findAll(effectivePage);
             final long totalCount = UiDbPagedCountSupport.resolveTotalCount(
-                    items,
+                    dbItems,
                     effectivePage,
                     UiDbPagedCountSupport.DEFAULT_COUNT_SCAN_LIMIT,
                     userInfoStore::findAll,
                     log,
                     "user"
             );
+            final List<UiManagedUser> items = dbItems.stream()
+                    .map(UiUserAdminDbMapper::toDomain)
+                    .toList();
 
             if (log.isDebugEnabled()) {
                 log.debug("사용자 목록 조회 완료. offset={}, limit={}, pageSize={}, totalCount={}",

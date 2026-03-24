@@ -1,5 +1,6 @@
 package com.nori.tc.ui.adapters.web.controller;
 
+import com.nori.tc.ui.adapters.web.controller.support.UiAuthCookieFactory;
 import com.nori.tc.ui.adapters.web.dto.request.LoginRequest;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.adapters.web.dto.response.LoginResponse;
@@ -29,7 +30,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.Duration;
 import java.util.Objects;
 
 /**
@@ -59,6 +59,7 @@ public class AuthController {
     private final LogoutUseCase logoutUseCase;
     private final UiAuthProperties authProperties;
     private final CsrfTokenRepository csrfTokenRepository;
+    private final UiAuthCookieFactory authCookieFactory;
 
     /**
      * 필수 의존성을 초기화합니다.
@@ -72,12 +73,14 @@ public class AuthController {
             final LoginUseCase loginUseCase,
             final LogoutUseCase logoutUseCase,
             final UiAuthProperties authProperties,
-            final CsrfTokenRepository csrfTokenRepository
+            final CsrfTokenRepository csrfTokenRepository,
+            final UiAuthCookieFactory authCookieFactory
     ) {
         this.loginUseCase = Objects.requireNonNull(loginUseCase, "loginUseCase is null");
         this.logoutUseCase = Objects.requireNonNull(logoutUseCase, "logoutUseCase is null");
         this.authProperties = Objects.requireNonNull(authProperties, "authProperties is null");
         this.csrfTokenRepository = Objects.requireNonNull(csrfTokenRepository, "csrfTokenRepository is null");
+        this.authCookieFactory = Objects.requireNonNull(authCookieFactory, "authCookieFactory is null");
     }
 
     /**
@@ -104,8 +107,11 @@ public class AuthController {
                     authToken.issuedAt(),
                     authToken.expiresAt()
             );
-            final long authCookieMaxAgeSeconds = resolveAuthCookieMaxAgeSeconds(authToken);
-            final ResponseCookie authCookie = buildAuthCookie(authToken.token(), authCookieMaxAgeSeconds);
+            final ResponseCookie authCookie = authCookieFactory.buildAuthCookie(
+                    authToken.token(),
+                    authToken.issuedAt(),
+                    authToken.expiresAt()
+            );
 
             log.info("로그인 성공. userId={}, userPk={}, expiresAt={}, cookieName={}",
                     request.userId(), authToken.userPk(), authToken.expiresAt(), authProperties.cookieName());
@@ -116,7 +122,7 @@ public class AuthController {
                         authProperties.cookieDomain() == null ? "(none)" : authProperties.cookieDomain(),
                         authProperties.cookieSecure(),
                         authProperties.cookieSameSite(),
-                        authCookieMaxAgeSeconds);
+                        authCookie.getMaxAge().getSeconds());
             }
 
             return ResponseEntity.ok()
@@ -177,7 +183,7 @@ public class AuthController {
 
         // SecurityContext 초기화: 이후 필터 체인에서 인증 정보 노출 방지
         SecurityContextHolder.clearContext();
-        final ResponseCookie deleteCookie = buildDeleteAuthCookie();
+        final ResponseCookie deleteCookie = authCookieFactory.buildDeleteAuthCookie();
 
         log.info("로그아웃 완료. token={}...", tokenPrefix);
         if (log.isDebugEnabled()) {
@@ -279,67 +285,9 @@ public class AuthController {
      * @return 401 Unauthorized 응답
      */
     private ResponseEntity<ApiResponse<Void>> unauthorizedLogout(final String message) {
-        final ResponseCookie deleteCookie = buildDeleteAuthCookie();
+        final ResponseCookie deleteCookie = authCookieFactory.buildDeleteAuthCookie();
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .header(HttpHeaders.SET_COOKIE, deleteCookie.toString())
                 .body(ApiResponse.error("UNAUTHORIZED", message));
-    }
-
-    /**
-     * 로그인 성공 시 사용할 인증 쿠키를 생성합니다.
-     *
-     * <p>토큰은 HttpOnly 속성으로 발급하여 JavaScript 접근을 차단하고,
-     * Secure/SameSite/Path/Domain 정책은 {@link UiAuthProperties}를 그대로 반영합니다.</p>
-     *
-     * @param token 인증 토큰 원문
-     * @param maxAgeSeconds 쿠키 유효 시간(초)
-     * @return Set-Cookie 헤더로 직렬화 가능한 ResponseCookie
-     */
-    private ResponseCookie buildAuthCookie(final String token, final long maxAgeSeconds) {
-        final ResponseCookie.ResponseCookieBuilder builder = ResponseCookie
-                .from(authProperties.cookieName(), token)
-                .httpOnly(true)
-                .secure(authProperties.cookieSecure())
-                .path(authProperties.cookiePath())
-                .sameSite(authProperties.cookieSameSite())
-                .maxAge(maxAgeSeconds);
-        if (authProperties.cookieDomain() != null) {
-            builder.domain(authProperties.cookieDomain());
-        }
-        return builder.build();
-    }
-
-    /**
-     * 로그아웃 시 브라우저의 인증 쿠키를 즉시 제거하기 위한 삭제 쿠키를 생성합니다.
-     *
-     * <p>삭제가 확실히 적용되도록 Path/Domain/SameSite/Secure 정책을 로그인 쿠키와 동일하게 맞추고,
-     * Max-Age를 0으로 설정해 즉시 만료시킵니다.</p>
-     *
-     * @return 쿠키 삭제용 ResponseCookie
-     */
-    private ResponseCookie buildDeleteAuthCookie() {
-        final ResponseCookie.ResponseCookieBuilder builder = ResponseCookie
-                .from(authProperties.cookieName(), "")
-                .httpOnly(true)
-                .secure(authProperties.cookieSecure())
-                .path(authProperties.cookiePath())
-                .sameSite(authProperties.cookieSameSite())
-                .maxAge(0);
-        if (authProperties.cookieDomain() != null) {
-            builder.domain(authProperties.cookieDomain());
-        }
-        return builder.build();
-    }
-
-    /**
-     * 인증 토큰의 발급/만료 시각을 기준으로 인증 쿠키 max-age(초)를 계산합니다.
-     *
-     * <p>이 값은 브라우저 보관 수명으로 사용되며, 음수 값이 되지 않도록 최소 0으로 보정합니다.</p>
-     *
-     * @param authToken 로그인 유스케이스가 반환한 토큰 도메인 객체
-     * @return 쿠키 max-age(초)
-     */
-    private static long resolveAuthCookieMaxAgeSeconds(final AuthToken authToken) {
-        return Math.max(0L, Duration.between(authToken.issuedAt(), authToken.expiresAt()).getSeconds());
     }
 }

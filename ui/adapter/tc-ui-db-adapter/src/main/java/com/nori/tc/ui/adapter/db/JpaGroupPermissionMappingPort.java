@@ -3,11 +3,12 @@ package com.nori.tc.ui.adapter.db;
 import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.user.store.TcUserGroupPermissionStore;
 import com.nori.tc.db.core.user.upsert.UpsertTcUserGroupPermission;
-import com.nori.tc.db.domain.user.TcUserGroupPermission;
+import com.nori.tc.ui.adapter.db.mapper.UiUserAdminDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.port.db.GroupPermissionMappingPort;
+import com.nori.tc.ui.domain.useradmin.UiUserGroupPermission;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -50,7 +51,7 @@ public class JpaGroupPermissionMappingPort implements GroupPermissionMappingPort
      * @return 저장 후 매핑 정보
      */
     @Override
-    public TcUserGroupPermission upsert(final UpsertTcUserGroupPermission command) {
+    public UiUserGroupPermission upsert(final UpsertTcUserGroupPermission command) {
         if (log.isDebugEnabled()) {
             log.debug("그룹-권한 매핑 업서트 시작. groupId={}, permId={}",
                     command == null ? null : command.groupId(),
@@ -58,7 +59,7 @@ public class JpaGroupPermissionMappingPort implements GroupPermissionMappingPort
         }
 
         try {
-            final TcUserGroupPermission saved = userGroupPermissionStore.upsert(command);
+            final UiUserGroupPermission saved = UiUserAdminDbMapper.toDomain(userGroupPermissionStore.upsert(command));
             if (log.isDebugEnabled()) {
                 log.debug("그룹-권한 매핑 업서트 완료. ugpKey={}, groupId={}, permId={}",
                         saved.ugpKey(), saved.groupId(), saved.permId());
@@ -88,7 +89,7 @@ public class JpaGroupPermissionMappingPort implements GroupPermissionMappingPort
      * @return 조회 결과(없으면 빈 Optional)
      */
     @Override
-    public Optional<TcUserGroupPermission> findByGroupIdPermId(final long groupId, final long permId) {
+    public Optional<UiUserGroupPermission> findByGroupIdPermId(final long groupId, final long permId) {
         if (groupId <= 0 || permId <= 0) {
             log.warn("그룹-권한 매핑 단건 조회 요청 거부 - groupId/permId는 1 이상이어야 합니다. groupId={}, permId={}",
                     groupId, permId);
@@ -100,7 +101,8 @@ public class JpaGroupPermissionMappingPort implements GroupPermissionMappingPort
         }
 
         try {
-            final Optional<TcUserGroupPermission> result = userGroupPermissionStore.findByGroupIdPermId(groupId, permId);
+            final Optional<UiUserGroupPermission> result = userGroupPermissionStore.findByGroupIdPermId(groupId, permId)
+                    .map(UiUserAdminDbMapper::toDomain);
             if (log.isDebugEnabled()) {
                 log.debug("그룹-권한 매핑 단건 조회 완료. groupId={}, permId={}, found={}",
                         groupId, permId, result.isPresent());
@@ -125,7 +127,7 @@ public class JpaGroupPermissionMappingPort implements GroupPermissionMappingPort
      * @return 목록 + count 페이지 응답
      */
     @Override
-    public PagedResponse<TcUserGroupPermission> findAllByGroupId(final long groupId, final PageRequest pageRequest) {
+    public PagedResponse<UiUserGroupPermission> findAllByGroupId(final long groupId, final PageRequest pageRequest) {
         if (groupId <= 0) {
             log.warn("그룹-권한 매핑 목록 조회 요청 거부 - groupId는 1 이상이어야 합니다. groupId={}", groupId);
             throw new UiBadRequestException("groupId는 1 이상이어야 합니다.");
@@ -138,15 +140,19 @@ public class JpaGroupPermissionMappingPort implements GroupPermissionMappingPort
         }
 
         try {
-            final List<TcUserGroupPermission> items = userGroupPermissionStore.findAllByGroupId(groupId, effectivePage);
+            final List<com.nori.tc.db.domain.user.TcUserGroupPermission> dbItems =
+                    userGroupPermissionStore.findAllByGroupId(groupId, effectivePage);
             final long totalCount = UiDbPagedCountSupport.resolveTotalCount(
-                    items,
+                    dbItems,
                     effectivePage,
                     UiDbPagedCountSupport.DEFAULT_COUNT_SCAN_LIMIT,
                     page -> userGroupPermissionStore.findAllByGroupId(groupId, page),
                     log,
                     "group-permission-mapping"
             );
+            final List<UiUserGroupPermission> items = dbItems.stream()
+                    .map(UiUserAdminDbMapper::toDomain)
+                    .toList();
 
             if (log.isDebugEnabled()) {
                 log.debug("그룹-권한 매핑 목록 조회 완료. groupId={}, offset={}, limit={}, pageSize={}, totalCount={}",

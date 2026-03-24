@@ -1,7 +1,7 @@
 package com.nori.tc.ui.core.eqp;
 
-import com.nori.tc.db.domain.common.model.ModelStatus;
-import com.nori.tc.db.domain.common.model.ProtocolType;
+import com.nori.tc.ui.domain.common.model.UiModelStatus;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
 
 import java.util.List;
 
@@ -10,11 +10,23 @@ import java.util.List;
  */
 public record EqpManagementOptions(
         List<String> socketProtocolTypes,
-        List<String> gatewayJarFileNames,
-        List<String> businessJarFileNames,
+        List<JarOption> gatewayJarOptions,
+        List<JarOption> businessJarOptions,
         List<ModelOption> developModelOptions,
         List<ModelOption> operateModelOptions
 ) {
+
+    /**
+     * JAR 선택 옵션입니다.
+     *
+     * @param jarRef jar 식별 키
+     * @param jarFileName jar 파일명
+     */
+    public record JarOption(
+            long jarRef,
+            String jarFileName
+    ) {
+    }
 
     /**
      * 모델 선택 옵션입니다.
@@ -33,8 +45,8 @@ public record EqpManagementOptions(
             String modelName,
             String parentModel,
             String modelVersion,
-            ProtocolType commInterface,
-            ModelStatus status
+            UiProtocolType commInterface,
+            UiModelStatus status
     ) {
     }
 }

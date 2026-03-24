@@ -3,11 +3,6 @@ package com.nori.tc.ui.core.service;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
-import com.nori.tc.db.domain.common.model.ModelStatus;
-import com.nori.tc.db.domain.common.model.ProtocolType;
-import com.nori.tc.db.domain.eqp.TcEqp;
-import com.nori.tc.db.domain.jar.TcJarBusiness;
-import com.nori.tc.db.domain.model.TcModel;
 import com.nori.tc.ui.core.deploy.DeployCreateResult;
 import com.nori.tc.ui.core.deploy.DeployCurrentState;
 import com.nori.tc.ui.core.deploy.DeployExecutionPolicy;
@@ -36,6 +31,12 @@ import com.nori.tc.ui.core.port.db.EqpCrudPort;
 import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
 import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
 import com.nori.tc.ui.core.properties.UiDeployProperties;
+import com.nori.tc.ui.domain.common.model.UiModelStatus;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
+import com.nori.tc.ui.domain.eqp.UiEqp;
+import com.nori.tc.ui.domain.eqp.UiEqpParam;
+import com.nori.tc.ui.domain.jar.UiBusinessJar;
+import com.nori.tc.ui.domain.model.UiModel;
 import com.nori.tc.ui.domain.task.UiTaskStatus;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -407,10 +408,10 @@ class DeployServiceTest {
     private EqpManagementSnapshot snapshot(final String eqpId, final long eqpKey) {
         final OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         return new EqpManagementSnapshot(
-                new TcEqp(
+                new UiEqp(
                         eqpKey,
                         eqpId,
-                        ProtocolType.SOCKET,
+                        UiProtocolType.SOCKET,
                         "ACTIVE",
                         false,
                         1,
@@ -418,20 +419,22 @@ class DeployServiceTest {
                         6000,
                         1001L,
                         "EQP_PARAM_V1",
+                        null,
+                        null,
                         true,
                         now,
                         now,
                         "SYSTEM",
                         "SYSTEM"
                 ),
-                new TcModel(
+                new UiModel(
                         1001L,
                         500L,
                         "PHOTO_MODEL",
                         null,
                         "v1",
-                        ProtocolType.SOCKET,
-                        ModelStatus.OPERATE,
+                        UiProtocolType.SOCKET,
+                        UiModelStatus.OPERATE,
                         null,
                         null,
                         now,
@@ -445,7 +448,7 @@ class DeployServiceTest {
                 null,
                 null,
                 List.of(),
-                List.of(new com.nori.tc.db.domain.eqp.TcEqpParam(
+                List.of(new UiEqpParam(
                         1L,
                         eqpKey,
                         "PPID",
@@ -457,7 +460,7 @@ class DeployServiceTest {
                 )),
                 List.of(),
                 null,
-                new TcJarBusiness(
+                new UiBusinessJar(
                         eqpKey,
                         "legacy-business.jar",
                         "legacy-business".getBytes(),

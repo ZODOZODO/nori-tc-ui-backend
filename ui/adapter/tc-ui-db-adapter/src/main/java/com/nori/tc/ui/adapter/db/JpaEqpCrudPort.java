@@ -18,23 +18,21 @@ import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpSocket;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpState;
 import com.nori.tc.db.core.jar.store.TcJarBusinessStore;
 import com.nori.tc.db.core.jar.store.TcJarGatewayStore;
-import com.nori.tc.db.core.jar.upsert.UpsertTcJarBusiness;
-import com.nori.tc.db.core.jar.upsert.UpsertTcJarGateway;
 import com.nori.tc.db.domain.common.eqp.ControlState;
 import com.nori.tc.db.domain.common.eqp.EqpState;
-import com.nori.tc.db.domain.common.eqp.LogLevel;
-import com.nori.tc.db.domain.common.model.ProtocolType;
 import com.nori.tc.db.domain.eqp.TcEqp;
-import com.nori.tc.db.domain.eqp.TcEqpParam;
-import com.nori.tc.db.domain.eqp.TcEqpParamVersion;
-import com.nori.tc.db.domain.eqp.TcEqpPortStatus;
-import com.nori.tc.db.domain.jar.TcJarBusiness;
-import com.nori.tc.db.domain.jar.TcJarGateway;
+import com.nori.tc.ui.adapter.db.mapper.UiDomainEnumMapper;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.port.db.EqpCrudPort;
+import com.nori.tc.ui.domain.common.eqp.UiLogLevel;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
+import com.nori.tc.ui.domain.eqp.UiEqpLogPolicy;
+import com.nori.tc.ui.domain.eqp.UiEqpParam;
+import com.nori.tc.ui.domain.eqp.UiEqpParamVersion;
+import com.nori.tc.ui.domain.eqp.UiEqpPortStatus;
 import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
@@ -89,11 +87,12 @@ public class JpaEqpCrudPort implements EqpCrudPort {
     @Override
     public EqpManagementSnapshot create(final EqpManagementCommand.Create command) {
         validateCreateCommand(command);
+        validateSelectedJarRefs(command.gatewayJarRef(), command.businessJarRef());
 
         try {
             final TcEqp createdEqp = eqpStore.upsert(new UpsertTcEqp(
                     command.eqpId(),
-                    command.interfaceType(),
+                    UiDomainEnumMapper.toDbProtocolType(command.interfaceType()),
                     normalizeCommMode(command.commMode()),
                     command.isDev(),
                     command.routePartition(),
@@ -101,6 +100,8 @@ public class JpaEqpCrudPort implements EqpCrudPort {
                     command.eqpPort(),
                     command.modelVersionKey(),
                     normalizeOptionalText(command.appliedParamVersion()),
+                    normalizeOptionalJarRef(command.gatewayJarRef(), "gatewayJarRef"),
+                    normalizeOptionalJarRef(command.businessJarRef(), "businessJarRef"),
                     true,
                     normalizeActor(command.actor()),
                     normalizeActor(command.actor())
@@ -110,7 +111,6 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             upsertProtocolDetails(eqpKey, command.interfaceType(), command.hsmsSettings(), command.socketSettings());
             upsertLogPolicy(eqpKey, resolveCreateLogSettings(command.logSettings()));
             upsertInitialState(eqpKey, command.interfaceType());
-            upsertJars(eqpKey, command.gatewayJarFileName(), command.businessJarFileName(), command.actor(), true);
 
             return requireSnapshot(command.eqpId());
         } catch (RuntimeException exception) {
@@ -128,11 +128,12 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         }
 
         final EqpManagementSnapshot existing = requireSnapshot(eqpId);
+        validateSelectedJarRefs(command.gatewayJarRef(), command.businessJarRef());
 
         try {
             final TcEqp updatedEqp = eqpStore.upsert(new UpsertTcEqp(
                     existing.eqp().eqpId(),
-                    existing.eqp().commInterface(),
+                    UiDomainEnumMapper.toDbProtocolType(existing.eqp().commInterface()),
                     normalizeCommMode(command.commMode()),
                     command.isDev(),
                     command.routePartition(),
@@ -140,6 +141,8 @@ public class JpaEqpCrudPort implements EqpCrudPort {
                     command.eqpPort(),
                     command.modelVersionKey(),
                     normalizeOptionalText(command.appliedParamVersion()),
+                    normalizeOptionalJarRef(command.gatewayJarRef(), "gatewayJarRef"),
+                    normalizeOptionalJarRef(command.businessJarRef(), "businessJarRef"),
                     existing.eqp().enabled(),
                     existing.eqp().createdBy(),
                     normalizeActor(command.actor())
@@ -148,7 +151,6 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             final long eqpKey = updatedEqp.eqpKey();
             upsertProtocolDetails(eqpKey, existing.eqp().commInterface(), command.hsmsSettings(), command.socketSettings());
             upsertLogPolicy(eqpKey, resolveUpdateLogSettings(command.logSettings(), existing.logPolicy()));
-            upsertJars(eqpKey, command.gatewayJarFileName(), command.businessJarFileName(), command.actor(), false);
 
             return requireSnapshot(eqpId);
         } catch (RuntimeException exception) {
@@ -161,11 +163,12 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         if (snapshot == null) {
             throw new UiBadRequestException("복구 스냅샷이 비어 있습니다.");
         }
+        validateSelectedJarRefs(snapshot.eqp().gatewayJarKey(), snapshot.eqp().businessJarKey());
 
         try {
             final TcEqp restoredEqp = eqpStore.upsert(new UpsertTcEqp(
                     snapshot.eqp().eqpId(),
-                    snapshot.eqp().commInterface(),
+                    UiDomainEnumMapper.toDbProtocolType(snapshot.eqp().commInterface()),
                     snapshot.eqp().commMode(),
                     snapshot.eqp().isDev(),
                     snapshot.eqp().routePartition(),
@@ -173,6 +176,8 @@ public class JpaEqpCrudPort implements EqpCrudPort {
                     snapshot.eqp().eqpPort(),
                     snapshot.eqp().modelVersionKey(),
                     snapshot.eqp().appliedParamVersion(),
+                    snapshot.eqp().gatewayJarKey(),
+                    snapshot.eqp().businessJarKey(),
                     snapshot.eqp().enabled(),
                     snapshot.eqp().createdBy(),
                     snapshot.eqp().updatedBy()
@@ -182,7 +187,6 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             restoreProtocolDetails(eqpKey, snapshot);
             restoreLogPolicy(eqpKey, snapshot);
             restoreState(eqpKey, snapshot);
-            restoreJars(eqpKey, snapshot);
             restorePortStatuses(eqpKey, snapshot.portStatuses());
             restoreParams(eqpKey, snapshot.params());
             restoreParamVersionMetas(eqpKey, snapshot.paramVersionMetas());
@@ -227,10 +231,10 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         if (command.interfaceType() == null) {
             throw new UiBadRequestException("interfaceType은 필수입니다.");
         }
-        if (command.hsmsSettings() == null && command.interfaceType() == ProtocolType.SECS) {
+        if (command.hsmsSettings() == null && command.interfaceType() == UiProtocolType.SECS) {
             throw new UiBadRequestException("SECS 설비는 hsmsSettings가 필요합니다.");
         }
-        if (command.socketSettings() == null && command.interfaceType() == ProtocolType.SOCKET) {
+        if (command.socketSettings() == null && command.interfaceType() == UiProtocolType.SOCKET) {
             throw new UiBadRequestException("SOCKET 설비는 socketSettings가 필요합니다.");
         }
     }
@@ -242,11 +246,11 @@ public class JpaEqpCrudPort implements EqpCrudPort {
 
     private void upsertProtocolDetails(
             final long eqpKey,
-            final ProtocolType interfaceType,
+            final UiProtocolType interfaceType,
             final EqpManagementCommand.HsmsSettings hsmsSettings,
             final EqpManagementCommand.SocketSettings socketSettings
     ) {
-        if (interfaceType == ProtocolType.SECS) {
+        if (interfaceType == UiProtocolType.SECS) {
             final EqpManagementCommand.HsmsSettings resolved = resolveHsmsSettings(hsmsSettings);
             eqpHsmsStore.upsert(new UpsertTcEqpHsms(
                     eqpKey,
@@ -286,13 +290,13 @@ public class JpaEqpCrudPort implements EqpCrudPort {
     private void upsertLogPolicy(final long eqpKey, final EqpManagementCommand.LogSettings logSettings) {
         eqpLogStore.upsert(new UpsertTcEqpLog(
                 eqpKey,
-                logSettings.logLevel(),
+                UiDomainEnumMapper.toDbLogLevel(logSettings.logLevel()),
                 logSettings.logRetentionDays(),
                 logSettings.logPath()
         ));
     }
 
-    private void upsertInitialState(final long eqpKey, final ProtocolType interfaceType) {
+    private void upsertInitialState(final long eqpKey, final UiProtocolType interfaceType) {
         eqpStateStore.upsert(createInitialStateCommand(eqpKey, interfaceType, OffsetDateTime.now()));
     }
 
@@ -307,7 +311,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
      */
     static UpsertTcEqpState createInitialStateCommand(
             final long eqpKey,
-            final ProtocolType interfaceType,
+            final UiProtocolType interfaceType,
             final OffsetDateTime timestamp
     ) {
         if (eqpKey <= 0) {
@@ -321,7 +325,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         final ControlState controlState;
         final EqpState eqpState;
 
-        if (interfaceType == ProtocolType.SECS) {
+        if (interfaceType == UiProtocolType.SECS) {
             controlState = ControlState.DOWN;
             eqpState = EqpState.DOWN;
         } else {
@@ -340,48 +344,8 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         );
     }
 
-    private void upsertJars(
-            final long eqpKey,
-            final String gatewayJarFileName,
-            final String businessJarFileName,
-            final String actor,
-            final boolean createMode
-    ) {
-        final String normalizedActor = normalizeActor(actor);
-        final String normalizedGatewayJar = normalizeOptionalText(gatewayJarFileName);
-        final String normalizedBusinessJar = normalizeOptionalText(businessJarFileName);
-
-        if (normalizedGatewayJar != null) {
-            final TcJarGateway source = dbSupport.findLatestGatewayJarByFileName(normalizedGatewayJar)
-                    .orElseThrow(() -> new UiBadRequestException("선택한 Gateway Jar를 찾을 수 없습니다. filename=" + normalizedGatewayJar));
-            jarGatewayStore.upsert(new UpsertTcJarGateway(
-                    eqpKey,
-                    source.jarFileName(),
-                    source.jarFile(),
-                    normalizedActor,
-                    normalizedActor
-            ));
-        } else if (createMode) {
-            jarGatewayStore.deleteByEqpKey(eqpKey);
-        }
-
-        if (normalizedBusinessJar != null) {
-            final TcJarBusiness source = dbSupport.findLatestBusinessJarByFileName(normalizedBusinessJar)
-                    .orElseThrow(() -> new UiBadRequestException("선택한 Business Jar를 찾을 수 없습니다. filename=" + normalizedBusinessJar));
-            jarBusinessStore.upsert(new UpsertTcJarBusiness(
-                    eqpKey,
-                    source.jarFileName(),
-                    source.jarFile(),
-                    normalizedActor,
-                    normalizedActor
-            ));
-        } else if (createMode) {
-            jarBusinessStore.deleteByEqpKey(eqpKey);
-        }
-    }
-
     private void restoreProtocolDetails(final long eqpKey, final EqpManagementSnapshot snapshot) {
-        if (snapshot.eqp().commInterface() == ProtocolType.SECS && snapshot.hsms() != null) {
+        if (snapshot.eqp().commInterface() == UiProtocolType.SECS && snapshot.hsms() != null) {
             eqpHsmsStore.upsert(new UpsertTcEqpHsms(
                     eqpKey,
                     snapshot.hsms().deviceId(),
@@ -400,7 +364,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             return;
         }
 
-        if (snapshot.eqp().commInterface() == ProtocolType.SOCKET && snapshot.socket() != null) {
+        if (snapshot.eqp().commInterface() == UiProtocolType.SOCKET && snapshot.socket() != null) {
             eqpSocketStore.upsert(new UpsertTcEqpSocket(
                     eqpKey,
                     snapshot.socket().socketProtocolType(),
@@ -426,7 +390,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
 
         eqpLogStore.upsert(new UpsertTcEqpLog(
                 eqpKey,
-                snapshot.logPolicy().logLevel(),
+                UiDomainEnumMapper.toDbLogLevel(snapshot.logPolicy().logLevel()),
                 snapshot.logPolicy().logRetentionDays(),
                 snapshot.logPolicy().logPath()
         ));
@@ -440,8 +404,8 @@ public class JpaEqpCrudPort implements EqpCrudPort {
 
         eqpStateStore.upsert(new UpsertTcEqpState(
                 eqpKey,
-                snapshot.runtimeState().controlState(),
-                snapshot.runtimeState().eqpState(),
+                UiDomainEnumMapper.toDbControlState(snapshot.runtimeState().controlState()),
+                UiDomainEnumMapper.toDbEqpState(snapshot.runtimeState().eqpState()),
                 snapshot.runtimeState().sinceAt(),
                 snapshot.runtimeState().reasonCode(),
                 snapshot.runtimeState().reasonDetail(),
@@ -449,59 +413,33 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         ));
     }
 
-    private void restoreJars(final long eqpKey, final EqpManagementSnapshot snapshot) {
-        if (snapshot.gatewayJar() == null) {
-            jarGatewayStore.deleteByEqpKey(eqpKey);
-        } else {
-            jarGatewayStore.upsert(new UpsertTcJarGateway(
-                    eqpKey,
-                    snapshot.gatewayJar().jarFileName(),
-                    snapshot.gatewayJar().jarFile(),
-                    snapshot.gatewayJar().createdBy(),
-                    snapshot.gatewayJar().updatedBy()
-            ));
-        }
-
-        if (snapshot.businessJar() == null) {
-            jarBusinessStore.deleteByEqpKey(eqpKey);
-        } else {
-            jarBusinessStore.upsert(new UpsertTcJarBusiness(
-                    eqpKey,
-                    snapshot.businessJar().jarFileName(),
-                    snapshot.businessJar().jarFile(),
-                    snapshot.businessJar().createdBy(),
-                    snapshot.businessJar().updatedBy()
-            ));
-        }
-    }
-
-    private void restorePortStatuses(final long eqpKey, final List<TcEqpPortStatus> snapshotPortStatuses) {
-        final List<TcEqpPortStatus> existingPortStatuses = dbSupport.loadAllPortStatuses(eqpKey);
-        for (TcEqpPortStatus existing : existingPortStatuses) {
+    private void restorePortStatuses(final long eqpKey, final List<UiEqpPortStatus> snapshotPortStatuses) {
+        final List<UiEqpPortStatus> existingPortStatuses = dbSupport.loadAllPortStatuses(eqpKey);
+        for (UiEqpPortStatus existing : existingPortStatuses) {
             eqpPortStatusStore.deleteByEqpKeyPortId(eqpKey, existing.portId());
         }
 
-        for (TcEqpPortStatus status : snapshotPortStatuses) {
+        for (UiEqpPortStatus status : snapshotPortStatuses) {
             eqpPortStatusStore.upsert(new UpsertTcEqpPortStatus(
                     eqpKey,
                     status.portId(),
-                    status.portType(),
+                    UiDomainEnumMapper.toDbPortType(status.portType()),
                     status.portState(),
                     status.carrierId(),
-                    status.carrierType(),
-                    status.carrierState(),
+                    UiDomainEnumMapper.toDbCarrierType(status.carrierType()),
+                    UiDomainEnumMapper.toDbCarrierState(status.carrierState()),
                     status.updatedAt()
             ));
         }
     }
 
-    private void restoreParams(final long eqpKey, final List<TcEqpParam> snapshotParams) {
-        final List<TcEqpParam> existingParams = dbSupport.loadAllParams(eqpKey);
-        for (TcEqpParam existing : existingParams) {
+    private void restoreParams(final long eqpKey, final List<UiEqpParam> snapshotParams) {
+        final List<UiEqpParam> existingParams = dbSupport.loadAllParams(eqpKey);
+        for (UiEqpParam existing : existingParams) {
             eqpParamStore.deleteByEqpParamKey(existing.eqpParamKey());
         }
 
-        for (TcEqpParam param : snapshotParams) {
+        for (UiEqpParam param : snapshotParams) {
             eqpParamStore.upsert(new UpsertTcEqpParam(
                     eqpKey,
                     param.paramName(),
@@ -513,10 +451,10 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         }
     }
 
-    private void restoreParamVersionMetas(final long eqpKey, final List<TcEqpParamVersion> snapshotParamVersionMetas) {
+    private void restoreParamVersionMetas(final long eqpKey, final List<UiEqpParamVersion> snapshotParamVersionMetas) {
         eqpParamVersionStore.deleteAllByEqpKey(eqpKey);
 
-        for (TcEqpParamVersion paramVersionMeta : snapshotParamVersionMetas) {
+        for (UiEqpParamVersion paramVersionMeta : snapshotParamVersionMetas) {
             eqpParamVersionStore.upsert(new UpsertTcEqpParamVersion(
                     eqpKey,
                     paramVersionMeta.paramVersion(),
@@ -565,7 +503,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
 
     private EqpManagementCommand.LogSettings resolveCreateLogSettings(final EqpManagementCommand.LogSettings input) {
         return new EqpManagementCommand.LogSettings(
-                input == null || input.logLevel() == null ? LogLevel.INFO : input.logLevel(),
+                input == null || input.logLevel() == null ? UiLogLevel.INFO : input.logLevel(),
                 input == null || input.logRetentionDays() == null ? 7 : input.logRetentionDays(),
                 resolveLogPath(input == null ? null : input.logPath(), "\\")
         );
@@ -573,10 +511,10 @@ public class JpaEqpCrudPort implements EqpCrudPort {
 
     private EqpManagementCommand.LogSettings resolveUpdateLogSettings(
             final EqpManagementCommand.LogSettings input,
-            final com.nori.tc.db.domain.eqp.TcEqpLog existingLogPolicy
+            final UiEqpLogPolicy existingLogPolicy
     ) {
-        final LogLevel fallbackLogLevel = existingLogPolicy == null || existingLogPolicy.logLevel() == null
-                ? LogLevel.INFO
+        final UiLogLevel fallbackLogLevel = existingLogPolicy == null || existingLogPolicy.logLevel() == null
+                ? UiLogLevel.INFO
                 : existingLogPolicy.logLevel();
         final int fallbackRetentionDays = existingLogPolicy == null ? 7 : existingLogPolicy.logRetentionDays();
         final String fallbackLogPath = resolveLogPath(existingLogPolicy == null ? null : existingLogPolicy.logPath(), "\\");
@@ -610,6 +548,28 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         }
         final String normalized = value.trim();
         return normalized.isEmpty() ? null : normalized;
+    }
+
+    private Long normalizeOptionalJarRef(final Long jarRef, final String fieldName) {
+        if (jarRef == null) {
+            return null;
+        }
+        if (jarRef <= 0) {
+            throw new UiBadRequestException(fieldName + "는 1 이상이어야 합니다.");
+        }
+        return jarRef;
+    }
+
+    private void validateSelectedJarRefs(final Long gatewayJarRef, final Long businessJarRef) {
+        final Long normalizedGatewayJarRef = normalizeOptionalJarRef(gatewayJarRef, "gatewayJarRef");
+        final Long normalizedBusinessJarRef = normalizeOptionalJarRef(businessJarRef, "businessJarRef");
+
+        if (normalizedGatewayJarRef != null && jarGatewayStore.findByGatewayJarKey(normalizedGatewayJarRef).isEmpty()) {
+            throw new UiBadRequestException("선택한 Gateway Jar를 찾을 수 없습니다. jarRef=" + normalizedGatewayJarRef);
+        }
+        if (normalizedBusinessJarRef != null && jarBusinessStore.findByBusinessJarKey(normalizedBusinessJarRef).isEmpty()) {
+            throw new UiBadRequestException("선택한 Business Jar를 찾을 수 없습니다. jarRef=" + normalizedBusinessJarRef);
+        }
     }
 
     private String normalizeActor(final String actor) {

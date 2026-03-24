@@ -1,23 +1,24 @@
 package com.nori.tc.ui.core.usecase;
 
-import com.nori.tc.db.domain.common.user.UserStatus;
-import com.nori.tc.db.domain.user.TcUiAuthSession;
-import com.nori.tc.db.domain.user.TcUserInfo;
+import com.nori.tc.ui.core.auth.UiAuthAsyncExecutor;
+import com.nori.tc.ui.core.auth.UiAuthMetrics;
+import com.nori.tc.ui.core.auth.UiTokenRecheckWindowCache;
 import com.nori.tc.ui.core.exception.UiAuthenticationException;
 import com.nori.tc.ui.core.port.db.PermissionPort;
 import com.nori.tc.ui.core.port.db.SessionPort;
 import com.nori.tc.ui.core.port.db.UserPort;
 import com.nori.tc.ui.core.port.redis.TokenCachePort;
+import com.nori.tc.ui.domain.auth.UiAuthSessionSnapshot;
+import com.nori.tc.ui.domain.auth.UiUserAccount;
+import com.nori.tc.ui.domain.auth.UiUserStatus;
 import com.nori.tc.ui.domain.auth.UserPrincipal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
-import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 세션 토큰 유효성 검증 유스케이스입니다.
@@ -41,30 +42,30 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ValidateTokenUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(ValidateTokenUseCase.class);
-    /**
-     * 캐시 히트 토큰에 대해 revoked 재검증을 수행하는 최소 주기(ms)입니다.
-     *
-     * <p>매 요청마다 DB를 조회하면 캐시 이점이 사라지므로, 토큰별로 일정 주기마다만
-     * DB 유효성(revoked/만료)를 재검증합니다.</p>
-     */
-    private static final long CACHE_HIT_REVOKE_RECHECK_INTERVAL_MS = 30_000L;
-
     private final SessionPort sessionPort;
     private final UserPort userPort;
     private final PermissionPort permissionPort;
     private final TokenCachePort tokenCachePort;
-    private final Map<String, Long> nextRevokeCheckEpochMsByToken = new ConcurrentHashMap<>();
+    private final UiAuthAsyncExecutor authAsyncExecutor;
+    private final UiTokenRecheckWindowCache recheckWindowCache;
+    private final UiAuthMetrics authMetrics;
 
     public ValidateTokenUseCase(
             final SessionPort sessionPort,
             final UserPort userPort,
             final PermissionPort permissionPort,
-            final TokenCachePort tokenCachePort
+            final TokenCachePort tokenCachePort,
+            final UiAuthAsyncExecutor authAsyncExecutor,
+            final UiTokenRecheckWindowCache recheckWindowCache,
+            final UiAuthMetrics authMetrics
     ) {
-        this.sessionPort = sessionPort;
-        this.userPort = userPort;
-        this.permissionPort = permissionPort;
-        this.tokenCachePort = tokenCachePort;
+        this.sessionPort = Objects.requireNonNull(sessionPort, "sessionPort is null");
+        this.userPort = Objects.requireNonNull(userPort, "userPort is null");
+        this.permissionPort = Objects.requireNonNull(permissionPort, "permissionPort is null");
+        this.tokenCachePort = Objects.requireNonNull(tokenCachePort, "tokenCachePort is null");
+        this.authAsyncExecutor = Objects.requireNonNull(authAsyncExecutor, "authAsyncExecutor is null");
+        this.recheckWindowCache = Objects.requireNonNull(recheckWindowCache, "recheckWindowCache is null");
+        this.authMetrics = Objects.requireNonNull(authMetrics, "authMetrics is null");
     }
 
     /**
@@ -80,16 +81,19 @@ public class ValidateTokenUseCase {
         // 1단계: Redis 캐시 조회 - 히트 시 DB 접근 없이 즉시 반환
         final var cached = tokenCachePort.get(token);
         if (cached.isPresent()) {
+            authMetrics.recordTokenCacheHit();
             verifyRevocationOnCacheHit(token, cached.get().userPk());
             log.trace("토큰 캐시 히트. userPk={}", cached.get().userPk());
             return cached.get();
         }
+        authMetrics.recordTokenCacheMiss();
 
         log.debug("토큰 캐시 미스 - DB 조회 시작. token={}...", token.substring(0, Math.min(8, token.length())));
 
         // 2단계: DB에서 유효 세션 조회 (revoked=false, expiresAt > now 조건 포함)
-        final TcUiAuthSession session = sessionPort.findValidByToken(token)
+        final UiAuthSessionSnapshot session = sessionPort.findValidByToken(token)
                 .orElseThrow(() -> {
+                    authMetrics.recordTokenValidationFailure("invalid_session");
                     log.warn("유효하지 않은 토큰 - 세션 없음/만료/폐기. token={}...",
                             token.substring(0, Math.min(8, token.length())));
                     return new UiAuthenticationException("유효하지 않은 세션 토큰입니다.");
@@ -97,14 +101,16 @@ public class ValidateTokenUseCase {
 
         // 3단계: 사용자 계정 상태 확인
         final long userPk = session.userPk();
-        final TcUserInfo userInfo = userPort.findByUserPk(userPk)
+        final UiUserAccount userInfo = userPort.findByUserPk(userPk)
                 .orElseThrow(() -> {
                     // 세션은 있으나 사용자가 없는 비정상 상태 (데이터 정합성 문제)
+                    authMetrics.recordTokenValidationFailure("missing_user");
                     log.error("세션은 유효하나 사용자를 찾을 수 없음. userPk={}", userPk);
                     return new UiAuthenticationException("사용자 정보를 찾을 수 없습니다.");
                 });
 
-        if (userInfo.status() != UserStatus.ACTIVE) {
+        if (userInfo.status() != UiUserStatus.ACTIVE) {
+            authMetrics.recordTokenValidationFailure("inactive_user");
             log.warn("토큰 검증 실패 - 비활성 계정. userPk={}, status={}", userPk, userInfo.status());
             throw new UiAuthenticationException("사용 불가능한 계정입니다.");
         }
@@ -118,7 +124,7 @@ public class ValidateTokenUseCase {
 
         // 6단계: Redis 캐시 저장 (TTL은 UiSessionCacheService 설정에서 적용)
         tokenCachePort.put(token, principal);
-        nextRevokeCheckEpochMsByToken.put(token, System.currentTimeMillis() + CACHE_HIT_REVOKE_RECHECK_INTERVAL_MS);
+        recheckWindowCache.markValidated(token, System.currentTimeMillis());
         log.debug("토큰 캐시 저장 완료. userPk={}", userPk);
 
         // 7단계: 최근 활동 시각 비동기 업데이트
@@ -141,24 +147,24 @@ public class ValidateTokenUseCase {
      */
     private void verifyRevocationOnCacheHit(final String token, final long userPk) {
         final long now = System.currentTimeMillis();
-        final long nextCheckAt = nextRevokeCheckEpochMsByToken.getOrDefault(token, 0L);
-        if (now < nextCheckAt) {
+        if (!recheckWindowCache.shouldRecheck(token, now)) {
             return;
         }
 
         // findValidByToken은 revoked=false + expiresAt > now 조건을 포함하므로
         // 결과가 없으면 "폐기 또는 만료 또는 미존재"로 판단할 수 있습니다.
         if (sessionPort.findValidByToken(token).isEmpty()) {
-            nextRevokeCheckEpochMsByToken.remove(token);
+            recheckWindowCache.evict(token);
             tokenCachePort.evict(token);
+            authMetrics.recordTokenRecheckInvalidated();
+            authMetrics.recordTokenValidationFailure("revoked_or_expired");
             log.warn("캐시 히트 토큰이 DB에서 무효로 확인되어 캐시 제거. userPk={}", userPk);
             throw new UiAuthenticationException("유효하지 않은 세션 토큰입니다.");
         }
 
-        nextRevokeCheckEpochMsByToken.put(token, now + CACHE_HIT_REVOKE_RECHECK_INTERVAL_MS);
+        recheckWindowCache.markValidated(token, now);
         if (log.isDebugEnabled()) {
-            log.debug("캐시 히트 세션 DB 유효성 검증 완료. userPk={}, nextCheckInMs={}",
-                    userPk, CACHE_HIT_REVOKE_RECHECK_INTERVAL_MS);
+            log.debug("캐시 히트 세션 DB 유효성 검증 완료. userPk={}", userPk);
         }
     }
 
@@ -176,13 +182,14 @@ public class ValidateTokenUseCase {
      * @param userPk 로그 보강용 사용자 PK
      */
     private void updateLastSeenAtAsync(final String token, final long userPk) {
-        CompletableFuture.runAsync(() -> {
+        authAsyncExecutor.execute(() -> {
             try {
                 sessionPort.updateLastSeenAt(token, OffsetDateTime.now());
                 if (log.isTraceEnabled()) {
                     log.trace("lastSeenAt 비동기 업데이트 완료. userPk={}", userPk);
                 }
             } catch (Exception e) {
+                authMetrics.recordLastSeenUpdateFailure();
                 log.warn("lastSeenAt 비동기 업데이트 실패 - 인증은 유지됩니다. userPk={}", userPk, e);
             }
         });

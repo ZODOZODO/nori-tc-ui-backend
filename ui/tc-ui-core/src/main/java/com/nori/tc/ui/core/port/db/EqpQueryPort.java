@@ -1,9 +1,9 @@
 package com.nori.tc.ui.core.port.db;
 
 import com.nori.tc.db.core.common.PageRequest;
-import com.nori.tc.db.domain.eqp.TcEqp;
-import com.nori.tc.db.domain.eqp.TcEqpParam;
 import com.nori.tc.ui.core.model.PagedResponse;
+import com.nori.tc.ui.domain.eqp.UiEqp;
+import com.nori.tc.ui.domain.eqp.UiEqpParam;
 
 import java.util.List;
 import java.util.Optional;
@@ -59,7 +59,7 @@ public interface EqpQueryPort {
      * @param pageRequest offset/limit 기반 페이지 요청
      * @return 페이지 응답(목록 + 전체 건수)
      */
-    PagedResponse<TcEqp> findAll(PageRequest pageRequest);
+    PagedResponse<UiEqp> findAll(PageRequest pageRequest);
 
     /**
      * 설비 식별자(eqpId)로 단건을 조회합니다.
@@ -67,7 +67,7 @@ public interface EqpQueryPort {
      * @param eqpId 설비 비즈니스 키
      * @return 조회 결과, 미존재 시 빈 Optional
      */
-    Optional<TcEqp> findByEqpId(String eqpId);
+    Optional<UiEqp> findByEqpId(String eqpId);
 
     /**
      * 설비 식별자(eqpId)에 매핑된 파라미터 버전 목록을 조회합니다.
@@ -88,7 +88,7 @@ public interface EqpQueryPort {
      * @param version 파라미터 버전 (예: "v1.0", "EDIT")
      * @return 파라미터 목록(설비 미존재 또는 해당 버전 없으면 빈 목록)
      */
-    List<TcEqpParam> findParamsByEqpIdAndVersion(String eqpId, String version);
+    List<UiEqpParam> findParamsByEqpIdAndVersion(String eqpId, String version);
 
     /**
      * 설비 식별자(eqpId)에 매핑된 체크아웃 상태를 조회합니다.

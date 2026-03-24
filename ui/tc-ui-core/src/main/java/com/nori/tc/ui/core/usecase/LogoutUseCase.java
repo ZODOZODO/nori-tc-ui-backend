@@ -1,10 +1,15 @@
 package com.nori.tc.ui.core.usecase;
 
+import com.nori.tc.ui.core.auth.UiAuthMetrics;
+import com.nori.tc.ui.core.auth.UiTokenRecheckWindowCache;
 import com.nori.tc.ui.core.port.db.SessionPort;
 import com.nori.tc.ui.core.port.redis.TokenCachePort;
+import com.nori.tc.ui.domain.auth.UiAuthTokenFingerprint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+
+import java.util.Objects;
 
 /**
  * 로그아웃(인증 세션 폐기) 유스케이스입니다.
@@ -27,13 +32,19 @@ public class LogoutUseCase {
 
     private final SessionPort sessionPort;
     private final TokenCachePort tokenCachePort;
+    private final UiTokenRecheckWindowCache recheckWindowCache;
+    private final UiAuthMetrics authMetrics;
 
     public LogoutUseCase(
             final SessionPort sessionPort,
-            final TokenCachePort tokenCachePort
+            final TokenCachePort tokenCachePort,
+            final UiTokenRecheckWindowCache recheckWindowCache,
+            final UiAuthMetrics authMetrics
     ) {
-        this.sessionPort = sessionPort;
-        this.tokenCachePort = tokenCachePort;
+        this.sessionPort = Objects.requireNonNull(sessionPort, "sessionPort is null");
+        this.tokenCachePort = Objects.requireNonNull(tokenCachePort, "tokenCachePort is null");
+        this.recheckWindowCache = Objects.requireNonNull(recheckWindowCache, "recheckWindowCache is null");
+        this.authMetrics = Objects.requireNonNull(authMetrics, "authMetrics is null");
     }
 
     /**
@@ -45,12 +56,13 @@ public class LogoutUseCase {
      * @param token 폐기할 세션 토큰 (인증 쿠키에서 추출된 원본 값)
      */
     public void execute(final String token) {
-        final String maskedToken = maskToken(token);
+        final String maskedToken = UiAuthTokenFingerprint.mask(token);
         log.debug("로그아웃 처리 시작. token={}...", maskedToken);
 
         // DB 세션 폐기: revoked = true 업데이트
         // 이미 폐기된 세션이어도 UPDATE 0건으로 정상 종료됩니다.
         sessionPort.revoke(token);
+        recheckWindowCache.evict(token);
         log.debug("DB 세션 폐기 완료.");
 
         // Redis 캐시 즉시 삭제: 캐시 TTL이 남아있어도 즉시 무효화합니다.
@@ -59,6 +71,7 @@ public class LogoutUseCase {
             tokenCachePort.evict(token);
             log.debug("Redis 토큰 캐시 삭제 완료.");
         } catch (Exception e) {
+            authMetrics.recordLogoutCacheEvictFailure();
             log.error(
                     "Redis 토큰 캐시 제거 실패 - DB revoke는 완료됨. token={}..., "
                             + "캐시 TTL 만료 전까지 인증이 일시적으로 통과할 수 있습니다.",
@@ -68,19 +81,7 @@ public class LogoutUseCase {
         }
 
         // 토큰 앞 8자리만 로깅합니다(보안: 전체 토큰 노출 방지).
+        authMetrics.recordLogoutSuccess();
         log.info("로그아웃 완료. token={}...", maskedToken);
-    }
-
-    /**
-     * 로그 출력용 토큰 마스킹 값을 생성합니다.
-     *
-     * @param token 원본 토큰
-     * @return 앞 8자리(또는 가능한 길이) 마스킹 문자열
-     */
-    private static String maskToken(final String token) {
-        if (token == null || token.isBlank()) {
-            return "N/A";
-        }
-        return token.substring(0, Math.min(8, token.length()));
     }
 }

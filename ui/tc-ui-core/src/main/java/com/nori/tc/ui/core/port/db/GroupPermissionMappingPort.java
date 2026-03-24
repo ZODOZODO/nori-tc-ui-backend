@@ -2,8 +2,8 @@ package com.nori.tc.ui.core.port.db;
 
 import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.user.upsert.UpsertTcUserGroupPermission;
-import com.nori.tc.db.domain.user.TcUserGroupPermission;
 import com.nori.tc.ui.core.model.PagedResponse;
+import com.nori.tc.ui.domain.useradmin.UiUserGroupPermission;
 
 import java.util.Optional;
 
@@ -25,7 +25,7 @@ public interface GroupPermissionMappingPort {
      * @param command 저장/수정 입력 명령
      * @return 저장 후 매핑 정보
      */
-    TcUserGroupPermission upsert(UpsertTcUserGroupPermission command);
+    UiUserGroupPermission upsert(UpsertTcUserGroupPermission command);
 
     /**
      * (groupId, permId) 유니크 키로 단건을 조회합니다.
@@ -34,7 +34,7 @@ public interface GroupPermissionMappingPort {
      * @param permId 권한 PK
      * @return 조회 결과, 미존재 시 빈 Optional
      */
-    Optional<TcUserGroupPermission> findByGroupIdPermId(long groupId, long permId);
+    Optional<UiUserGroupPermission> findByGroupIdPermId(long groupId, long permId);
 
     /**
      * 특정 그룹에 연결된 권한 매핑 목록을 페이지 단위로 조회합니다.
@@ -43,7 +43,7 @@ public interface GroupPermissionMappingPort {
      * @param pageRequest offset/limit 기반 페이지 요청
      * @return 페이지 응답(목록 + 전체 건수)
      */
-    PagedResponse<TcUserGroupPermission> findAllByGroupId(long groupId, PageRequest pageRequest);
+    PagedResponse<UiUserGroupPermission> findAllByGroupId(long groupId, PageRequest pageRequest);
 
     /**
      * (groupId, permId) 유니크 키 기준으로 매핑을 삭제합니다.

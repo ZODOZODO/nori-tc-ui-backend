@@ -22,13 +22,16 @@ import com.nori.tc.db.core.model.upsert.UpsertTcModelSecsMessage;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelSocketMessage;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelVariableId;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelWorkflow;
-import com.nori.tc.db.domain.common.model.DcopCollectionRule;
-import com.nori.tc.db.domain.common.model.VariableIdType;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
 import com.nori.tc.db.domain.model.TcModelMdf;
+import com.nori.tc.ui.adapter.db.mapper.UiDomainEnumMapper;
+import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.core.port.db.ModelDetailCommandPort;
+import com.nori.tc.ui.domain.common.model.UiDcopCollectionRule;
+import com.nori.tc.ui.domain.common.model.UiVariableIdType;
+import com.nori.tc.ui.domain.model.UiModelMdf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -145,7 +148,7 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
      */
     @Override
     @Transactional
-    public TcModelMdf saveMdf(final long modelVersionKey, final String mdfName, final byte[] mdfFile) {
+    public UiModelMdf saveMdf(final long modelVersionKey, final String mdfName, final byte[] mdfFile) {
         validateModelVersionKey(modelVersionKey);
         final String normalizedMdfName = normalizeRequiredText(mdfName, "mdfName");
         final String normalizedXml = decodeUtf8Xml(mdfFile);
@@ -164,7 +167,7 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
         final TcModelMdf saved = modelMdfStore.upsert(command);
         log.info("MDF 저장 완료. modelVersionKey={}, mdfKey={}, mdfName={}, updatedAt={}",
                 modelVersionKey, saved.mdfKey(), saved.mdfName(), resolveUpdatedAt(saved));
-        return saved;
+        return UiModelDbMapper.toDomain(saved);
     }
 
     /**
@@ -244,7 +247,9 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
 
         rows.forEach(row -> modelVariableIdStore.upsert(new UpsertTcModelVariableId(
                 modelVersionKey,
-                parseRequiredEnum(requiredCell(row, 1, "variableIdType"), VariableIdType.class, "variableIdType"),
+                UiDomainEnumMapper.toDbVariableIdType(
+                        parseRequiredEnum(requiredCell(row, 1, "variableIdType"), UiVariableIdType.class, "variableIdType")
+                ),
                 requiredCell(row, 0, "variableId"),
                 optionalCell(row, 2)
         )));
@@ -323,7 +328,9 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
                 optionalCell(row, 1),    // workflowName
                 optionalCell(row, 2),    // eventId
                 optionalCell(row, 3),    // variableId
-                parseOptionalEnum(optionalCell(row, 4), DcopCollectionRule.class, "collectionRule"),
+                UiDomainEnumMapper.toDbDcopCollectionRule(
+                        parseOptionalEnum(optionalCell(row, 4), UiDcopCollectionRule.class, "collectionRule")
+                ),
                 optionalCell(row, 5),    // calculationRule (자유 텍스트)
                 parseOptionalInteger(optionalCell(row, 6), "orderRule")
         )));

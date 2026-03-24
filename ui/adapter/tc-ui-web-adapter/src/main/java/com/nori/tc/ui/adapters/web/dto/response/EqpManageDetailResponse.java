@@ -1,13 +1,13 @@
 package com.nori.tc.ui.adapters.web.dto.response;
 
-import com.nori.tc.db.domain.common.eqp.CarrierState;
-import com.nori.tc.db.domain.common.eqp.CarrierType;
-import com.nori.tc.db.domain.common.eqp.ControlState;
-import com.nori.tc.db.domain.common.eqp.EqpState;
-import com.nori.tc.db.domain.common.eqp.LogLevel;
-import com.nori.tc.db.domain.common.eqp.PortType;
-import com.nori.tc.db.domain.common.model.ModelStatus;
-import com.nori.tc.db.domain.common.model.ProtocolType;
+import com.nori.tc.ui.domain.common.eqp.UiCarrierState;
+import com.nori.tc.ui.domain.common.eqp.UiCarrierType;
+import com.nori.tc.ui.domain.common.eqp.UiControlState;
+import com.nori.tc.ui.domain.common.eqp.UiEqpState;
+import com.nori.tc.ui.domain.common.eqp.UiLogLevel;
+import com.nori.tc.ui.domain.common.eqp.UiPortType;
+import com.nori.tc.ui.domain.common.model.UiModelStatus;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -17,7 +17,7 @@ import java.util.List;
  */
 public record EqpManageDetailResponse(
         String eqpId,
-        ProtocolType commInterface,
+        UiProtocolType commInterface,
         String commMode,
         boolean isDev,
         Integer routePartition,
@@ -44,8 +44,8 @@ public record EqpManageDetailResponse(
      * @param connectionState connection state
      */
     public record RuntimeStateResponse(
-            ControlState controlState,
-            EqpState eqpState,
+            UiControlState controlState,
+            UiEqpState eqpState,
             String connectionState
     ) {
     }
@@ -58,7 +58,7 @@ public record EqpManageDetailResponse(
      * @param logPath 로그 경로
      */
     public record LogPolicyResponse(
-            LogLevel logLevel,
+            UiLogLevel logLevel,
             Integer logRetentionDays,
             String logPath
     ) {
@@ -67,11 +67,15 @@ public record EqpManageDetailResponse(
     /**
      * EQP jar 연결 응답 DTO입니다.
      *
+     * @param gatewayJarRef gateway jar 참조 키
      * @param gatewayJarFileName gateway jar 파일명
+     * @param businessJarRef business jar 참조 키
      * @param businessJarFileName business jar 파일명
      */
     public record JarBindingResponse(
+            Long gatewayJarRef,
             String gatewayJarFileName,
+            Long businessJarRef,
             String businessJarFileName
     ) {
     }
@@ -93,8 +97,8 @@ public record EqpManageDetailResponse(
             String modelName,
             String parentModel,
             String modelVersion,
-            ProtocolType commInterface,
-            ModelStatus status
+            UiProtocolType commInterface,
+            UiModelStatus status
     ) {
     }
 
@@ -143,11 +147,11 @@ public record EqpManageDetailResponse(
      */
     public record PortStatusResponse(
             String portId,
-            PortType portType,
+            UiPortType portType,
             String portState,
             String carrierId,
-            CarrierType carrierType,
-            CarrierState carrierState,
+            UiCarrierType carrierType,
+            UiCarrierState carrierState,
             OffsetDateTime updatedAt
     ) {
     }

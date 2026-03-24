@@ -17,32 +17,33 @@ import com.nori.tc.db.domain.common.model.ProtocolType;
 import com.nori.tc.db.domain.eqp.TcEqp;
 import com.nori.tc.db.domain.jar.TcJarBusiness;
 import com.nori.tc.db.domain.jar.TcJarGateway;
+import com.nori.tc.ui.adapter.db.mapper.UiEqpDbMapper;
+import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.OffsetDateTime;
-import java.util.List;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.mockito.ArgumentMatchers.any;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link EqpManagementDbSupport}의 jar 최신 선택 규칙을 검증합니다.
+ * {@link EqpManagementDbSupport}의 EQP-JAR 참조 조립 규칙을 검증합니다.
  */
 class EqpManagementDbSupportTest {
 
     @Test
-    @DisplayName("Gateway jar filename 조회는 updatedAt이 가장 최신인 row를 선택합니다")
-    void findLatestGatewayJarByFileNameSelectsNewestRow() {
+    @DisplayName("관리 스냅샷은 tc_eqp가 선택한 jar key로 gateway/business jar를 조회합니다")
+    void loadSnapshotByEqpIdUsesSelectedJarKeys() {
         final Fixture fixture = new Fixture();
-        final TcEqp eqp1 = eqp(1L, "EQP-01");
-        final TcEqp eqp2 = eqp(2L, "EQP-02");
-        final TcJarGateway olderJar = new TcJarGateway(
-                1L,
+        final TcEqp eqp = eqp(1L, "EQP-01", 101L, 201L);
+        final TcJarGateway gatewayJar = new TcJarGateway(
+                101L,
                 "gateway-main.jar",
                 new byte[]{1},
                 OffsetDateTime.parse("2026-03-10T10:15:30+09:00"),
@@ -50,59 +51,40 @@ class EqpManagementDbSupportTest {
                 "SYSTEM",
                 "SYSTEM"
         );
-        final TcJarGateway latestJar = new TcJarGateway(
-                2L,
-                "gateway-main.jar",
+        final TcJarBusiness businessJar = new TcJarBusiness(
+                201L,
+                "business-main.jar",
                 new byte[]{2},
-                OffsetDateTime.parse("2026-03-11T10:15:30+09:00"),
-                OffsetDateTime.parse("2026-03-11T11:15:30+09:00"),
+                OffsetDateTime.parse("2026-03-10T11:15:30+09:00"),
+                OffsetDateTime.parse("2026-03-10T11:15:30+09:00"),
                 "SYSTEM",
                 "SYSTEM"
         );
 
-        when(fixture.eqpStore.findAll(any())).thenReturn(List.of(eqp1, eqp2));
-        when(fixture.jarGatewayStore.findByEqpKey(1L)).thenReturn(Optional.of(olderJar));
-        when(fixture.jarGatewayStore.findByEqpKey(2L)).thenReturn(Optional.of(latestJar));
+        when(fixture.eqpStore.findByEqpId("EQP-01")).thenReturn(Optional.of(eqp));
+        when(fixture.jarGatewayStore.findByGatewayJarKey(101L)).thenReturn(Optional.of(gatewayJar));
+        when(fixture.jarBusinessStore.findByBusinessJarKey(201L)).thenReturn(Optional.of(businessJar));
 
-        final Optional<TcJarGateway> selected = fixture.dbSupport.findLatestGatewayJarByFileName("gateway-main.jar");
+        final Optional<EqpManagementSnapshot> loaded = fixture.dbSupport.loadSnapshotByEqpId("EQP-01");
 
-        assertEquals(true, selected.isPresent());
-        assertSame(latestJar, selected.get());
+        assertTrue(loaded.isPresent());
+        assertEquals(UiEqpDbMapper.toDomain(gatewayJar), loaded.get().gatewayJar());
+        assertEquals(UiEqpDbMapper.toDomain(businessJar), loaded.get().businessJar());
+        verify(fixture.jarGatewayStore).findByGatewayJarKey(101L);
+        verify(fixture.jarBusinessStore).findByBusinessJarKey(201L);
     }
 
     @Test
-    @DisplayName("Business jar filename 조회는 updatedAt이 가장 최신인 row를 선택합니다")
-    void findLatestBusinessJarByFileNameSelectsNewestRow() {
+    @DisplayName("관리 스냅샷은 선택된 jar key가 없으면 jar 조회를 생략합니다")
+    void loadSnapshotByEqpIdSkipsJarLookupWhenNoJarSelected() {
         final Fixture fixture = new Fixture();
-        final TcEqp eqp1 = eqp(11L, "EQP-11");
-        final TcEqp eqp2 = eqp(12L, "EQP-12");
-        final TcJarBusiness olderJar = new TcJarBusiness(
-                11L,
-                "business-main.jar",
-                new byte[]{3},
-                OffsetDateTime.parse("2026-03-10T09:15:30+09:00"),
-                OffsetDateTime.parse("2026-03-10T09:15:30+09:00"),
-                "SYSTEM",
-                "SYSTEM"
-        );
-        final TcJarBusiness latestJar = new TcJarBusiness(
-                12L,
-                "business-main.jar",
-                new byte[]{4},
-                OffsetDateTime.parse("2026-03-11T09:15:30+09:00"),
-                OffsetDateTime.parse("2026-03-11T12:15:30+09:00"),
-                "SYSTEM",
-                "SYSTEM"
-        );
+        when(fixture.eqpStore.findByEqpId("EQP-02")).thenReturn(Optional.of(eqp(2L, "EQP-02", null, null)));
 
-        when(fixture.eqpStore.findAll(any())).thenReturn(List.of(eqp1, eqp2));
-        when(fixture.jarBusinessStore.findByEqpKey(11L)).thenReturn(Optional.of(olderJar));
-        when(fixture.jarBusinessStore.findByEqpKey(12L)).thenReturn(Optional.of(latestJar));
+        final Optional<EqpManagementSnapshot> loaded = fixture.dbSupport.loadSnapshotByEqpId("EQP-02");
 
-        final Optional<TcJarBusiness> selected = fixture.dbSupport.findLatestBusinessJarByFileName("business-main.jar");
-
-        assertEquals(true, selected.isPresent());
-        assertSame(latestJar, selected.get());
+        assertTrue(loaded.isPresent());
+        assertNull(loaded.get().gatewayJar());
+        assertNull(loaded.get().businessJar());
     }
 
     /**
@@ -140,7 +122,12 @@ class EqpManagementDbSupportTest {
         );
     }
 
-    private static TcEqp eqp(final long eqpKey, final String eqpId) {
+    private static TcEqp eqp(
+            final long eqpKey,
+            final String eqpId,
+            final Long gatewayJarKey,
+            final Long businessJarKey
+    ) {
         final OffsetDateTime now = OffsetDateTime.parse("2026-03-11T10:15:30+09:00");
         return new TcEqp(
                 eqpKey,
@@ -151,8 +138,10 @@ class EqpManagementDbSupportTest {
                 1,
                 "127.0.0.1",
                 5000,
-                101L,
+                301L,
                 null,
+                gatewayJarKey,
+                businessJarKey,
                 true,
                 now,
                 now,

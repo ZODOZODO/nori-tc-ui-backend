@@ -2,6 +2,7 @@ package com.nori.tc.ui.adapters.web.dto.request;
 
 import com.nori.tc.db.domain.common.model.ModelStatus;
 import com.nori.tc.db.domain.common.model.ProtocolType;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -42,7 +43,7 @@ class ManagementRequestValidationContractTest {
     void modelRequestsAllowExtendedLengths() {
         final ModelRootCreateRequest rootCreateRequest = new ModelRootCreateRequest(
                 repeat('M', 1000),
-                ProtocolType.SECS,
+                UiProtocolType.SECS,
                 "NORI"
         );
         final ModelUpsertRequest upsertRequest = new ModelUpsertRequest(
@@ -64,7 +65,7 @@ class ManagementRequestValidationContractTest {
     @DisplayName("모델 요청 DTO는 modelName/modelVersion 길이 초과를 차단합니다")
     void modelRequestsRejectExceededLengths() {
         final Set<ConstraintViolation<ModelRootCreateRequest>> rootViolations = validator.validate(
-                new ModelRootCreateRequest(repeat('M', 1001), ProtocolType.SECS, "NORI")
+                new ModelRootCreateRequest(repeat('M', 1001), UiProtocolType.SECS, "NORI")
         );
         final Set<ConstraintViolation<ModelUpsertRequest>> upsertViolations = validator.validate(
                 new ModelUpsertRequest(
@@ -88,7 +89,7 @@ class ManagementRequestValidationContractTest {
     void eqpRequestsAllowAppliedParamVersionUpTo100Characters() {
         final EqpCreateRequest createRequest = new EqpCreateRequest(
                 "EQP-01",
-                ProtocolType.SECS,
+                UiProtocolType.SECS,
                 "ACTIVE",
                 false,
                 1,
@@ -127,7 +128,7 @@ class ManagementRequestValidationContractTest {
         final Set<ConstraintViolation<EqpCreateRequest>> createViolations = validator.validate(
                 new EqpCreateRequest(
                         "EQP-01",
-                        ProtocolType.SECS,
+                        UiProtocolType.SECS,
                         "ACTIVE",
                         false,
                         1,

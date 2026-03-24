@@ -20,15 +20,21 @@ import com.nori.tc.db.domain.eqp.TcEqpHsms;
 import com.nori.tc.db.domain.eqp.TcEqpLog;
 import com.nori.tc.db.domain.eqp.TcEqpParam;
 import com.nori.tc.db.domain.eqp.TcEqpParamVersion;
-import com.nori.tc.db.domain.eqp.TcEqpPortStatus;
 import com.nori.tc.db.domain.eqp.TcEqpSocket;
 import com.nori.tc.db.domain.eqp.TcEqpSocketProtocolType;
 import com.nori.tc.db.domain.eqp.TcEqpState;
 import com.nori.tc.db.domain.eqp.TcEqpStateHist;
-import com.nori.tc.db.domain.jar.TcJarBusiness;
-import com.nori.tc.db.domain.jar.TcJarGateway;
 import com.nori.tc.db.domain.model.TcModel;
+import com.nori.tc.ui.adapter.db.mapper.UiEqpDbMapper;
+import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
+import com.nori.tc.ui.domain.eqp.UiEqp;
+import com.nori.tc.ui.domain.eqp.UiEqpParam;
+import com.nori.tc.ui.domain.eqp.UiEqpParamVersion;
+import com.nori.tc.ui.domain.eqp.UiEqpPortStatus;
+import com.nori.tc.ui.domain.jar.UiBusinessJar;
+import com.nori.tc.ui.domain.jar.UiGatewayJar;
+import com.nori.tc.ui.domain.model.UiModel;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -108,19 +114,23 @@ class EqpManagementDbSupport {
         final TcEqpLog logPolicy = eqpLogStore.findByEqpKey(eqpKey).orElse(null);
         final TcEqpState runtimeState = eqpStateStore.findByEqpKey(eqpKey).orElse(null);
         final String connectionState = resolveLatestConnectionState(eqpKey);
-        final List<TcEqpPortStatus> portStatuses = loadAllPortStatuses(eqpKey);
-        final List<TcEqpParam> params = loadAllParams(eqpKey);
-        final List<TcEqpParamVersion> paramVersionMetas = loadAllParamVersionMetas(eqpKey);
-        final TcJarGateway gatewayJar = jarGatewayStore.findByEqpKey(eqpKey).orElse(null);
-        final TcJarBusiness businessJar = jarBusinessStore.findByEqpKey(eqpKey).orElse(null);
+        final List<UiEqpPortStatus> portStatuses = loadAllPortStatuses(eqpKey);
+        final List<UiEqpParam> params = loadAllParams(eqpKey);
+        final List<UiEqpParamVersion> paramVersionMetas = loadAllParamVersionMetas(eqpKey);
+        final UiGatewayJar gatewayJar = eqp.gatewayJarKey() == null
+                ? null
+                : jarGatewayStore.findByGatewayJarKey(eqp.gatewayJarKey()).map(UiEqpDbMapper::toDomain).orElse(null);
+        final UiBusinessJar businessJar = eqp.businessJarKey() == null
+                ? null
+                : jarBusinessStore.findByBusinessJarKey(eqp.businessJarKey()).map(UiEqpDbMapper::toDomain).orElse(null);
 
         return Optional.of(new EqpManagementSnapshot(
-                eqp,
-                model,
-                hsms,
-                socket,
-                logPolicy,
-                runtimeState,
+                UiEqpDbMapper.toDomain(eqp),
+                UiModelDbMapper.toDomain(model),
+                UiEqpDbMapper.toDomain(hsms),
+                UiEqpDbMapper.toDomain(socket),
+                UiEqpDbMapper.toDomain(logPolicy),
+                UiEqpDbMapper.toDomain(runtimeState),
                 connectionState,
                 portStatuses,
                 params,
@@ -130,54 +140,54 @@ class EqpManagementDbSupport {
         ));
     }
 
-    List<TcEqp> loadAllEqps() {
-        return scanAllPages(eqpStore::findAll);
+    List<UiEqp> loadAllEqps() {
+        return scanAllPages(eqpStore::findAll).stream()
+                .map(UiEqpDbMapper::toDomain)
+                .toList();
     }
 
-    List<TcModel> loadAllModels() {
-        return scanAllPages(modelStore::findAll);
+    List<UiGatewayJar> loadAllGatewayJars() {
+        return scanAllPages(jarGatewayStore::findAll).stream()
+                .map(UiEqpDbMapper::toDomain)
+                .toList();
+    }
+
+    List<UiBusinessJar> loadAllBusinessJars() {
+        return scanAllPages(jarBusinessStore::findAll).stream()
+                .map(UiEqpDbMapper::toDomain)
+                .toList();
+    }
+
+    List<UiModel> loadAllModels() {
+        return scanAllPages(modelStore::findAll).stream()
+                .map(UiModelDbMapper::toDomain)
+                .toList();
     }
 
     List<TcEqpSocketProtocolType> loadAllSocketProtocolTypes() {
         return scanAllPages(socketProtocolTypeStore::findAll);
     }
 
-    List<TcEqpPortStatus> loadAllPortStatuses(final long eqpKey) {
-        return scanAllPages(pageRequest -> eqpPortStatusStore.findAllByEqpKey(eqpKey, pageRequest));
+    List<UiEqpPortStatus> loadAllPortStatuses(final long eqpKey) {
+        return scanAllPages(pageRequest -> eqpPortStatusStore.findAllByEqpKey(eqpKey, pageRequest)).stream()
+                .map(UiEqpDbMapper::toDomain)
+                .toList();
     }
 
-    List<TcEqpParam> loadAllParams(final long eqpKey) {
+    List<UiEqpParam> loadAllParams(final long eqpKey) {
         return scanAllPages(pageRequest -> eqpParamStore.findAllByEqpKey(eqpKey, pageRequest)).stream()
                 .sorted(Comparator
                         .comparing(TcEqpParam::paramVersion, Comparator.nullsLast(Comparator.reverseOrder()))
                         .thenComparing(TcEqpParam::paramName, Comparator.nullsLast(String::compareToIgnoreCase)))
+                .map(UiEqpDbMapper::toDomain)
                 .toList();
     }
 
-    List<TcEqpParamVersion> loadAllParamVersionMetas(final long eqpKey) {
+    List<UiEqpParamVersion> loadAllParamVersionMetas(final long eqpKey) {
         return scanAllPages(pageRequest -> eqpParamVersionStore.findAllByEqpKey(eqpKey, pageRequest)).stream()
                 .sorted(Comparator.comparing(TcEqpParamVersion::paramVersion, Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(UiEqpDbMapper::toDomain)
                 .toList();
-    }
-
-    Optional<TcJarGateway> findLatestGatewayJarByFileName(final String jarFileName) {
-        return loadAllEqps().stream()
-                .map(TcEqp::eqpKey)
-                .filter(Objects::nonNull)
-                .map(key -> jarGatewayStore.findByEqpKey(key))
-                .flatMap(Optional::stream)
-                .filter(jar -> sameText(jar.jarFileName(), jarFileName))
-                .max(Comparator.comparing(TcJarGateway::updatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
-    }
-
-    Optional<TcJarBusiness> findLatestBusinessJarByFileName(final String jarFileName) {
-        return loadAllEqps().stream()
-                .map(TcEqp::eqpKey)
-                .filter(Objects::nonNull)
-                .map(key -> jarBusinessStore.findByEqpKey(key))
-                .flatMap(Optional::stream)
-                .filter(jar -> sameText(jar.jarFileName(), jarFileName))
-                .max(Comparator.comparing(TcJarBusiness::updatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
     }
 
     private String resolveLatestConnectionState(final long eqpKey) {
@@ -192,13 +202,6 @@ class EqpManagementDbSupport {
                 .filter(Objects::nonNull)
                 .findFirst()
                 .orElse(null);
-    }
-
-    private boolean sameText(final String left, final String right) {
-        if (left == null || right == null) {
-            return false;
-        }
-        return left.trim().equals(right.trim());
     }
 
     private <T> List<T> scanAllPages(final UiDbPagedCountSupport.PageFetcher<T> pageFetcher) {

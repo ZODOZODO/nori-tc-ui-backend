@@ -18,6 +18,7 @@ import com.nori.tc.db.domain.model.TcModel;
 import com.nori.tc.db.domain.model.TcModelMdf;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
+import com.nori.tc.ui.domain.model.UiModelMdf;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -51,7 +52,7 @@ class JpaModelDetailCommandPortTest {
         when(fixture.modelMdfStore.findByModelVersionKey(101L)).thenReturn(Optional.of(existing));
         when(fixture.modelMdfStore.upsert(any())).thenReturn(mdf(55L, 101L, "REQ_MDF", xml));
 
-        final TcModelMdf saved = fixture.port.saveMdf(101L, "REQ_MDF", xml.getBytes(StandardCharsets.UTF_8));
+        final UiModelMdf saved = fixture.port.saveMdf(101L, "REQ_MDF", xml.getBytes(StandardCharsets.UTF_8));
 
         final ArgumentCaptor<UpsertTcModelMdf> captor = ArgumentCaptor.forClass(UpsertTcModelMdf.class);
         verify(fixture.modelMdfStore).upsert(captor.capture());

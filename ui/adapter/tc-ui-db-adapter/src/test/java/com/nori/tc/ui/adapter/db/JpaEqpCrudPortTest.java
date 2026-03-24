@@ -15,8 +15,6 @@ import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpSocket;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpState;
 import com.nori.tc.db.core.jar.store.TcJarBusinessStore;
 import com.nori.tc.db.core.jar.store.TcJarGatewayStore;
-import com.nori.tc.db.core.jar.upsert.UpsertTcJarBusiness;
-import com.nori.tc.db.core.jar.upsert.UpsertTcJarGateway;
 import com.nori.tc.db.domain.common.eqp.ControlState;
 import com.nori.tc.db.domain.common.eqp.EqpState;
 import com.nori.tc.db.domain.common.eqp.LogLevel;
@@ -24,8 +22,11 @@ import com.nori.tc.db.domain.common.model.ProtocolType;
 import com.nori.tc.db.domain.eqp.TcEqp;
 import com.nori.tc.db.domain.jar.TcJarBusiness;
 import com.nori.tc.db.domain.jar.TcJarGateway;
+import com.nori.tc.ui.adapter.db.mapper.UiDomainEnumMapper;
+import com.nori.tc.ui.adapter.db.mapper.UiEqpDbMapper;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -34,11 +35,11 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -54,7 +55,7 @@ class JpaEqpCrudPortTest {
 
         final UpsertTcEqpState command = JpaEqpCrudPort.createInitialStateCommand(
                 100L,
-                ProtocolType.SECS,
+                UiProtocolType.SECS,
                 fixedTimestamp
         );
 
@@ -74,7 +75,7 @@ class JpaEqpCrudPortTest {
         final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
                 "tester",
                 "EQP-SECS-001",
-                ProtocolType.SECS,
+                UiProtocolType.SECS,
                 "active",
                 true,
                 3,
@@ -91,7 +92,7 @@ class JpaEqpCrudPortTest {
         final TcEqp storedEqp = eqp(
                 11L,
                 command.eqpId(),
-                command.interfaceType(),
+                UiDomainEnumMapper.toDbProtocolType(command.interfaceType()),
                 "ACTIVE",
                 command.isDev(),
                 command.routePartition(),
@@ -112,7 +113,7 @@ class JpaEqpCrudPortTest {
         final ArgumentCaptor<UpsertTcEqp> eqpCaptor = ArgumentCaptor.forClass(UpsertTcEqp.class);
         verify(fixture.eqpStore).upsert(eqpCaptor.capture());
         assertEquals(command.eqpId(), eqpCaptor.getValue().eqpId());
-        assertEquals(command.interfaceType(), eqpCaptor.getValue().commInterface());
+        assertEquals(UiDomainEnumMapper.toDbProtocolType(command.interfaceType()), eqpCaptor.getValue().commInterface());
         assertEquals("ACTIVE", eqpCaptor.getValue().commMode());
         assertEquals(command.isDev(), eqpCaptor.getValue().isDev());
         assertEquals(command.routePartition(), eqpCaptor.getValue().routePartition());
@@ -157,7 +158,7 @@ class JpaEqpCrudPortTest {
         final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
                 "tester",
                 "EQP-SOCKET-001",
-                ProtocolType.SOCKET,
+                UiProtocolType.SOCKET,
                 "PASSIVE",
                 false,
                 5,
@@ -174,7 +175,7 @@ class JpaEqpCrudPortTest {
         final TcEqp storedEqp = eqp(
                 21L,
                 command.eqpId(),
-                command.interfaceType(),
+                UiDomainEnumMapper.toDbProtocolType(command.interfaceType()),
                 command.commMode(),
                 command.isDev(),
                 command.routePartition(),
@@ -215,13 +216,13 @@ class JpaEqpCrudPortTest {
     }
 
     @Test
-    @DisplayName("EQP 생성은 dropdown에서 선택한 jar filename의 원본 row를 복사합니다")
-    void createEqpCopiesSelectedJarRows() {
+    @DisplayName("EQP 생성은 선택한 jar ref를 tc_eqp에 그대로 저장합니다")
+    void createEqpPersistsSelectedJarRefs() {
         final Fixture fixture = new Fixture();
         final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
                 "tester",
                 "EQP-JAR-001",
-                ProtocolType.SECS,
+                UiProtocolType.SECS,
                 "ACTIVE",
                 true,
                 1,
@@ -229,8 +230,8 @@ class JpaEqpCrudPortTest {
                 5000,
                 101L,
                 null,
-                "gateway-main.jar",
-                "business-main.jar",
+                999L,
+                998L,
                 null,
                 new EqpManagementCommand.HsmsSettings(1, 45, 10, 5, 10, 5, true, 60, 10_485_760L),
                 null
@@ -238,14 +239,17 @@ class JpaEqpCrudPortTest {
         final TcEqp storedEqp = eqp(
                 31L,
                 command.eqpId(),
-                command.interfaceType(),
+                UiDomainEnumMapper.toDbProtocolType(command.interfaceType()),
                 command.commMode(),
                 command.isDev(),
                 command.routePartition(),
                 command.eqpIp(),
                 command.eqpPort(),
                 command.modelVersionKey(),
-                "tester"
+                "tester",
+                null,
+                command.gatewayJarRef(),
+                command.businessJarRef()
         );
         final TcJarGateway gatewaySource = new TcJarGateway(
                 999L,
@@ -268,28 +272,19 @@ class JpaEqpCrudPortTest {
 
         when(fixture.eqpStore.upsert(any())).thenReturn(storedEqp);
         when(fixture.dbSupport.loadSnapshotByEqpId(command.eqpId())).thenReturn(Optional.of(snapshot(storedEqp)));
-        when(fixture.dbSupport.findLatestGatewayJarByFileName("gateway-main.jar"))
-                .thenReturn(Optional.of(gatewaySource));
-        when(fixture.dbSupport.findLatestBusinessJarByFileName("business-main.jar"))
-                .thenReturn(Optional.of(businessSource));
+        when(fixture.jarGatewayStore.findByGatewayJarKey(999L)).thenReturn(Optional.of(gatewaySource));
+        when(fixture.jarBusinessStore.findByBusinessJarKey(998L)).thenReturn(Optional.of(businessSource));
 
         fixture.port.create(command);
 
-        final ArgumentCaptor<UpsertTcJarGateway> gatewayCaptor = ArgumentCaptor.forClass(UpsertTcJarGateway.class);
-        verify(fixture.jarGatewayStore).upsert(gatewayCaptor.capture());
-        assertEquals(31L, gatewayCaptor.getValue().eqpKey());
-        assertEquals("gateway-main.jar", gatewayCaptor.getValue().jarFileName());
-        assertArrayEquals(gatewaySource.jarFile(), gatewayCaptor.getValue().jarFile());
-        assertEquals("tester", gatewayCaptor.getValue().createdBy());
-        assertEquals("tester", gatewayCaptor.getValue().updatedBy());
-
-        final ArgumentCaptor<UpsertTcJarBusiness> businessCaptor = ArgumentCaptor.forClass(UpsertTcJarBusiness.class);
-        verify(fixture.jarBusinessStore).upsert(businessCaptor.capture());
-        assertEquals(31L, businessCaptor.getValue().eqpKey());
-        assertEquals("business-main.jar", businessCaptor.getValue().jarFileName());
-        assertArrayEquals(businessSource.jarFile(), businessCaptor.getValue().jarFile());
-        assertEquals("tester", businessCaptor.getValue().createdBy());
-        assertEquals("tester", businessCaptor.getValue().updatedBy());
+        final ArgumentCaptor<UpsertTcEqp> eqpCaptor = ArgumentCaptor.forClass(UpsertTcEqp.class);
+        verify(fixture.eqpStore).upsert(eqpCaptor.capture());
+        assertEquals(999L, eqpCaptor.getValue().gatewayJarKey());
+        assertEquals(998L, eqpCaptor.getValue().businessJarKey());
+        verify(fixture.jarGatewayStore).findByGatewayJarKey(999L);
+        verify(fixture.jarBusinessStore).findByBusinessJarKey(998L);
+        verify(fixture.jarGatewayStore, never()).upsert(any());
+        verify(fixture.jarBusinessStore, never()).upsert(any());
     }
 
     @Test
@@ -364,7 +359,7 @@ class JpaEqpCrudPortTest {
 
         final UpsertTcEqpState command = JpaEqpCrudPort.createInitialStateCommand(
                 200L,
-                ProtocolType.SOCKET,
+                UiProtocolType.SOCKET,
                 fixedTimestamp
         );
 
@@ -431,6 +426,8 @@ class JpaEqpCrudPortTest {
                 eqpPort,
                 modelVersionKey,
                 actor,
+                null,
+                null,
                 null
         );
     }
@@ -448,6 +445,38 @@ class JpaEqpCrudPortTest {
             final String actor,
             final String appliedParamVersion
     ) {
+        return eqp(
+                eqpKey,
+                eqpId,
+                protocolType,
+                commMode,
+                isDev,
+                routePartition,
+                eqpIp,
+                eqpPort,
+                modelVersionKey,
+                actor,
+                appliedParamVersion,
+                null,
+                null
+        );
+    }
+
+    private static TcEqp eqp(
+            final long eqpKey,
+            final String eqpId,
+            final ProtocolType protocolType,
+            final String commMode,
+            final boolean isDev,
+            final int routePartition,
+            final String eqpIp,
+            final int eqpPort,
+            final long modelVersionKey,
+            final String actor,
+            final String appliedParamVersion,
+            final Long gatewayJarKey,
+            final Long businessJarKey
+    ) {
         final OffsetDateTime now = OffsetDateTime.parse("2026-03-11T10:15:30+09:00");
         return new TcEqp(
                 eqpKey,
@@ -460,6 +489,8 @@ class JpaEqpCrudPortTest {
                 eqpPort,
                 modelVersionKey,
                 appliedParamVersion,
+                gatewayJarKey,
+                businessJarKey,
                 true,
                 now,
                 now,
@@ -470,7 +501,7 @@ class JpaEqpCrudPortTest {
 
     private static EqpManagementSnapshot snapshot(final TcEqp eqp) {
         return new EqpManagementSnapshot(
-                eqp,
+                UiEqpDbMapper.toDomain(eqp),
                 null,
                 null,
                 null,

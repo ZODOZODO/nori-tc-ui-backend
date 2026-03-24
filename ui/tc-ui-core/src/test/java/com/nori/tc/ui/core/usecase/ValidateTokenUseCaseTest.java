@@ -1,13 +1,16 @@
 package com.nori.tc.ui.core.usecase;
 
-import com.nori.tc.db.domain.common.user.UserStatus;
-import com.nori.tc.db.domain.user.TcUiAuthSession;
-import com.nori.tc.db.domain.user.TcUserInfo;
+import com.nori.tc.ui.core.auth.UiAuthAsyncExecutor;
+import com.nori.tc.ui.core.auth.UiAuthMetrics;
+import com.nori.tc.ui.core.auth.UiTokenRecheckWindowCache;
 import com.nori.tc.ui.core.exception.UiAuthenticationException;
 import com.nori.tc.ui.core.port.db.PermissionPort;
 import com.nori.tc.ui.core.port.db.SessionPort;
 import com.nori.tc.ui.core.port.db.UserPort;
 import com.nori.tc.ui.core.port.redis.TokenCachePort;
+import com.nori.tc.ui.domain.auth.UiAuthSessionSnapshot;
+import com.nori.tc.ui.domain.auth.UiUserAccount;
+import com.nori.tc.ui.domain.auth.UiUserStatus;
 import com.nori.tc.ui.domain.auth.UserPrincipal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -56,7 +59,13 @@ class ValidateTokenUseCaseTest {
         permissionPort.permissionsByUserPk.put(TEST_USER_PK, Set.of("EQP_MANAGE"));
 
         final ValidateTokenUseCase useCase = new ValidateTokenUseCase(
-                sessionPort, userPort, permissionPort, cachePort
+                sessionPort,
+                userPort,
+                permissionPort,
+                cachePort,
+                UiAuthAsyncExecutor.direct(),
+                UiTokenRecheckWindowCache.createStandalone(30, 100),
+                UiAuthMetrics.noop()
         );
 
         // 1차 호출: 캐시 미스 -> DB 조회 후 캐시 적재 (nextRevokeCheck 설정됨)
@@ -86,7 +95,13 @@ class ValidateTokenUseCaseTest {
         permissionPort.permissionsByUserPk.put(TEST_USER_PK, Set.of("AUTH_ME_PERM", "EQP_MANAGE"));
 
         final ValidateTokenUseCase useCase = new ValidateTokenUseCase(
-                sessionPort, userPort, permissionPort, cachePort
+                sessionPort,
+                userPort,
+                permissionPort,
+                cachePort,
+                UiAuthAsyncExecutor.direct(),
+                UiTokenRecheckWindowCache.createStandalone(30, 100),
+                UiAuthMetrics.noop()
         );
 
         final UserPrincipal principal = useCase.execute(TEST_TOKEN);
@@ -107,7 +122,10 @@ class ValidateTokenUseCaseTest {
                 new FakeSessionPort(),
                 new FakeUserPort(),
                 new FakePermissionPort(),
-                new FakeTokenCachePort()
+                new FakeTokenCachePort(),
+                UiAuthAsyncExecutor.direct(),
+                UiTokenRecheckWindowCache.createStandalone(30, 100),
+                UiAuthMetrics.noop()
         );
 
         final UiAuthenticationException exception = assertThrows(
@@ -134,7 +152,13 @@ class ValidateTokenUseCaseTest {
         permissionPort.permissionsByUserPk.put(TEST_USER_PK, Set.of("EQP_MANAGE"));
 
         final ValidateTokenUseCase useCase = new ValidateTokenUseCase(
-                sessionPort, userPort, permissionPort, cachePort
+                sessionPort,
+                userPort,
+                permissionPort,
+                cachePort,
+                UiAuthAsyncExecutor.direct(),
+                UiTokenRecheckWindowCache.createStandalone(30, 100),
+                UiAuthMetrics.noop()
         );
 
         final UserPrincipal principal = useCase.execute(TEST_TOKEN);
@@ -146,21 +170,13 @@ class ValidateTokenUseCaseTest {
      *
      * @return ACTIVE 상태 사용자
      */
-    private static TcUserInfo activeUser() {
-        return new TcUserInfo(
+    private static UiUserAccount activeUser() {
+        return new UiUserAccount(
                 TEST_USER_PK,
-                "NORI",
-                "DEV",
-                "테스트",
                 "tester",
                 "tester",
                 "$2a$10$hash",
-                "tester@nori.com",
-                UserStatus.ACTIVE,
-                OffsetDateTime.now(),
-                OffsetDateTime.now(),
-                "SYSTEM",
-                "SYSTEM"
+                UiUserStatus.ACTIVE
         );
     }
 
@@ -170,9 +186,8 @@ class ValidateTokenUseCaseTest {
      * @param token 세션 토큰
      * @return revoked=false, expiresAt 미래 시각 세션
      */
-    private static TcUiAuthSession validSession(final String token) {
-        return new TcUiAuthSession(
-                token,
+    private static UiAuthSessionSnapshot validSession(final String token) {
+        return new UiAuthSessionSnapshot(
                 TEST_USER_PK,
                 OffsetDateTime.now().minusMinutes(1),
                 OffsetDateTime.now().plusHours(8),
@@ -185,17 +200,17 @@ class ValidateTokenUseCaseTest {
      * SessionPort 테스트 더블입니다.
      */
     private static final class FakeSessionPort implements SessionPort {
-        private final Map<String, TcUiAuthSession> validSessionByToken = new ConcurrentHashMap<>();
+        private final Map<String, UiAuthSessionSnapshot> validSessionByToken = new ConcurrentHashMap<>();
         private final AtomicInteger findValidByTokenCallCount = new AtomicInteger();
         private volatile boolean throwOnUpdateLastSeenAt = false;
 
         @Override
-        public void save(final TcUiAuthSession session) {
+        public void save(final com.nori.tc.ui.domain.auth.UiAuthSessionCreateCommand session) {
             // not used
         }
 
         @Override
-        public Optional<TcUiAuthSession> findValidByToken(final String token) {
+        public Optional<UiAuthSessionSnapshot> findValidByToken(final String token) {
             findValidByTokenCallCount.incrementAndGet();
             return Optional.ofNullable(validSessionByToken.get(token));
         }
@@ -217,15 +232,15 @@ class ValidateTokenUseCaseTest {
      * UserPort 테스트 더블입니다.
      */
     private static final class FakeUserPort implements UserPort {
-        private final Map<Long, TcUserInfo> userByPk = new ConcurrentHashMap<>();
+        private final Map<Long, UiUserAccount> userByPk = new ConcurrentHashMap<>();
 
         @Override
-        public Optional<TcUserInfo> findByUserIdNorm(final String userIdNorm) {
+        public Optional<UiUserAccount> findByUserIdNorm(final String userIdNorm) {
             return Optional.empty();
         }
 
         @Override
-        public Optional<TcUserInfo> findByUserPk(final long userPk) {
+        public Optional<UiUserAccount> findByUserPk(final long userPk) {
             return Optional.ofNullable(userByPk.get(userPk));
         }
     }

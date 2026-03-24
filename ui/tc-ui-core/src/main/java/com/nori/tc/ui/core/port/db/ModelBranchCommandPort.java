@@ -1,6 +1,6 @@
 package com.nori.tc.ui.core.port.db;
 
-import com.nori.tc.db.domain.model.TcModel;
+import com.nori.tc.ui.domain.model.UiModel;
 
 import java.util.List;
 
@@ -79,7 +79,7 @@ public interface ModelBranchCommandPort {
      * @param command 생성 명령
      * @return 생성된 branch의 최신 모델 버전 스냅샷
      */
-    TcModel createBranchModel(CreateBranchModelCommand command);
+    UiModel createBranchModel(CreateBranchModelCommand command);
 
     /**
      * 선택한 branch version을 EDIT version으로 checkout합니다.
@@ -89,7 +89,7 @@ public interface ModelBranchCommandPort {
      * @param command checkout 명령
      * @return 편집에 사용할 EDIT 모델 버전
      */
-    TcModel checkoutBranchVersion(CheckoutBranchVersionCommand command);
+    UiModel checkoutBranchVersion(CheckoutBranchVersionCommand command);
 
     /**
      * EDIT version을 새 branch version으로 checkin합니다.
@@ -97,7 +97,7 @@ public interface ModelBranchCommandPort {
      * @param command checkin 명령
      * @return 새로 생성된 branch 모델 버전
      */
-    TcModel checkinBranchEditVersion(CheckinBranchEditVersionCommand command);
+    UiModel checkinBranchEditVersion(CheckinBranchEditVersionCommand command);
 
     /**
      * 선택된 root model에 연결된 deprecated branch를 일괄 삭제합니다.

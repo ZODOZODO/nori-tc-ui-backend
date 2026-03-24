@@ -1,7 +1,7 @@
 package com.nori.tc.ui.adapters.web.dto.response;
 
-import com.nori.tc.db.domain.common.model.ModelStatus;
-import com.nori.tc.db.domain.common.model.ProtocolType;
+import com.nori.tc.ui.domain.common.model.UiModelStatus;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
 
 import java.util.List;
 
@@ -10,11 +10,20 @@ import java.util.List;
  */
 public record EqpManageOptionsResponse(
         List<String> socketProtocolTypes,
-        List<String> gatewayJarFileNames,
-        List<String> businessJarFileNames,
+        List<JarOptionResponse> gatewayJarOptions,
+        List<JarOptionResponse> businessJarOptions,
         List<ModelOptionResponse> developModelOptions,
         List<ModelOptionResponse> operateModelOptions
 ) {
+
+    /**
+     * EQP 관리 화면 JAR 선택 옵션 응답 DTO입니다.
+     */
+    public record JarOptionResponse(
+            long jarRef,
+            String jarFileName
+    ) {
+    }
 
     /**
      * EQP 관리 화면 모델 선택 옵션 응답 DTO입니다.
@@ -25,8 +34,8 @@ public record EqpManageOptionsResponse(
             String modelName,
             String parentModel,
             String modelVersion,
-            ProtocolType commInterface,
-            ModelStatus status
+            UiProtocolType commInterface,
+            UiModelStatus status
     ) {
     }
 }

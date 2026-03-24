@@ -8,7 +8,7 @@ import java.util.Objects;
  *
  * <p>역할:</p>
  * <p>로그인 성공 시 발급되며, 이후 모든 API 요청의 인증 수단으로 사용됩니다.
- * tc_ui_auth_session 테이블의 한 행과 1:1 대응합니다.</p>
+ * 저장소에는 raw token 대신 fingerprint가 보관되며, 이 객체는 쿠키에 내려가는 원문 토큰만 보유합니다.</p>
  *
  * <p>생명주기:</p>
  * <ol>

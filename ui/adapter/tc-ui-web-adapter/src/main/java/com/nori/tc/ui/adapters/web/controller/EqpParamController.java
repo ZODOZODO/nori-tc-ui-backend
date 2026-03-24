@@ -1,6 +1,5 @@
 package com.nori.tc.ui.adapters.web.controller;
 
-import com.nori.tc.db.domain.eqp.TcEqpParam;
 import com.nori.tc.ui.adapters.web.dto.request.EqpCheckinRequest;
 import com.nori.tc.ui.adapters.web.dto.request.EqpCheckoutRequest;
 import com.nori.tc.ui.adapters.web.dto.request.EqpParamSaveRequest;
@@ -11,6 +10,7 @@ import com.nori.tc.ui.core.exception.EqpAlreadyCheckedOutException;
 import com.nori.tc.ui.core.port.db.EqpParamCommandPort;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
 import com.nori.tc.ui.domain.auth.UserPrincipal;
+import com.nori.tc.ui.domain.eqp.UiEqpParam;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -117,7 +117,7 @@ public class EqpParamController {
             log.debug("설비 파라미터 조회 요청. eqpId={}, version={}", eqpId, version);
         }
 
-        final List<TcEqpParam> params = eqpQueryPort.findParamsByEqpIdAndVersion(eqpId, version);
+        final List<UiEqpParam> params = eqpQueryPort.findParamsByEqpIdAndVersion(eqpId, version);
         final List<EqpParamResponse> response = params.stream()
                 .map(p -> new EqpParamResponse(p.paramName(), p.paramValue(), p.description(), p.createdBy()))
                 .toList();

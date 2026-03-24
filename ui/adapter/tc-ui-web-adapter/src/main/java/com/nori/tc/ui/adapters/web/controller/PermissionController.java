@@ -2,13 +2,13 @@ package com.nori.tc.ui.adapters.web.controller;
 
 import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.user.upsert.UpsertTcUiPermission;
-import com.nori.tc.db.domain.user.TcUiPermission;
 import com.nori.tc.ui.adapters.web.controller.support.UiPageRequestSupport;
 import com.nori.tc.ui.adapters.web.dto.request.PermissionUpsertRequest;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.adapters.web.dto.response.PermissionInfoResponse;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.port.db.PermissionCrudPort;
+import com.nori.tc.ui.domain.useradmin.UiPermission;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -76,7 +76,7 @@ public class PermissionController {
             log.debug("권한 목록 조회 요청. offset={}, limit={}", pageRequest.offset(), pageRequest.limit());
         }
 
-        final PagedResponse<TcUiPermission> page = permissionCrudPort.findAll(pageRequest);
+        final PagedResponse<UiPermission> page = permissionCrudPort.findAll(pageRequest);
         final PagedResponse<PermissionInfoResponse> responsePage = toPermissionPage(page);
 
         if (log.isDebugEnabled()) {
@@ -101,7 +101,7 @@ public class PermissionController {
             log.debug("권한 단건 조회 요청. permId={}", permId);
         }
 
-        final Optional<TcUiPermission> optionalPermission = permissionCrudPort.findByPermId(permId);
+        final Optional<UiPermission> optionalPermission = permissionCrudPort.findByPermId(permId);
         if (optionalPermission.isEmpty()) {
             log.warn("권한 단건 조회 결과 없음. permId={}", permId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -125,7 +125,7 @@ public class PermissionController {
                 request.permCode(), request.resourceType(), request.resource(), request.httpMethod());
 
         final UpsertTcUiPermission command = buildPermissionCommand(null, request);
-        final TcUiPermission created = permissionCrudPort.upsert(command);
+        final UiPermission created = permissionCrudPort.upsert(command);
 
         log.info("권한 등록 완료. permId={}, permCode={}", created.permId(), created.permCode());
         return ResponseEntity.ok(ApiResponse.success(toPermissionInfoResponse(created)));
@@ -153,7 +153,7 @@ public class PermissionController {
         }
 
         final UpsertTcUiPermission command = buildPermissionCommand(permId, request);
-        final TcUiPermission updated = permissionCrudPort.upsert(command);
+        final UiPermission updated = permissionCrudPort.upsert(command);
 
         log.info("권한 수정 완료. permId={}, permCode={}", updated.permId(), updated.permCode());
         return ResponseEntity.ok(ApiResponse.success(toPermissionInfoResponse(updated)));
@@ -231,7 +231,7 @@ public class PermissionController {
      * @return API 응답 페이지
      */
     private static PagedResponse<PermissionInfoResponse> toPermissionPage(
-            final PagedResponse<TcUiPermission> page
+            final PagedResponse<UiPermission> page
     ) {
         final List<PermissionInfoResponse> items = page.items().stream()
                 .map(PermissionController::toPermissionInfoResponse)
@@ -245,7 +245,7 @@ public class PermissionController {
      * @param permission 도메인 권한 객체
      * @return 응답 DTO
      */
-    private static PermissionInfoResponse toPermissionInfoResponse(final TcUiPermission permission) {
+    private static PermissionInfoResponse toPermissionInfoResponse(final UiPermission permission) {
         return new PermissionInfoResponse(
                 permission.permId(),
                 permission.permCode(),
@@ -263,4 +263,3 @@ public class PermissionController {
         );
     }
 }
-

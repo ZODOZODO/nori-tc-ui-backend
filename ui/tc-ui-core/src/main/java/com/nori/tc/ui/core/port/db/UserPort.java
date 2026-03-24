@@ -1,6 +1,6 @@
 package com.nori.tc.ui.core.port.db;
 
-import com.nori.tc.db.domain.user.TcUserInfo;
+import com.nori.tc.ui.domain.auth.UiUserAccount;
 
 import java.util.Optional;
 
@@ -25,7 +25,7 @@ public interface UserPort {
      * @param userIdNorm 정규화된 사용자 ID (trim + toLowerCase 적용된 값)
      * @return 조회된 사용자 정보, 없으면 빈 Optional
      */
-    Optional<TcUserInfo> findByUserIdNorm(String userIdNorm);
+    Optional<UiUserAccount> findByUserIdNorm(String userIdNorm);
 
     /**
      * 사용자 PK로 사용자를 조회합니다.
@@ -36,7 +36,7 @@ public interface UserPort {
      * @param userPk 사용자 기본 키 (tc_user_info.user_pk)
      * @return 조회된 사용자 정보, 없으면 빈 Optional
      */
-    Optional<TcUserInfo> findByUserPk(long userPk);
+    Optional<UiUserAccount> findByUserPk(long userPk);
 
     /**
      * 테스트 또는 초기 구성에 사용할 noop(아무 동작 없음) 구현체를 반환합니다.
@@ -46,12 +46,12 @@ public interface UserPort {
     static UserPort noop() {
         return new UserPort() {
             @Override
-            public Optional<TcUserInfo> findByUserIdNorm(final String userIdNorm) {
+            public Optional<UiUserAccount> findByUserIdNorm(final String userIdNorm) {
                 return Optional.empty();
             }
 
             @Override
-            public Optional<TcUserInfo> findByUserPk(final long userPk) {
+            public Optional<UiUserAccount> findByUserPk(final long userPk) {
                 return Optional.empty();
             }
         };

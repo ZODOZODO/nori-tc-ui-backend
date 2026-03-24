@@ -3,11 +3,12 @@ package com.nori.tc.ui.adapter.db;
 import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.user.store.TcUiPermissionStore;
 import com.nori.tc.db.core.user.upsert.UpsertTcUiPermission;
-import com.nori.tc.db.domain.user.TcUiPermission;
+import com.nori.tc.ui.adapter.db.mapper.UiUserAdminDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.port.db.PermissionCrudPort;
+import com.nori.tc.ui.domain.useradmin.UiPermission;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -49,7 +50,7 @@ public class JpaPermissionCrudPort implements PermissionCrudPort {
      * @return 저장 후 권한 정보
      */
     @Override
-    public TcUiPermission upsert(final UpsertTcUiPermission command) {
+    public UiPermission upsert(final UpsertTcUiPermission command) {
         if (log.isDebugEnabled()) {
             log.debug("권한 업서트 시작. permId={}, permCode={}, resource={}, httpMethod={}",
                     command == null ? null : command.permId(),
@@ -59,7 +60,7 @@ public class JpaPermissionCrudPort implements PermissionCrudPort {
         }
 
         try {
-            final TcUiPermission saved = permissionStore.upsert(command);
+            final UiPermission saved = UiUserAdminDbMapper.toDomain(permissionStore.upsert(command));
             if (log.isDebugEnabled()) {
                 log.debug("권한 업서트 완료. permId={}, permCode={}, isActive={}",
                         saved.permId(), saved.permCode(), saved.isActive());
@@ -88,7 +89,7 @@ public class JpaPermissionCrudPort implements PermissionCrudPort {
      * @return 조회 결과(없으면 빈 Optional)
      */
     @Override
-    public Optional<TcUiPermission> findByPermId(final long permId) {
+    public Optional<UiPermission> findByPermId(final long permId) {
         if (permId <= 0) {
             log.warn("권한 단건 조회 요청 거부 - permId는 1 이상이어야 합니다. permId={}", permId);
             throw new UiBadRequestException("permId는 1 이상이어야 합니다.");
@@ -99,7 +100,8 @@ public class JpaPermissionCrudPort implements PermissionCrudPort {
         }
 
         try {
-            final Optional<TcUiPermission> result = permissionStore.findByPermId(permId);
+            final Optional<UiPermission> result = permissionStore.findByPermId(permId)
+                    .map(UiUserAdminDbMapper::toDomain);
             if (log.isDebugEnabled()) {
                 log.debug("권한 단건 조회 완료. permId={}, found={}", permId, result.isPresent());
             }
@@ -122,7 +124,7 @@ public class JpaPermissionCrudPort implements PermissionCrudPort {
      * @return 목록 + count 페이지 응답
      */
     @Override
-    public PagedResponse<TcUiPermission> findAll(final PageRequest pageRequest) {
+    public PagedResponse<UiPermission> findAll(final PageRequest pageRequest) {
         final PageRequest effectivePage = (pageRequest == null) ? PageRequest.defaultPage() : pageRequest;
 
         if (log.isDebugEnabled()) {
@@ -130,15 +132,18 @@ public class JpaPermissionCrudPort implements PermissionCrudPort {
         }
 
         try {
-            final List<TcUiPermission> items = permissionStore.findAll(effectivePage);
+            final List<com.nori.tc.db.domain.user.TcUiPermission> dbItems = permissionStore.findAll(effectivePage);
             final long totalCount = UiDbPagedCountSupport.resolveTotalCount(
-                    items,
+                    dbItems,
                     effectivePage,
                     UiDbPagedCountSupport.DEFAULT_COUNT_SCAN_LIMIT,
                     permissionStore::findAll,
                     log,
                     "permission"
             );
+            final List<UiPermission> items = dbItems.stream()
+                    .map(UiUserAdminDbMapper::toDomain)
+                    .toList();
 
             if (log.isDebugEnabled()) {
                 log.debug("권한 목록 조회 완료. offset={}, limit={}, pageSize={}, totalCount={}",

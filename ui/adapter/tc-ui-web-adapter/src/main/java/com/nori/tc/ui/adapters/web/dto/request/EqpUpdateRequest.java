@@ -19,8 +19,8 @@ import jakarta.validation.constraints.Size;
  * @param eqpPort 설비 port
  * @param modelVersionKey 연결 model version key
  * @param appliedParamVersion 적용 파라미터 버전
- * @param gatewayJarFileName gateway jar 파일명
- * @param businessJarFileName business jar 파일명
+ * @param gatewayJarRef gateway jar 참조 키
+ * @param businessJarRef business jar 참조 키
  * @param logSettings 로그 정책
  * @param hsmsSettings SECS 설정
  * @param socketSettings SOCKET 설정
@@ -51,9 +51,11 @@ public record EqpUpdateRequest(
         @Size(max = 100, message = "appliedParamVersion은 100자 이하여야 합니다.")
         String appliedParamVersion,
 
-        String gatewayJarFileName,
+        @Positive(message = "gatewayJarRef는 1 이상이어야 합니다.")
+        Long gatewayJarRef,
 
-        String businessJarFileName,
+        @Positive(message = "businessJarRef는 1 이상이어야 합니다.")
+        Long businessJarRef,
 
         @Valid
         EqpManagementRequestSupport.LogSettingsRequest logSettings,

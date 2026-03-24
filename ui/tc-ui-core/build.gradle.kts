@@ -45,12 +45,6 @@ dependencies {
     api(project(":ui:tc-ui-domain"))
 
     /*
-     * DB 도메인 레코드(TcUserInfo, TcUiAuthSession)를 Port 시그니처에서 사용합니다.
-     * api로 선언하여 tc-ui-db-adapter가 동일 타입을 별도 의존성 없이 사용할 수 있도록 노출합니다.
-     */
-    api("com.nori.tc:tc-db-domain:0.0.1-SNAPSHOT")
-
-    /*
      * DB Core 공통 계약(PageRequest, Upsert Command)을 관리 Port 시그니처에서 사용합니다.
      * api로 선언하여 Adapter 계층에서 동일 계약 타입을 재사용할 수 있도록 노출합니다.
      */
@@ -75,6 +69,7 @@ dependencies {
      */
     implementation(libs.jackson.databind)
     implementation("org.yaml:snakeyaml:2.2")
+    implementation("com.nori.tc:tc-common-runtime-support:0.0.1-SNAPSHOT")
 
     /*
      * Phase 4 OPS-01:

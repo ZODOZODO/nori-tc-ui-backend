@@ -1,14 +1,16 @@
 package com.nori.tc.ui.core.usecase;
 
-import com.nori.tc.db.domain.common.user.UserStatus;
-import com.nori.tc.db.domain.user.TcUiAuthSession;
-import com.nori.tc.db.domain.user.TcUserInfo;
+import com.nori.tc.ui.core.auth.UiAuthMetrics;
 import com.nori.tc.ui.core.exception.UiAuthenticationException;
 import com.nori.tc.ui.core.port.db.PasswordVerifierPort;
 import com.nori.tc.ui.core.port.db.SessionPort;
 import com.nori.tc.ui.core.port.db.UserPort;
 import com.nori.tc.ui.core.properties.UiAuthProperties;
 import com.nori.tc.ui.domain.auth.AuthToken;
+import com.nori.tc.ui.domain.auth.UiAuthSessionCreateCommand;
+import com.nori.tc.ui.domain.auth.UiAuthSessionSnapshot;
+import com.nori.tc.ui.domain.auth.UiUserAccount;
+import com.nori.tc.ui.domain.auth.UiUserStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -44,28 +46,15 @@ class LoginUseCaseTest {
         final CapturingSessionPort sessionPort = new CapturingSessionPort();
         final StubPasswordVerifier passwordVerifier = new StubPasswordVerifier(true);
 
-        final TcUserInfo activeUser = new TcUserInfo(
-                10L,
-                "NORI",
-                "DEV",
-                "테스트",
-                "testuser",
-                "testuser",
-                "$2a$10$hash",
-                "test@nori.com",
-                UserStatus.ACTIVE,
-                OffsetDateTime.now(),
-                OffsetDateTime.now(),
-                "SYSTEM",
-                "SYSTEM"
-        );
+        final UiUserAccount activeUser = activeUser("testuser", UiUserStatus.ACTIVE);
         userPort.userByUserIdNorm = Optional.of(activeUser);
 
         final LoginUseCase useCase = new LoginUseCase(
                 userPort,
                 sessionPort,
                 passwordVerifier,
-                createAuthProperties()
+                createAuthProperties(),
+                UiAuthMetrics.noop()
         );
 
         final AuthToken token = useCase.execute(" TestUser ", "password-raw");
@@ -75,7 +64,7 @@ class LoginUseCaseTest {
         assertEquals(activeUser.userPk(), token.userPk());
         assertTrue(token.expiresAt().isAfter(token.issuedAt()));
 
-        final TcUiAuthSession savedSession = sessionPort.lastSavedSession.get();
+        final UiAuthSessionCreateCommand savedSession = sessionPort.lastSavedSession.get();
         assertNotNull(savedSession, "로그인 성공 시 세션 저장이 수행되어야 합니다.");
         assertEquals(token.token(), savedSession.token());
         assertEquals(activeUser.userPk(), savedSession.userPk());
@@ -93,7 +82,8 @@ class LoginUseCaseTest {
                 new FakeUserPort(),
                 new CapturingSessionPort(),
                 new StubPasswordVerifier(true),
-                createAuthProperties()
+                createAuthProperties(),
+                UiAuthMetrics.noop()
         );
         final UiAuthenticationException missingUserEx = assertThrows(
                 UiAuthenticationException.class,
@@ -101,12 +91,13 @@ class LoginUseCaseTest {
         );
 
         final FakeUserPort existingUserPort = new FakeUserPort();
-        existingUserPort.userByUserIdNorm = Optional.of(activeUser("user-01", UserStatus.ACTIVE));
+        existingUserPort.userByUserIdNorm = Optional.of(activeUser("user-01", UiUserStatus.ACTIVE));
         final LoginUseCase passwordMismatchUseCase = new LoginUseCase(
                 existingUserPort,
                 new CapturingSessionPort(),
                 new StubPasswordVerifier(false),
-                createAuthProperties()
+                createAuthProperties(),
+                UiAuthMetrics.noop()
         );
         final UiAuthenticationException passwordMismatchEx = assertThrows(
                 UiAuthenticationException.class,
@@ -123,13 +114,14 @@ class LoginUseCaseTest {
     @DisplayName("비활성 계정은 로그인이 차단된다")
     void 비활성_계정_로그인_차단() {
         final FakeUserPort userPort = new FakeUserPort();
-        userPort.userByUserIdNorm = Optional.of(activeUser("disabled-user", UserStatus.DISABLED));
+        userPort.userByUserIdNorm = Optional.of(activeUser("disabled-user", UiUserStatus.DISABLED));
 
         final LoginUseCase useCase = new LoginUseCase(
                 userPort,
                 new CapturingSessionPort(),
                 new StubPasswordVerifier(true),
-                createAuthProperties()
+                createAuthProperties(),
+                UiAuthMetrics.noop()
         );
 
         final UiAuthenticationException exception = assertThrows(
@@ -146,22 +138,8 @@ class LoginUseCaseTest {
      * @param status 사용자 상태
      * @return 테스트용 TcUserInfo
      */
-    private static TcUserInfo activeUser(final String userIdNorm, final UserStatus status) {
-        return new TcUserInfo(
-                20L,
-                "NORI",
-                "DEV",
-                "테스트",
-                userIdNorm,
-                userIdNorm,
-                "$2a$10$hash",
-                userIdNorm + "@nori.com",
-                status,
-                OffsetDateTime.now(),
-                OffsetDateTime.now(),
-                "SYSTEM",
-                "SYSTEM"
-        );
+    private static UiUserAccount activeUser(final String userIdNorm, final UiUserStatus status) {
+        return new UiUserAccount(20L, userIdNorm, userIdNorm, "$2a$10$hash", status);
     }
 
     /**
@@ -176,6 +154,8 @@ class LoginUseCaseTest {
         return new UiAuthProperties(
                 8,
                 300,
+                30,
+                1000,
                 "TC_UI_AUTH",
                 "/",
                 null,
@@ -191,15 +171,15 @@ class LoginUseCaseTest {
      * UserPort 테스트 더블입니다.
      */
     private static final class FakeUserPort implements UserPort {
-        private Optional<TcUserInfo> userByUserIdNorm = Optional.empty();
+        private Optional<UiUserAccount> userByUserIdNorm = Optional.empty();
 
         @Override
-        public Optional<TcUserInfo> findByUserIdNorm(final String userIdNorm) {
+        public Optional<UiUserAccount> findByUserIdNorm(final String userIdNorm) {
             return userByUserIdNorm;
         }
 
         @Override
-        public Optional<TcUserInfo> findByUserPk(final long userPk) {
+        public Optional<UiUserAccount> findByUserPk(final long userPk) {
             return Optional.empty();
         }
     }
@@ -208,15 +188,15 @@ class LoginUseCaseTest {
      * SessionPort 저장 호출을 관찰하는 테스트 더블입니다.
      */
     private static final class CapturingSessionPort implements SessionPort {
-        private final AtomicReference<TcUiAuthSession> lastSavedSession = new AtomicReference<>();
+        private final AtomicReference<UiAuthSessionCreateCommand> lastSavedSession = new AtomicReference<>();
 
         @Override
-        public void save(final TcUiAuthSession session) {
+        public void save(final UiAuthSessionCreateCommand session) {
             lastSavedSession.set(session);
         }
 
         @Override
-        public Optional<TcUiAuthSession> findValidByToken(final String token) {
+        public Optional<UiAuthSessionSnapshot> findValidByToken(final String token) {
             return Optional.empty();
         }
 

@@ -1,15 +1,15 @@
 package com.nori.tc.ui.core.port.db;
 
-import com.nori.tc.db.domain.model.TcModelDcopItem;
-import com.nori.tc.db.domain.model.TcModelEventId;
-import com.nori.tc.db.domain.model.TcModelMdf;
-import com.nori.tc.db.domain.model.TcModelParam;
-import com.nori.tc.db.domain.model.TcModelReportId;
-import com.nori.tc.db.domain.model.TcModelMesMessage;
-import com.nori.tc.db.domain.model.TcModelSecsMessage;
-import com.nori.tc.db.domain.model.TcModelSocketMessage;
-import com.nori.tc.db.domain.model.TcModelVariableId;
-import com.nori.tc.db.domain.model.TcModelWorkflow;
+import com.nori.tc.ui.domain.model.UiModelDcopItem;
+import com.nori.tc.ui.domain.model.UiModelEventId;
+import com.nori.tc.ui.domain.model.UiModelMdf;
+import com.nori.tc.ui.domain.model.UiModelMesMessage;
+import com.nori.tc.ui.domain.model.UiModelParam;
+import com.nori.tc.ui.domain.model.UiModelReportId;
+import com.nori.tc.ui.domain.model.UiModelSecsMessage;
+import com.nori.tc.ui.domain.model.UiModelSocketMessage;
+import com.nori.tc.ui.domain.model.UiModelVariableId;
+import com.nori.tc.ui.domain.model.UiModelWorkflow;
 
 import java.util.List;
 import java.util.Optional;
@@ -36,50 +36,50 @@ public interface ModelDetailQueryPort {
     /**
      * model_version_key 기준 Model Parameter 목록을 조회합니다.
      */
-    List<TcModelParam> findParamsByModelVersionKey(long modelVersionKey);
+    List<UiModelParam> findParamsByModelVersionKey(long modelVersionKey);
 
     /**
      * model_version_key 기준 SECS Message 목록을 조회합니다.
      */
-    List<TcModelSecsMessage> findSecsMessagesByModelVersionKey(long modelVersionKey);
+    List<UiModelSecsMessage> findSecsMessagesByModelVersionKey(long modelVersionKey);
 
     /**
      * model_version_key 기준 Socket Message 목록을 조회합니다.
      */
-    List<TcModelSocketMessage> findSocketMessagesByModelVersionKey(long modelVersionKey);
+    List<UiModelSocketMessage> findSocketMessagesByModelVersionKey(long modelVersionKey);
 
     /**
      * model_version_key 기준 MES Message 목록을 조회합니다.
      */
-    List<TcModelMesMessage> findMesMessagesByModelVersionKey(long modelVersionKey);
+    List<UiModelMesMessage> findMesMessagesByModelVersionKey(long modelVersionKey);
 
     /**
      * model_version_key 기준 VariableIdes 목록을 조회합니다.
      */
-    List<TcModelVariableId> findVariableIdsByModelVersionKey(long modelVersionKey);
+    List<UiModelVariableId> findVariableIdsByModelVersionKey(long modelVersionKey);
 
     /**
      * model_version_key 기준 ReportIdes 목록을 조회합니다.
      */
-    List<TcModelReportId> findReportIdsByModelVersionKey(long modelVersionKey);
+    List<UiModelReportId> findReportIdsByModelVersionKey(long modelVersionKey);
 
     /**
      * model_version_key 기준 EventIdes 목록을 조회합니다.
      */
-    List<TcModelEventId> findEventIdsByModelVersionKey(long modelVersionKey);
+    List<UiModelEventId> findEventIdsByModelVersionKey(long modelVersionKey);
 
     /**
      * model_version_key 기준 Workflow 목록을 조회합니다.
      */
-    List<TcModelWorkflow> findWorkflowsByModelVersionKey(long modelVersionKey);
+    List<UiModelWorkflow> findWorkflowsByModelVersionKey(long modelVersionKey);
 
     /**
      * model_version_key 기준 MDF를 조회합니다.
      */
-    Optional<TcModelMdf> findMdfByModelVersionKey(long modelVersionKey);
+    Optional<UiModelMdf> findMdfByModelVersionKey(long modelVersionKey);
 
     /**
      * model_version_key 기준 Dcop Itemes 목록을 조회합니다.
      */
-    List<TcModelDcopItem> findDcopItemsByModelVersionKey(long modelVersionKey);
+    List<UiModelDcopItem> findDcopItemsByModelVersionKey(long modelVersionKey);
 }

@@ -1,8 +1,9 @@
 package com.nori.tc.ui.adapter.db;
 
 import com.nori.tc.db.core.user.store.TcUserInfoStore;
-import com.nori.tc.db.domain.user.TcUserInfo;
+import com.nori.tc.ui.adapter.db.mapper.UiUserAccountDbMapper;
 import com.nori.tc.ui.core.port.db.UserPort;
+import com.nori.tc.ui.domain.auth.UiUserAccount;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -50,9 +51,9 @@ public class JpaUserPort implements UserPort {
      * @return 사용자 정보, 없으면 빈 Optional
      */
     @Override
-    public Optional<TcUserInfo> findByUserIdNorm(final String userIdNorm) {
+    public Optional<UiUserAccount> findByUserIdNorm(final String userIdNorm) {
         log.debug("사용자 조회 by userIdNorm. userIdNorm={}", userIdNorm);
-        return userInfoStore.findByUserIdNorm(userIdNorm);
+        return userInfoStore.findByUserIdNorm(userIdNorm).map(UiUserAccountDbMapper::toDomain);
     }
 
     /**
@@ -64,8 +65,8 @@ public class JpaUserPort implements UserPort {
      * @return 사용자 정보, 없으면 빈 Optional
      */
     @Override
-    public Optional<TcUserInfo> findByUserPk(final long userPk) {
+    public Optional<UiUserAccount> findByUserPk(final long userPk) {
         log.debug("사용자 조회 by userPk. userPk={}", userPk);
-        return userInfoStore.findByUserPk(userPk);
+        return userInfoStore.findByUserPk(userPk).map(UiUserAccountDbMapper::toDomain);
     }
 }

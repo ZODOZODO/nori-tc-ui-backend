@@ -1,6 +1,7 @@
 package com.nori.tc.ui.core.port.db;
 
-import com.nori.tc.db.domain.user.TcUiAuthSession;
+import com.nori.tc.ui.domain.auth.UiAuthSessionCreateCommand;
+import com.nori.tc.ui.domain.auth.UiAuthSessionSnapshot;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
@@ -24,7 +25,7 @@ public interface SessionPort {
      *
      * @param session 저장할 세션 정보 (token, userPk, issuedAt, expiresAt 포함)
      */
-    void save(TcUiAuthSession session);
+    void save(UiAuthSessionCreateCommand session);
 
     /**
      * 유효한 세션을 토큰으로 조회합니다.
@@ -39,7 +40,7 @@ public interface SessionPort {
      * @param token 조회할 세션 토큰 (PK)
      * @return 유효한 세션 정보, 없거나 만료/폐기된 경우 빈 Optional
      */
-    Optional<TcUiAuthSession> findValidByToken(String token);
+    Optional<UiAuthSessionSnapshot> findValidByToken(String token);
 
     /**
      * 세션을 폐기합니다 (로그아웃).
@@ -70,12 +71,12 @@ public interface SessionPort {
     static SessionPort noop() {
         return new SessionPort() {
             @Override
-            public void save(final TcUiAuthSession session) {
+            public void save(final UiAuthSessionCreateCommand session) {
                 // noop: 아무 동작 없음
             }
 
             @Override
-            public Optional<TcUiAuthSession> findValidByToken(final String token) {
+            public Optional<UiAuthSessionSnapshot> findValidByToken(final String token) {
                 return Optional.empty();
             }
 

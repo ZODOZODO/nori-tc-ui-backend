@@ -1,6 +1,6 @@
 package com.nori.tc.ui.adapters.web.dto.response;
 
-import com.nori.tc.db.domain.common.model.ProtocolType;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
 
 import java.time.OffsetDateTime;
 
@@ -31,7 +31,7 @@ import java.time.OffsetDateTime;
 public record EqpInfoResponse(
         Long eqpKey,
         String eqpId,
-        ProtocolType commInterface,
+        UiProtocolType commInterface,
         String commMode,
         boolean isDev,
         Integer routePartition,

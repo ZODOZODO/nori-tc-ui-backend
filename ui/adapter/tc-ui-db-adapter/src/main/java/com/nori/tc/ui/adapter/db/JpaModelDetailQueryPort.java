@@ -13,7 +13,6 @@ import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
 import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
 import com.nori.tc.db.domain.model.TcModelEventId;
-import com.nori.tc.db.domain.model.TcModelMdf;
 import com.nori.tc.db.domain.model.TcModelParam;
 import com.nori.tc.db.domain.model.TcModelReportId;
 import com.nori.tc.db.domain.model.TcModelMesMessage;
@@ -21,8 +20,19 @@ import com.nori.tc.db.domain.model.TcModelSecsMessage;
 import com.nori.tc.db.domain.model.TcModelSocketMessage;
 import com.nori.tc.db.domain.model.TcModelVariableId;
 import com.nori.tc.db.domain.model.TcModelWorkflow;
+import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
+import com.nori.tc.ui.domain.model.UiModelDcopItem;
+import com.nori.tc.ui.domain.model.UiModelEventId;
+import com.nori.tc.ui.domain.model.UiModelMdf;
+import com.nori.tc.ui.domain.model.UiModelMesMessage;
+import com.nori.tc.ui.domain.model.UiModelParam;
+import com.nori.tc.ui.domain.model.UiModelReportId;
+import com.nori.tc.ui.domain.model.UiModelSecsMessage;
+import com.nori.tc.ui.domain.model.UiModelSocketMessage;
+import com.nori.tc.ui.domain.model.UiModelVariableId;
+import com.nori.tc.ui.domain.model.UiModelWorkflow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -86,89 +96,99 @@ public class JpaModelDetailQueryPort implements ModelDetailQueryPort {
     }
 
     @Override
-    public List<TcModelParam> findParamsByModelVersionKey(final long modelVersionKey) {
+    public List<UiModelParam> findParamsByModelVersionKey(final long modelVersionKey) {
         validateModelVersionKey(modelVersionKey);
         return loadAllByPage(page -> modelParamStore.findAllByModelVersionKey(modelVersionKey, page))
                 .stream()
                 .sorted(Comparator.comparingLong(TcModelParam::modelParamKey))
+                .map(UiModelDbMapper::toDomain)
                 .toList();
     }
 
     @Override
-    public List<TcModelSecsMessage> findSecsMessagesByModelVersionKey(final long modelVersionKey) {
+    public List<UiModelSecsMessage> findSecsMessagesByModelVersionKey(final long modelVersionKey) {
         validateModelVersionKey(modelVersionKey);
         return loadAllByPage(page -> modelSecsMessageStore.findAllByModelVersionKey(modelVersionKey, page))
                 .stream()
                 .sorted(Comparator.comparingLong(TcModelSecsMessage::secsMsgKey))
+                .map(UiModelDbMapper::toDomain)
                 .toList();
     }
 
     @Override
-    public List<TcModelSocketMessage> findSocketMessagesByModelVersionKey(final long modelVersionKey) {
+    public List<UiModelSocketMessage> findSocketMessagesByModelVersionKey(final long modelVersionKey) {
         validateModelVersionKey(modelVersionKey);
         return loadAllByPage(page -> modelSocketMessageStore.findAllByModelVersionKey(modelVersionKey, page))
                 .stream()
                 .sorted(Comparator.comparingLong(TcModelSocketMessage::socketMsgKey))
+                .map(UiModelDbMapper::toDomain)
                 .toList();
     }
 
     @Override
-    public List<TcModelMesMessage> findMesMessagesByModelVersionKey(final long modelVersionKey) {
+    public List<UiModelMesMessage> findMesMessagesByModelVersionKey(final long modelVersionKey) {
         validateModelVersionKey(modelVersionKey);
         return loadAllByPage(page -> modelMesMessageStore.findAllByModelVersionKey(modelVersionKey, page))
                 .stream()
                 .sorted(Comparator.comparingLong(TcModelMesMessage::mesMsgKey))
+                .map(UiModelDbMapper::toDomain)
                 .toList();
     }
 
     @Override
-    public List<TcModelVariableId> findVariableIdsByModelVersionKey(final long modelVersionKey) {
+    public List<UiModelVariableId> findVariableIdsByModelVersionKey(final long modelVersionKey) {
         validateModelVersionKey(modelVersionKey);
         return loadAllByPage(page -> modelVariableIdStore.findAllByModelVersionKey(modelVersionKey, page))
                 .stream()
                 .sorted(Comparator.comparingLong(TcModelVariableId::variableKey))
+                .map(UiModelDbMapper::toDomain)
                 .toList();
     }
 
     @Override
-    public List<TcModelReportId> findReportIdsByModelVersionKey(final long modelVersionKey) {
+    public List<UiModelReportId> findReportIdsByModelVersionKey(final long modelVersionKey) {
         validateModelVersionKey(modelVersionKey);
         return loadAllByPage(page -> modelReportIdStore.findAllByModelVersionKey(modelVersionKey, page))
                 .stream()
                 .sorted(Comparator.comparingLong(TcModelReportId::reportKey))
+                .map(UiModelDbMapper::toDomain)
                 .toList();
     }
 
     @Override
-    public List<TcModelEventId> findEventIdsByModelVersionKey(final long modelVersionKey) {
+    public List<UiModelEventId> findEventIdsByModelVersionKey(final long modelVersionKey) {
         validateModelVersionKey(modelVersionKey);
         return loadAllByPage(page -> modelEventIdStore.findAllByModelVersionKey(modelVersionKey, page))
                 .stream()
                 .sorted(Comparator.comparingLong(TcModelEventId::eventKey))
+                .map(UiModelDbMapper::toDomain)
                 .toList();
     }
 
     @Override
-    public List<TcModelWorkflow> findWorkflowsByModelVersionKey(final long modelVersionKey) {
+    public List<UiModelWorkflow> findWorkflowsByModelVersionKey(final long modelVersionKey) {
         validateModelVersionKey(modelVersionKey);
         return loadAllByPage(page -> modelWorkflowStore.findAllByModelVersionKey(modelVersionKey, page))
                 .stream()
                 .sorted(Comparator.comparingLong(TcModelWorkflow::workflowKey))
+                .map(UiModelDbMapper::toDomain)
                 .toList();
     }
 
     @Override
-    public Optional<TcModelMdf> findMdfByModelVersionKey(final long modelVersionKey) {
+    public Optional<UiModelMdf> findMdfByModelVersionKey(final long modelVersionKey) {
         validateModelVersionKey(modelVersionKey);
-        return modelMdfStore.findByModelVersionKey(modelVersionKey);
+        return modelMdfStore.findByModelVersionKey(modelVersionKey)
+                .map(UiModelDbMapper::toDomain);
     }
 
     @Override
-    public List<TcModelDcopItem> findDcopItemsByModelVersionKey(final long modelVersionKey) {
+    public List<UiModelDcopItem> findDcopItemsByModelVersionKey(final long modelVersionKey) {
         validateModelVersionKey(modelVersionKey);
         return loadAllByPage(page -> modelDcopItemStore.findAllByModelVersionKey(modelVersionKey, page))
                 .stream()
                 .sorted(Comparator.comparing(TcModelDcopItem::dcopItemKey, Comparator.nullsLast(Long::compareTo)))
+                .map(UiModelDbMapper::toDomain)
                 .toList();
     }
 

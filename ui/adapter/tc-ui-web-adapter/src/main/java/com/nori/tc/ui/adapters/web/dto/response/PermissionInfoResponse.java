@@ -1,7 +1,7 @@
 package com.nori.tc.ui.adapters.web.dto.response;
 
-import com.nori.tc.db.domain.common.user.TcUiPermissionMatchType;
-import com.nori.tc.db.domain.common.user.TcUiPermissionResourceType;
+import com.nori.tc.ui.domain.common.user.UiPermissionMatchType;
+import com.nori.tc.ui.domain.common.user.UiPermissionResourceType;
 
 import java.time.OffsetDateTime;
 
@@ -26,8 +26,8 @@ public record PermissionInfoResponse(
         long permId,
         String permCode,
         String permName,
-        TcUiPermissionResourceType resourceType,
-        TcUiPermissionMatchType matchType,
+        UiPermissionResourceType resourceType,
+        UiPermissionMatchType matchType,
         String resource,
         String httpMethod,
         String description,
@@ -38,4 +38,3 @@ public record PermissionInfoResponse(
         String updatedBy
 ) {
 }
-

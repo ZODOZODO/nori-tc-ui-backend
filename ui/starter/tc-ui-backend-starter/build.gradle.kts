@@ -43,12 +43,13 @@ java {
 
 dependencies {
     /*
-     * Starter는 어댑터 4종을 api로 노출하여 앱이 컨텍스트 없이 어댑터 타입을 사용할 수 있게 합니다.
+     * Starter는 조립 전용 모듈이므로 내부 어댑터와 core를 외부에 재노출하지 않습니다.
      */
-    api(project(":ui:adapter:tc-ui-web-adapter"))
-    api(project(":ui:adapter:tc-ui-kafka-adapter"))
-    api(project(":ui:adapter:tc-ui-db-adapter"))
-    api(project(":ui:adapter:tc-ui-redis-adapter"))
+    implementation(project(":ui:tc-ui-core"))
+    implementation(project(":ui:adapter:tc-ui-web-adapter"))
+    implementation(project(":ui:adapter:tc-ui-kafka-adapter"))
+    implementation(project(":ui:adapter:tc-ui-db-adapter"))
+    implementation(project(":ui:adapter:tc-ui-redis-adapter"))
 
     /*
      * AutoConfiguration 클래스 컴파일 의존성

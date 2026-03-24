@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import com.nori.tc.ui.core.port.redis.TokenCachePort;
 import com.nori.tc.ui.core.properties.UiAuthProperties;
+import com.nori.tc.ui.domain.auth.UiAuthTokenFingerprint;
 import com.nori.tc.ui.domain.auth.UserPrincipal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,11 +13,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Optional;
 import tools.jackson.databind.ObjectMapper;
@@ -185,13 +182,7 @@ public class UiSessionCacheService implements TokenCachePort {
      * @return {@code tc:ui:backend:session:{sha256(token)}} 형식의 캐시 키
      */
     private static String buildCacheKey(final String token) {
-        try {
-            final MessageDigest messageDigest = MessageDigest.getInstance("SHA-256");
-            final byte[] hash = messageDigest.digest(token.getBytes(StandardCharsets.UTF_8));
-            return KEY_PREFIX + HexFormat.of().formatHex(hash);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 알고리즘을 사용할 수 없습니다.", e);
-        }
+        return KEY_PREFIX + UiAuthTokenFingerprint.sha256Hex(token);
     }
 
     /**

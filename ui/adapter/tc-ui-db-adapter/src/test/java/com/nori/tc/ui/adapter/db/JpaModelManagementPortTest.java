@@ -28,9 +28,12 @@ import com.nori.tc.db.domain.model.TcModelSecsMessage;
 import com.nori.tc.db.domain.model.TcModelSocketMessage;
 import com.nori.tc.db.domain.model.TcModelVariableId;
 import com.nori.tc.db.domain.model.TcModelWorkflow;
+import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
 import com.nori.tc.ui.core.port.db.ModelBranchCommandPort;
 import com.nori.tc.ui.core.port.db.ModelParentCommitPort;
 import com.nori.tc.ui.core.port.db.ModelRootCommandPort;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
+import com.nori.tc.ui.domain.model.UiModel;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -73,9 +76,9 @@ class JpaModelManagementPortTest {
         final TcModel created = model(1001L, 501L, "ROOT-SECS", null, INITIAL_ROOT_VERSION, ProtocolType.SECS, ModelStatus.OPERATE);
         when(fixture.modelStore.upsert(any())).thenReturn(created);
 
-        final TcModel result = fixture.port.createRootModel(new ModelRootCommandPort.CreateRootModelCommand(
+        final UiModel result = fixture.port.createRootModel(new ModelRootCommandPort.CreateRootModelCommand(
                 "ROOT-SECS",
-                ProtocolType.SECS,
+                UiProtocolType.SECS,
                 "NORI",
                 "tester"
         ));
@@ -83,7 +86,7 @@ class JpaModelManagementPortTest {
         final ArgumentCaptor<UpsertTcModel> captor = ArgumentCaptor.forClass(UpsertTcModel.class);
         verify(fixture.modelStore).upsert(captor.capture());
 
-        assertEquals(created, result);
+        assertEquals(UiModelDbMapper.toDomain(created), result);
         assertNull(captor.getValue().parentModel());
         assertEquals(INITIAL_ROOT_VERSION, captor.getValue().modelVersion());
         assertEquals(ModelStatus.OPERATE, captor.getValue().status());
@@ -114,7 +117,7 @@ class JpaModelManagementPortTest {
         fixture.allModels.add(latestRoot);
         when(fixture.modelStore.upsert(any())).thenReturn(updatedRoot);
 
-        final TcModel result = fixture.port.updateRootModelInfo(new ModelRootCommandPort.UpdateRootModelInfoCommand(
+        final UiModel result = fixture.port.updateRootModelInfo(new ModelRootCommandPort.UpdateRootModelInfoCommand(
                 latestRoot.modelKey(),
                 "NORI-UPDATED",
                 "tester"
@@ -123,7 +126,7 @@ class JpaModelManagementPortTest {
         final ArgumentCaptor<UpsertTcModel> captor = ArgumentCaptor.forClass(UpsertTcModel.class);
         verify(fixture.modelStore).upsert(captor.capture());
 
-        assertEquals(updatedRoot, result);
+        assertEquals(UiModelDbMapper.toDomain(updatedRoot), result);
         assertEquals(latestRoot.modelVersionKey(), captor.getValue().modelKey());
         assertEquals(latestRoot.modelName(), captor.getValue().modelName());
         assertNull(captor.getValue().parentModel());
@@ -155,7 +158,7 @@ class JpaModelManagementPortTest {
 
         when(fixture.modelStore.upsert(any())).thenReturn(branchCreated);
 
-        final TcModel result = fixture.port.createBranchModel(new ModelBranchCommandPort.CreateBranchModelCommand(
+        final UiModel result = fixture.port.createBranchModel(new ModelBranchCommandPort.CreateBranchModelCommand(
                 parentLatest.modelKey(),
                 "feature",
                 null,
@@ -165,7 +168,7 @@ class JpaModelManagementPortTest {
         final ArgumentCaptor<UpsertTcModel> captor = ArgumentCaptor.forClass(UpsertTcModel.class);
         verify(fixture.modelStore).upsert(captor.capture());
 
-        assertEquals(branchCreated, result);
+        assertEquals(UiModelDbMapper.toDomain(branchCreated), result);
         assertEquals("ROOT_MODEL_feature_tester", captor.getValue().modelName());
         assertEquals("ROOT_MODEL", captor.getValue().parentModel());
         assertEquals(INITIAL_BRANCH_VERSION, captor.getValue().modelVersion());
@@ -216,7 +219,7 @@ class JpaModelManagementPortTest {
 
         when(fixture.modelStore.upsert(any())).thenReturn(branchCreated);
 
-        final TcModel result = fixture.port.createBranchModel(new ModelBranchCommandPort.CreateBranchModelCommand(
+        final UiModel result = fixture.port.createBranchModel(new ModelBranchCommandPort.CreateBranchModelCommand(
                 parentLatest.modelKey(),
                 "feature",
                 sourceVersion.modelVersionKey(),
@@ -228,7 +231,7 @@ class JpaModelManagementPortTest {
         verify(fixture.modelStore).upsert(modelCaptor.capture());
         verify(fixture.modelParamStore).upsert(paramCaptor.capture());
 
-        assertEquals(branchCreated, result);
+        assertEquals(UiModelDbMapper.toDomain(branchCreated), result);
         assertEquals(INITIAL_BRANCH_VERSION, modelCaptor.getValue().modelVersion());
         assertEquals(sourceVersion.commInterface(), modelCaptor.getValue().commInterface());
         assertEquals(sourceVersion.description(), modelCaptor.getValue().description());
@@ -380,14 +383,14 @@ class JpaModelManagementPortTest {
         fixture.allModels.add(parentLatest);
         when(fixture.modelStore.upsert(any())).thenReturn(branchCreated);
 
-        final TcModel result = fixture.port.createBranchModel(new ModelBranchCommandPort.CreateBranchModelCommand(
+        final UiModel result = fixture.port.createBranchModel(new ModelBranchCommandPort.CreateBranchModelCommand(
                 parentLatest.modelKey(),
                 suffix,
                 null,
                 currentUser
         ));
 
-        assertEquals(branchCreated, result);
+        assertEquals(UiModelDbMapper.toDomain(branchCreated), result);
         verify(fixture.modelStore).upsert(any());
     }
 
@@ -525,6 +528,8 @@ class JpaModelManagementPortTest {
                 "127.0.0.1",
                 5000,
                 modelVersionKey,
+                null,
+                null,
                 null,
                 true,
                 now,
