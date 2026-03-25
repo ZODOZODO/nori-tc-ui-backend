@@ -1,7 +1,6 @@
 package com.nori.tc.ui.core.model;
 
 import tools.jackson.databind.JsonNode;
-import com.nori.tc.messaging.kafka.contract.GatewayEquipmentProfileSnapshot;
 
 /**
  * UI Backend -> Gateway/Business 발행용 기술 중립 명령 메시지입니다.
@@ -27,7 +26,7 @@ public record UiCommandMessage(
         String eqpId,
         String interfaceType,
         JsonNode uiMessage,
-        GatewayEquipmentProfileSnapshot equipmentProfile
+        UiEquipmentProfileSnapshot equipmentProfile
 ) {
 
     /**

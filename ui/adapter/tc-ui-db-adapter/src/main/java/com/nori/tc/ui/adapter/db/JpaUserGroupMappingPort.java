@@ -1,13 +1,14 @@
 package com.nori.tc.ui.adapter.db;
 
-import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.user.store.TcUserGroupMemberStore;
-import com.nori.tc.db.core.user.upsert.UpsertTcUserGroupMember;
 import com.nori.tc.db.domain.user.TcUserGroupMember;
+import com.nori.tc.ui.adapter.db.mapper.UiCoreCommandDbMapper;
 import com.nori.tc.ui.adapter.db.mapper.UiUserAdminDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.model.PagedResponse;
+import com.nori.tc.ui.core.model.UiPageRequest;
+import com.nori.tc.ui.core.model.UiUserGroupMemberUpsertCommand;
 import com.nori.tc.ui.core.port.db.UserGroupMappingPort;
 import com.nori.tc.ui.domain.useradmin.UiUserGroupMember;
 import org.slf4j.Logger;
@@ -52,7 +53,7 @@ public class JpaUserGroupMappingPort implements UserGroupMappingPort {
      * @return 저장 후 매핑 정보
      */
     @Override
-    public UiUserGroupMember upsert(final UpsertTcUserGroupMember command) {
+    public UiUserGroupMember upsert(final UiUserGroupMemberUpsertCommand command) {
         if (log.isDebugEnabled()) {
             log.debug("사용자-그룹 매핑 업서트 시작. ugmKey={}, userPk={}, groupId={}",
                     command == null ? null : command.ugmKey(),
@@ -61,7 +62,9 @@ public class JpaUserGroupMappingPort implements UserGroupMappingPort {
         }
 
         try {
-            final UiUserGroupMember saved = UiUserAdminDbMapper.toDomain(userGroupMemberStore.upsert(command));
+            final UiUserGroupMember saved = UiUserAdminDbMapper.toDomain(userGroupMemberStore.upsert(
+                    UiCoreCommandDbMapper.toDbCommand(command)
+            ));
             if (log.isDebugEnabled()) {
                 log.debug("사용자-그룹 매핑 업서트 완료. ugmKey={}, userPk={}, groupId={}",
                         saved.ugmKey(), saved.userPk(), saved.groupId());
@@ -129,12 +132,13 @@ public class JpaUserGroupMappingPort implements UserGroupMappingPort {
      * @return 목록 + count 페이지 응답
      */
     @Override
-    public PagedResponse<UiUserGroupMember> findAllByUserPk(final long userPk, final PageRequest pageRequest) {
+    public PagedResponse<UiUserGroupMember> findAllByUserPk(final long userPk, final UiPageRequest pageRequest) {
         if (userPk <= 0) {
             log.warn("사용자-그룹 매핑 목록 조회 요청 거부 - userPk는 1 이상이어야 합니다. userPk={}", userPk);
             throw new UiBadRequestException("userPk는 1 이상이어야 합니다.");
         }
-        final PageRequest effectivePage = (pageRequest == null) ? PageRequest.defaultPage() : pageRequest;
+        final UiPageRequest effectivePage = (pageRequest == null) ? UiPageRequest.defaultPage() : pageRequest;
+        final com.nori.tc.db.core.common.PageRequest dbPageRequest = UiCoreCommandDbMapper.toDbPageRequest(effectivePage);
 
         if (log.isDebugEnabled()) {
             log.debug("사용자-그룹 매핑 목록 조회 시작. userPk={}, offset={}, limit={}",
@@ -142,10 +146,10 @@ public class JpaUserGroupMappingPort implements UserGroupMappingPort {
         }
 
         try {
-            final List<TcUserGroupMember> dbItems = userGroupMemberStore.findAllByUserPk(userPk, effectivePage);
+            final List<TcUserGroupMember> dbItems = userGroupMemberStore.findAllByUserPk(userPk, dbPageRequest);
             final long totalCount = UiDbPagedCountSupport.resolveTotalCount(
                     dbItems,
-                    effectivePage,
+                    dbPageRequest,
                     UiDbPagedCountSupport.DEFAULT_COUNT_SCAN_LIMIT,
                     page -> userGroupMemberStore.findAllByUserPk(userPk, page),
                     log,

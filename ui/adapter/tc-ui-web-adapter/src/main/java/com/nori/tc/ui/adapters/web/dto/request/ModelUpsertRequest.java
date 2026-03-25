@@ -1,7 +1,7 @@
 package com.nori.tc.ui.adapters.web.dto.request;
 
-import com.nori.tc.db.domain.common.model.ModelStatus;
-import com.nori.tc.db.domain.common.model.ProtocolType;
+import com.nori.tc.ui.domain.common.model.UiModelStatus;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -35,10 +35,10 @@ public record ModelUpsertRequest(
         String modelVersion,
 
         @NotNull(message = "commInterface는 필수입니다.")
-        ProtocolType commInterface,
+        UiProtocolType commInterface,
 
         @NotNull(message = "status는 필수입니다.")
-        ModelStatus status,
+        UiModelStatus status,
 
         String description,
 

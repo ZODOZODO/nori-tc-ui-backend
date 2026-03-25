@@ -1,5 +1,6 @@
 package com.nori.tc.ui.starter;
 
+import com.nori.tc.common.runtime.support.KafkaAdminConnectivityHealthIndicator;
 import com.nori.tc.ui.adapter.db.config.UiDbAdapterAutoConfiguration;
 import com.nori.tc.ui.adapters.kafka.config.UiKafkaAdapterAutoConfiguration;
 import com.nori.tc.ui.adapters.kafka.config.UiKafkaTopicProperties;
@@ -8,19 +9,25 @@ import com.nori.tc.ui.adapters.redis.config.UiRedisProperties;
 import com.nori.tc.ui.adapters.web.config.UiWebAdapterAutoConfiguration;
 import com.nori.tc.ui.core.auth.UiAuthAsyncExecutor;
 import com.nori.tc.ui.core.properties.UiDeployProperties;
+import com.nori.tc.ui.core.service.DeployService;
+import com.nori.tc.ui.core.service.DeployTraceRegistry;
 import com.nori.tc.ui.core.service.EqpManagementService;
+import com.nori.tc.ui.core.service.EqpRepairTaskService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.boot.health.contributor.Health;
+import org.springframework.boot.health.contributor.HealthIndicator;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Import;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.env.Environment;
 import org.springframework.core.task.TaskDecorator;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
@@ -31,8 +38,7 @@ import java.util.concurrent.Executor;
  * tc-ui-backend-starter 자동 구성 진입점입니다.
  *
  * <p>이 클래스는 UI Backend 모듈 전반을 Spring 컨텍스트에 조립합니다.
- * {@link ComponentScan}으로 {@code com.nori.tc.ui.core}만 스캔하고,
- * {@link Import}로 어댑터별 AutoConfiguration을 명시 등록합니다.</p>
+ * core/adapter 모두 명시적 {@link Import} 그래프로만 등록합니다.</p>
  *
  * <p>조립 대상 어댑터:</p>
  * <ul>
@@ -51,8 +57,8 @@ import java.util.concurrent.Executor;
 @AutoConfiguration
 @EnableScheduling
 @EnableConfigurationProperties(UiDeployProperties.class)
-@ComponentScan(basePackages = "com.nori.tc.ui.core")
 @Import({
+        UiCoreModuleConfiguration.class,
         UiWebAdapterAutoConfiguration.class,   // Web: Controller + Security
         UiKafkaAdapterAutoConfiguration.class, // Kafka: Publisher/Subscriber + Listener config
         UiRedisAdapterAutoConfiguration.class, // Redis: gateway/business template + Pub/Sub
@@ -200,6 +206,52 @@ public class TcUiBackendAutoConfiguration {
             log.info("UI_BOOT_READY. app={}, consume=[{}], produce=[{}], redis=[gateway:{}, business:{}]",
                     appName, consumeTopics, produceTopics, gatewayRedis, businessRedis);
         };
+    }
+
+    /**
+     * readiness group에서 kafka contributor 이름을 고정해 startup 검증과 운영 surface를 일치시킵니다.
+     *
+     * <p>Kafka bootstrap 서버 설정이 아직 없으면 contributor 자체는 유지하고 DOWN 상태로 노출합니다.</p>
+     *
+     * @param environment Spring 환경 설정
+     * @return readiness용 kafka health contributor
+     */
+    @Bean(name = "kafkaHealthIndicator")
+    public HealthIndicator kafkaHealthIndicator(final Environment environment) {
+        final String bootstrapServers = environment.getProperty("spring.kafka.bootstrap-servers");
+        if (bootstrapServers == null) {
+            return () -> Health.down()
+                    .withDetail("reason", "spring.kafka.bootstrap-servers missing")
+                    .build();
+        }
+        return new KafkaAdminConnectivityHealthIndicator(bootstrapServers);
+    }
+
+    /**
+     * readiness group 설정 이름과 runtime contributor bean 이름을 일치시킵니다.
+     *
+     * @param deployService deploy 실행 상태 조회 서비스
+     * @param deployTraceRegistry deploy trace 저장소
+     * @param repairTaskService repair backlog 조회 서비스
+     * @param gatewayRedisFactory gateway redis factory
+     * @param businessRedisFactory business redis factory
+     * @return UI backend runtime readiness contributor
+     */
+    @Bean(name = "uiBackendRuntimeHealthIndicator")
+    public HealthIndicator uiBackendRuntimeHealthIndicator(
+            final DeployService deployService,
+            final DeployTraceRegistry deployTraceRegistry,
+            final EqpRepairTaskService repairTaskService,
+            @Qualifier("gatewayLettuceConnectionFactory") final LettuceConnectionFactory gatewayRedisFactory,
+            @Qualifier("businessLettuceConnectionFactory") final LettuceConnectionFactory businessRedisFactory
+    ) {
+        return new UiBackendRuntimeHealthIndicator(
+                deployService,
+                deployTraceRegistry,
+                repairTaskService,
+                gatewayRedisFactory,
+                businessRedisFactory
+        );
     }
 
     /**

@@ -1,8 +1,6 @@
 package com.nori.tc.ui.adapters.web.controller;
 
 import tools.jackson.databind.JsonNode;
-import com.nori.tc.messaging.kafka.contract.GatewayEquipmentProfileSnapshot;
-import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.ui.adapters.web.config.UiDualRequestProperties;
 import com.nori.tc.ui.adapters.web.controller.support.EqpControllerCommandSupport;
 import com.nori.tc.ui.adapters.web.controller.support.EqpControllerResponseSupport;
@@ -22,6 +20,8 @@ import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.model.UiCommandMessage;
+import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
+import com.nori.tc.ui.core.model.UiPageRequest;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
 import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
 import com.nori.tc.ui.core.port.redis.AsyncResultStorePort;
@@ -108,7 +108,7 @@ public class EqpController {
             @RequestParam(name = "offset", required = false) final Integer offset,
             @RequestParam(name = "limit", required = false) final Integer limit
     ) {
-        final PageRequest pageRequest = UiPageRequestSupport.resolve(offset, limit);
+        final UiPageRequest pageRequest = UiPageRequestSupport.resolve(offset, limit);
 
         if (log.isDebugEnabled()) {
             log.debug("설비 목록 조회 요청. offset={}, limit={}", pageRequest.offset(), pageRequest.limit());
@@ -421,7 +421,7 @@ public class EqpController {
             final String eqpId,
             final String interfaceType,
             final JsonNode uiMessage,
-            final GatewayEquipmentProfileSnapshot equipmentProfile
+            final UiEquipmentProfileSnapshot equipmentProfile
     ) {
         return new UiCommandMessage(
                 eventType,

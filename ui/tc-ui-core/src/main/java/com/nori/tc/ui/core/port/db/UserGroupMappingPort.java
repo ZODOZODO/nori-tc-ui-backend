@@ -1,8 +1,8 @@
 package com.nori.tc.ui.core.port.db;
 
-import com.nori.tc.db.core.common.PageRequest;
-import com.nori.tc.db.core.user.upsert.UpsertTcUserGroupMember;
 import com.nori.tc.ui.core.model.PagedResponse;
+import com.nori.tc.ui.core.model.UiPageRequest;
+import com.nori.tc.ui.core.model.UiUserGroupMemberUpsertCommand;
 import com.nori.tc.ui.domain.useradmin.UiUserGroupMember;
 
 import java.util.Optional;
@@ -24,7 +24,7 @@ public interface UserGroupMappingPort {
      * @param command 저장/수정 입력 명령
      * @return 저장 후 매핑 정보
      */
-    UiUserGroupMember upsert(UpsertTcUserGroupMember command);
+    UiUserGroupMember upsert(UiUserGroupMemberUpsertCommand command);
 
     /**
      * (userPk, groupId) 유니크 키로 단건을 조회합니다.
@@ -42,7 +42,7 @@ public interface UserGroupMappingPort {
      * @param pageRequest offset/limit 기반 페이지 요청
      * @return 페이지 응답(목록 + 전체 건수)
      */
-    PagedResponse<UiUserGroupMember> findAllByUserPk(long userPk, PageRequest pageRequest);
+    PagedResponse<UiUserGroupMember> findAllByUserPk(long userPk, UiPageRequest pageRequest);
 
     /**
      * (userPk, groupId) 유니크 키 기준으로 매핑을 삭제합니다.

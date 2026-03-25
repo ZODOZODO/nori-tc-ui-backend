@@ -1,5 +1,7 @@
 package com.nori.tc.ui.adapters.redis.config;
 
+import com.nori.tc.ui.adapters.redis.registry.DeployTracePubSubListener;
+import com.nori.tc.ui.adapters.redis.registry.DeployTraceRedisAdapter;
 import com.nori.tc.ui.adapters.redis.registry.DualResponsePubSubListener;
 import com.nori.tc.ui.adapters.redis.registry.DualResponseRedisAdapter;
 import org.slf4j.Logger;
@@ -178,6 +180,25 @@ public class UiRedisConfiguration {
         container.setConnectionFactory(businessFactory);
         container.addMessageListener(listener, new ChannelTopic(DualResponseRedisAdapter.DUAL_COMPLETE_CHANNEL));
         log.info("DualResponse Pub/Sub 리스너 등록 완료. channel={}", DualResponseRedisAdapter.DUAL_COMPLETE_CHANNEL);
+        return container;
+    }
+
+    /**
+     * Deploy trace 완료 알림 채널 구독 컨테이너입니다.
+     *
+     * @param businessFactory business Redis 연결 팩토리
+     * @param listener 완료 메시지 리스너
+     * @return RedisMessageListenerContainer
+     */
+    @Bean(name = "deployTraceRedisMessageListenerContainer")
+    public RedisMessageListenerContainer deployTraceRedisMessageListenerContainer(
+            @Qualifier("businessLettuceConnectionFactory") final LettuceConnectionFactory businessFactory,
+            final DeployTracePubSubListener listener
+    ) {
+        final RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+        container.setConnectionFactory(businessFactory);
+        container.addMessageListener(listener, new ChannelTopic(DeployTraceRedisAdapter.DEPLOY_TRACE_COMPLETE_CHANNEL));
+        log.info("Deploy trace Pub/Sub 리스너 등록 완료. channel={}", DeployTraceRedisAdapter.DEPLOY_TRACE_COMPLETE_CHANNEL);
         return container;
     }
 

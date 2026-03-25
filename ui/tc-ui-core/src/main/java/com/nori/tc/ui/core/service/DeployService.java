@@ -2,6 +2,7 @@ package com.nori.tc.ui.core.service;
 
 import com.nori.tc.common.runtime.support.ExecutorShutdownResult;
 import com.nori.tc.common.runtime.support.ExecutorShutdownSupport;
+import com.nori.tc.common.runtime.support.RuntimeExecutorFactory;
 import com.nori.tc.common.runtime.support.RuntimeLogSummary;
 import com.nori.tc.ui.core.deploy.DeployCreateResult;
 import com.nori.tc.ui.core.deploy.DeployPlanCommand;
@@ -29,11 +30,8 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * deploy 생성 / 실행 / polling 조회를 담당합니다.
@@ -52,8 +50,8 @@ public class DeployService {
     private final DeployTraceRecorder deployTraceRecorder;
     private final DeployCommandAssembler commandAssembler;
     private final DeployExecutor deployExecutor;
-    private final ExecutorService targetExecutor;
-    private final ConcurrentHashMap<String, ReentrantLock> eqpExecutionLocks;
+    private final ThreadPoolExecutor targetExecutor;
+    private final int targetConcurrency;
     private final AtomicInteger targetExecutorThreadSequence = new AtomicInteger(0);
 
     public DeployService(
@@ -71,14 +69,14 @@ public class DeployService {
         this.deployTraceRecorder = Objects.requireNonNull(deployTraceRecorder, "deployTraceRecorder is null");
         this.commandAssembler = Objects.requireNonNull(commandAssembler, "commandAssembler is null");
         this.deployExecutor = Objects.requireNonNull(deployExecutor, "deployExecutor is null");
-        this.targetExecutor = Executors.newFixedThreadPool(
-                Math.max(1, validatedDeployProperties.targetConcurrency()),
+        this.targetConcurrency = Math.max(1, validatedDeployProperties.targetConcurrency());
+        this.targetExecutor = (ThreadPoolExecutor) RuntimeExecutorFactory.defaultFactory().newFixedThreadPool(
+                targetConcurrency,
                 commandAssembler.namedThreadFactory(TARGET_EXECUTOR_THREAD_PREFIX, targetExecutorThreadSequence)
         );
-        this.eqpExecutionLocks = new ConcurrentHashMap<>();
         log.info("DeployService target executor initialized. {}",
                 RuntimeLogSummary.kv(
-                        "targetConcurrency", validatedDeployProperties.targetConcurrency(),
+                        "targetConcurrency", targetConcurrency,
                         "threadPrefix", TARGET_EXECUTOR_THREAD_PREFIX
                 ));
     }
@@ -145,8 +143,7 @@ public class DeployService {
                 persistedDeploy.deployKey(),
                 planningResult.eventType(),
                 target,
-                normalizedActor,
-                eqpExecutionLocks
+                normalizedActor
         )));
         return new DeployCreateResult(
                 persistedDeploy.deployKey(),
@@ -244,6 +241,18 @@ public class DeployService {
         return deployTraceRecorder.handle(reply);
     }
 
+    public int targetExecutorActiveCount() {
+        return targetExecutor.getActiveCount();
+    }
+
+    public int targetExecutorQueueSize() {
+        return targetExecutor.getQueue().size();
+    }
+
+    public int targetConcurrency() {
+        return targetConcurrency;
+    }
+
     @PreDestroy
     public void shutdown() {
         final ExecutorShutdownResult result = ExecutorShutdownSupport.shutdown(
@@ -256,8 +265,7 @@ public class DeployService {
                         "forced", result.forced(),
                         "interrupted", result.interrupted(),
                         "droppedTasks", result.droppedTaskCount(),
-                        "waitMs", result.waitMs(),
-                        "activeEqpLocks", eqpExecutionLocks.size()
+                        "waitMs", result.waitMs()
                 ));
     }
 }

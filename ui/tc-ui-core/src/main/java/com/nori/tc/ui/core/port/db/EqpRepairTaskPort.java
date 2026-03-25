@@ -12,4 +12,8 @@ public interface EqpRepairTaskPort {
     void save(EqpRepairTask repairTask);
 
     List<EqpRepairTask> findAll();
+
+    default int count() {
+        return findAll().size();
+    }
 }

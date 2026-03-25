@@ -1,8 +1,10 @@
 package com.nori.tc.ui.adapters.web.security;
 
 import com.nori.tc.ui.core.port.db.PasswordVerifierPort;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
+
+import java.util.Objects;
 
 /**
  * BCrypt 기반 비밀번호 검증 구현체입니다.
@@ -22,13 +24,13 @@ public class BcryptPasswordVerifier implements PasswordVerifierPort {
      * BCryptPasswordEncoder는 상태가 없으므로 필드로 보관하여 재사용합니다.
      * strength(cost factor) 기본값은 10으로, 운영 환경에 적합합니다.
      */
-    private final BCryptPasswordEncoder passwordEncoder;
+    private final PasswordEncoder passwordEncoder;
 
     /**
      * BCryptPasswordEncoder 인스턴스를 초기화합니다.
      */
-    public BcryptPasswordVerifier() {
-        this.passwordEncoder = new BCryptPasswordEncoder();
+    public BcryptPasswordVerifier(final PasswordEncoder passwordEncoder) {
+        this.passwordEncoder = Objects.requireNonNull(passwordEncoder, "passwordEncoder is null");
     }
 
     /**

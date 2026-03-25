@@ -1,6 +1,5 @@
 package com.nori.tc.ui.adapter.db;
 
-import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.eqp.store.TcEqpParamStore;
 import com.nori.tc.db.core.eqp.store.TcEqpParamVersionStore;
 import com.nori.tc.db.core.eqp.store.TcEqpStateHistStore;
@@ -11,9 +10,11 @@ import com.nori.tc.db.domain.eqp.TcEqp;
 import com.nori.tc.db.domain.eqp.TcEqpParam;
 import com.nori.tc.db.domain.eqp.TcEqpParamVersion;
 import com.nori.tc.db.domain.eqp.TcEqpState;
+import com.nori.tc.ui.adapter.db.mapper.UiCoreCommandDbMapper;
 import com.nori.tc.ui.adapter.db.mapper.UiEqpDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.model.PagedResponse;
+import com.nori.tc.ui.core.model.UiPageRequest;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
 import com.nori.tc.ui.domain.eqp.UiEqp;
 import com.nori.tc.ui.domain.eqp.UiEqpParam;
@@ -95,8 +96,9 @@ public class JpaEqpQueryPort implements EqpQueryPort {
      * @return 목록 + count를 포함한 페이지 응답
      */
     @Override
-    public PagedResponse<UiEqp> findAll(final PageRequest pageRequest) {
-        final PageRequest effectivePage = (pageRequest == null) ? PageRequest.defaultPage() : pageRequest;
+    public PagedResponse<UiEqp> findAll(final UiPageRequest pageRequest) {
+        final UiPageRequest effectivePage = (pageRequest == null) ? UiPageRequest.defaultPage() : pageRequest;
+        final com.nori.tc.db.core.common.PageRequest dbPageRequest = UiCoreCommandDbMapper.toDbPageRequest(effectivePage);
 
         if (log.isDebugEnabled()) {
             log.debug("설비 목록 조회 시작. offset={}, limit={}",
@@ -104,10 +106,10 @@ public class JpaEqpQueryPort implements EqpQueryPort {
         }
 
         try {
-            final List<TcEqp> dbItems = eqpStore.findAll(effectivePage);
+            final List<TcEqp> dbItems = eqpStore.findAll(dbPageRequest);
             final long totalCount = UiDbPagedCountSupport.resolveTotalCount(
                     dbItems,
-                    effectivePage,
+                    dbPageRequest,
                     UiDbPagedCountSupport.DEFAULT_COUNT_SCAN_LIMIT,
                     eqpStore::findAll,
                     log,
@@ -211,7 +213,8 @@ public class JpaEqpQueryPort implements EqpQueryPort {
             int offset = 0;
 
             while (versionMetaOffset < PARAM_VERSION_SCAN_MAX_ROWS) {
-                final PageRequest pageRequest = PageRequest.of(versionMetaOffset, PARAM_VERSION_PAGE_LIMIT);
+                final com.nori.tc.db.core.common.PageRequest pageRequest =
+                        com.nori.tc.db.core.common.PageRequest.of(versionMetaOffset, PARAM_VERSION_PAGE_LIMIT);
                 final List<TcEqpParamVersion> pageMetas = eqpParamVersionStore.findAllByEqpKey(eqpKey, pageRequest);
                 final List<String> pageVersions = pageMetas.stream()
                         .map(meta -> meta.paramVersion() == null ? null : meta.paramVersion().trim())
@@ -228,7 +231,8 @@ public class JpaEqpQueryPort implements EqpQueryPort {
             }
 
             while (offset < PARAM_VERSION_SCAN_MAX_ROWS) {
-                final PageRequest pageRequest = PageRequest.of(offset, PARAM_VERSION_PAGE_LIMIT);
+                final com.nori.tc.db.core.common.PageRequest pageRequest =
+                        com.nori.tc.db.core.common.PageRequest.of(offset, PARAM_VERSION_PAGE_LIMIT);
                 final var pageParams = eqpParamStore.findAllByEqpKey(eqpKey, pageRequest);
                 final List<String> pageVersions = pageParams.stream()
                         .map(param -> param.paramVersion() == null ? null : param.paramVersion().trim())
@@ -401,7 +405,7 @@ public class JpaEqpQueryPort implements EqpQueryPort {
             final String eqpState = optionalState.map(TcEqpState::eqpState).map(Enum::name).orElse(null);
 
             final String connectionState = eqpStateHistStore
-                    .findAllByEqpKey(eqpKey, PageRequest.of(0, CONNECTION_STATE_HISTORY_LIMIT))
+                    .findAllByEqpKey(eqpKey, com.nori.tc.db.core.common.PageRequest.of(0, CONNECTION_STATE_HISTORY_LIMIT))
                     .stream()
                     .filter(stateHist -> stateHist.stateType() == EqpStateType.CONN)
                     .map(stateHist -> stateHist.toState() == null ? null : stateHist.toState().trim())

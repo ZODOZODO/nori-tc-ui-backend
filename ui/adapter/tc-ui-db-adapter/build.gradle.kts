@@ -40,6 +40,8 @@ dependencies {
      */
     implementation("com.nori.tc:tc-db-core:0.0.1-SNAPSHOT")
     implementation("org.springframework:spring-jdbc")
+    implementation(libs.jackson.databind)
+    implementation(libs.slf4j.api)
 
     /*
      * Spring 컴포넌트/설정 바인딩 컴파일 의존성

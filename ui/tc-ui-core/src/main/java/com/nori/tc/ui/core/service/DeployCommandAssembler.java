@@ -1,7 +1,6 @@
 package com.nori.tc.ui.core.service;
 
 import tools.jackson.databind.JsonNode;
-import com.nori.tc.messaging.kafka.contract.GatewayEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.deploy.DeployResolvedStepPlan;
 import com.nori.tc.ui.core.deploy.DeployResultMessage;
 import com.nori.tc.ui.core.deploy.DeployStatus;
@@ -9,6 +8,7 @@ import com.nori.tc.ui.core.deploy.DeployTargetCounts;
 import com.nori.tc.ui.core.deploy.DeployTargetStatus;
 import com.nori.tc.ui.core.deploy.PersistedDeployTarget;
 import com.nori.tc.ui.core.model.UiCommandEventType;
+import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import org.springframework.stereotype.Service;
 
 import java.util.Objects;
@@ -125,7 +125,7 @@ public class DeployCommandAssembler {
             final PersistedDeployTarget target,
             final String interfaceType,
             final JsonNode uiMessage,
-            final GatewayEquipmentProfileSnapshot equipmentProfile,
+            final UiEquipmentProfileSnapshot equipmentProfile,
             final String traceId,
             final String actor
     ) {
@@ -136,7 +136,7 @@ public class DeployCommandAssembler {
         return commandSupport.parseCompensationEventType(eventTypeText);
     }
 
-    public GatewayEquipmentProfileSnapshot parseEquipmentProfile(final JsonNode equipmentProfileNode) {
+    public UiEquipmentProfileSnapshot parseEquipmentProfile(final JsonNode equipmentProfileNode) {
         return commandSupport.parseEquipmentProfile(equipmentProfileNode);
     }
 }

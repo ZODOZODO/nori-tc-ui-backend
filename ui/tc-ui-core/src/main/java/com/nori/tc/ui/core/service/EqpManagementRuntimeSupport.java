@@ -3,13 +3,13 @@ package com.nori.tc.ui.core.service;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
-import com.nori.tc.messaging.kafka.contract.GatewayEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.model.AsyncResultEntry;
 import com.nori.tc.ui.core.model.AsyncStatus;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.model.UiCommandMessage;
 import com.nori.tc.ui.core.model.UiCommandReply;
+import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.port.db.EqpCrudPort;
 import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
 import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
@@ -77,7 +77,7 @@ public final class EqpManagementRuntimeSupport {
         final String eqpId = snapshot.eqp().eqpId();
         final String interfaceType = snapshot.eqp().commInterface().name();
         final JsonNode uiMessage = buildUiMessage(snapshot.eqp().modelVersionKey());
-        final GatewayEquipmentProfileSnapshot equipmentProfile =
+        final UiEquipmentProfileSnapshot equipmentProfile =
                 (eventType == UiCommandEventType.EQP_CREATE || eventType == UiCommandEventType.EQP_UPDATE)
                         ? toEquipmentProfile(snapshot)
                         : null;
@@ -316,13 +316,13 @@ public final class EqpManagementRuntimeSupport {
         }
     }
 
-    GatewayEquipmentProfileSnapshot toEquipmentProfile(final EqpManagementSnapshot snapshot) {
+    UiEquipmentProfileSnapshot toEquipmentProfile(final EqpManagementSnapshot snapshot) {
         final OffsetDateTime updatedAt = snapshot.eqp().updatedAt() == null
                 ? OffsetDateTime.now()
                 : snapshot.eqp().updatedAt();
 
-        final GatewayEquipmentProfileSnapshot.HsmsSettingsSnapshot hsmsSettings =
-                snapshot.hsms() == null ? null : new GatewayEquipmentProfileSnapshot.HsmsSettingsSnapshot(
+        final UiEquipmentProfileSnapshot.HsmsSettingsSnapshot hsmsSettings =
+                snapshot.hsms() == null ? null : new UiEquipmentProfileSnapshot.HsmsSettingsSnapshot(
                         snapshot.hsms().deviceId(),
                         snapshot.eqp().commMode(),
                         snapshot.hsms().t3Timeout(),
@@ -335,8 +335,8 @@ public final class EqpManagementRuntimeSupport {
                         snapshot.hsms().maxMsgBytes()
                 );
 
-        final GatewayEquipmentProfileSnapshot.SocketSettingsSnapshot socketSettings =
-                snapshot.socket() == null ? null : new GatewayEquipmentProfileSnapshot.SocketSettingsSnapshot(
+        final UiEquipmentProfileSnapshot.SocketSettingsSnapshot socketSettings =
+                snapshot.socket() == null ? null : new UiEquipmentProfileSnapshot.SocketSettingsSnapshot(
                         snapshot.socket().socketProtocolType(),
                         snapshot.eqp().commMode(),
                         snapshot.socket().charset(),
@@ -348,8 +348,8 @@ public final class EqpManagementRuntimeSupport {
                         snapshot.socket().keepAliveEnabled()
                 );
 
-        final GatewayEquipmentProfileSnapshot.CurrentStateSnapshot currentStateSnapshot =
-                snapshot.runtimeState() == null ? null : new GatewayEquipmentProfileSnapshot.CurrentStateSnapshot(
+        final UiEquipmentProfileSnapshot.CurrentStateSnapshot currentStateSnapshot =
+                snapshot.runtimeState() == null ? null : new UiEquipmentProfileSnapshot.CurrentStateSnapshot(
                         snapshot.runtimeState().controlState() == null ? null : snapshot.runtimeState().controlState().name(),
                         snapshot.runtimeState().eqpState() == null ? null : snapshot.runtimeState().eqpState().name(),
                         snapshot.runtimeState().sinceAt() == null ? null : snapshot.runtimeState().sinceAt().toString(),
@@ -358,22 +358,22 @@ public final class EqpManagementRuntimeSupport {
                         snapshot.runtimeState().updatedAt() == null ? null : snapshot.runtimeState().updatedAt().toString()
                 );
 
-        final List<GatewayEquipmentProfileSnapshot.PortStatusSnapshot> portStatuses = snapshot.portStatuses().stream()
+        final List<UiEquipmentProfileSnapshot.PortStatusSnapshot> portStatuses = snapshot.portStatuses().stream()
                 .map(this::toPortStatusSnapshot)
                 .toList();
-        final List<GatewayEquipmentProfileSnapshot.ParamSnapshot> params = snapshot.params().stream()
+        final List<UiEquipmentProfileSnapshot.ParamSnapshot> params = snapshot.params().stream()
                 .map(this::toParamSnapshot)
                 .toList();
 
-        final GatewayEquipmentProfileSnapshot.LogPolicySnapshot logPolicy =
-                snapshot.logPolicy() == null ? null : new GatewayEquipmentProfileSnapshot.LogPolicySnapshot(
+        final UiEquipmentProfileSnapshot.LogPolicySnapshot logPolicy =
+                snapshot.logPolicy() == null ? null : new UiEquipmentProfileSnapshot.LogPolicySnapshot(
                         snapshot.logPolicy().logLevel() == null ? null : snapshot.logPolicy().logLevel().name(),
                         snapshot.logPolicy().logRetentionDays(),
                         snapshot.logPolicy().logPath(),
                         snapshot.logPolicy().updatedAt() == null ? null : snapshot.logPolicy().updatedAt().toString()
                 );
 
-        return new GatewayEquipmentProfileSnapshot(
+        return new UiEquipmentProfileSnapshot(
                 snapshot.eqp().eqpKey(),
                 snapshot.eqp().eqpId(),
                 snapshot.eqp().commInterface().name(),
@@ -472,8 +472,8 @@ public final class EqpManagementRuntimeSupport {
         return uiMessage;
     }
 
-    private GatewayEquipmentProfileSnapshot.PortStatusSnapshot toPortStatusSnapshot(final UiEqpPortStatus status) {
-        return new GatewayEquipmentProfileSnapshot.PortStatusSnapshot(
+    private UiEquipmentProfileSnapshot.PortStatusSnapshot toPortStatusSnapshot(final UiEqpPortStatus status) {
+        return new UiEquipmentProfileSnapshot.PortStatusSnapshot(
                 status.portId(),
                 status.portType() == null ? null : status.portType().name(),
                 status.portState(),
@@ -484,8 +484,8 @@ public final class EqpManagementRuntimeSupport {
         );
     }
 
-    private GatewayEquipmentProfileSnapshot.ParamSnapshot toParamSnapshot(final UiEqpParam param) {
-        return new GatewayEquipmentProfileSnapshot.ParamSnapshot(
+    private UiEquipmentProfileSnapshot.ParamSnapshot toParamSnapshot(final UiEqpParam param) {
+        return new UiEquipmentProfileSnapshot.ParamSnapshot(
                 param.eqpParamKey(),
                 param.paramName(),
                 param.paramVersion(),

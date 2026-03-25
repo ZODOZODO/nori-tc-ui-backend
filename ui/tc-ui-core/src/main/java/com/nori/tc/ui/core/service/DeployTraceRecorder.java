@@ -22,9 +22,10 @@ public class DeployTraceRecorder {
 
     public CompletableFuture<DeployTraceCompletion> register(
             final String traceId,
-            final Set<String> expectedSources
+            final Set<String> expectedSources,
+            final long timeoutMs
     ) {
-        return deployTraceRegistry.register(traceId, expectedSources);
+        return deployTraceRegistry.register(traceId, expectedSources, timeoutMs);
     }
 
     public void cancel(final String traceId) {

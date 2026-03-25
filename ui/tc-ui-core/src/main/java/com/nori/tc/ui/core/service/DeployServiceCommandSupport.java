@@ -3,7 +3,6 @@ package com.nori.tc.ui.core.service;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
-import com.nori.tc.messaging.kafka.contract.GatewayEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.deploy.DeployResolvedStepPlan;
 import com.nori.tc.ui.core.deploy.DeployResultMessage;
 import com.nori.tc.ui.core.deploy.DeployResultSeverity;
@@ -17,6 +16,7 @@ import com.nori.tc.ui.core.deploy.PersistedDeployTarget;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.model.UiCommandMessage;
+import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.port.db.DeployStorePort;
 import com.nori.tc.ui.core.port.db.EqpCrudPort;
 import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
@@ -114,7 +114,7 @@ final class DeployServiceCommandSupport {
                 actor,
                 target.planDraft().desiredState().mergedUiMessage()
         );
-        final GatewayEquipmentProfileSnapshot equipmentProfile =
+        final UiEquipmentProfileSnapshot equipmentProfile =
                 buildEquipmentProfile(messageEventType, target, stepUiMessage);
 
         publishCommand(
@@ -137,7 +137,7 @@ final class DeployServiceCommandSupport {
             final PersistedDeployTarget target,
             final String interfaceType,
             final JsonNode uiMessage,
-            final GatewayEquipmentProfileSnapshot equipmentProfile,
+            final UiEquipmentProfileSnapshot equipmentProfile,
             final String traceId,
             final String actor
     ) {
@@ -233,7 +233,7 @@ final class DeployServiceCommandSupport {
         return UiCommandEventType.fromText(eventTypeText);
     }
 
-    GatewayEquipmentProfileSnapshot parseEquipmentProfile(final JsonNode equipmentProfileNode) {
+    UiEquipmentProfileSnapshot parseEquipmentProfile(final JsonNode equipmentProfileNode) {
         return optionalEquipmentProfile(equipmentProfileNode).orElse(null);
     }
 
@@ -430,21 +430,21 @@ final class DeployServiceCommandSupport {
         }
     }
 
-    private GatewayEquipmentProfileSnapshot buildEquipmentProfile(
+    private UiEquipmentProfileSnapshot buildEquipmentProfile(
             final UiCommandEventType messageEventType,
             final PersistedDeployTarget target,
             final JsonNode stepUiMessage
     ) {
         if (messageEventType != UiCommandEventType.EQP_CREATE && messageEventType != UiCommandEventType.EQP_UPDATE) {
-            return Optional.<GatewayEquipmentProfileSnapshot>empty().orElse(null);
+            return Optional.<UiEquipmentProfileSnapshot>empty().orElse(null);
         }
         final JsonNode gatewayProfile = stepUiMessage.get("gatewayProfile");
         if (gatewayProfile == null || !gatewayProfile.isObject()) {
-            return Optional.<GatewayEquipmentProfileSnapshot>empty().orElse(null);
+            return Optional.<UiEquipmentProfileSnapshot>empty().orElse(null);
         }
 
         final Long eqpKey = target.planDraft().currentState() == null ? null : target.planDraft().currentState().eqpKey();
-        return new GatewayEquipmentProfileSnapshot(
+        return new UiEquipmentProfileSnapshot(
                 eqpKey,
                 target.planDraft().eqpId(),
                 target.planDraft().interfaceType(),
@@ -541,12 +541,12 @@ final class DeployServiceCommandSupport {
         return normalizedOptionalText(value).orElse(null);
     }
 
-    private Optional<GatewayEquipmentProfileSnapshot> optionalEquipmentProfile(final JsonNode equipmentProfileNode) {
+    private Optional<UiEquipmentProfileSnapshot> optionalEquipmentProfile(final JsonNode equipmentProfileNode) {
         if (equipmentProfileNode == null || equipmentProfileNode.isNull()) {
             return Optional.empty();
         }
         try {
-            return Optional.of(objectMapper.treeToValue(equipmentProfileNode, GatewayEquipmentProfileSnapshot.class));
+            return Optional.of(objectMapper.treeToValue(equipmentProfileNode, UiEquipmentProfileSnapshot.class));
         } catch (Exception exception) {
             throw new UiBadRequestException("보상 equipmentProfile 역직렬화에 실패했습니다.");
         }

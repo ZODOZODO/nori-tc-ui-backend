@@ -1,10 +1,10 @@
 package com.nori.tc.ui.adapters.web.controller;
 
-import com.nori.tc.db.core.model.upsert.UpsertTcModel;
 import com.nori.tc.ui.adapters.web.dto.request.ModelUpsertRequest;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.adapters.web.dto.response.ModelInfoResponse;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
+import com.nori.tc.ui.core.model.UiModelUpsertCommand;
 import com.nori.tc.ui.core.port.db.ModelCrudPort;
 import com.nori.tc.ui.core.port.db.ModelRootCommandPort;
 import com.nori.tc.ui.domain.model.UiModel;
@@ -50,7 +50,7 @@ public class ModelMutationController {
     public ResponseEntity<ApiResponse<ModelInfoResponse>> create(
             @Valid @RequestBody final ModelUpsertRequest request
     ) {
-        final UpsertTcModel command = new UpsertTcModel(
+        final UiModelUpsertCommand command = new UiModelUpsertCommand(
                 null,
                 request.modelName(),
                 null,
@@ -80,8 +80,8 @@ public class ModelMutationController {
                     .body(ApiResponse.error("NOT_FOUND", "수정할 모델을 찾을 수 없습니다."));
         }
         final UiModel existing = existingModel.get();
-        final UpsertTcModel command = new UpsertTcModel(
-                modelVersionKey,
+        final UiModelUpsertCommand command = new UiModelUpsertCommand(
+                existing.modelVersionKey(),
                 request.modelName(),
                 existing.parentModel(),
                 request.modelVersion(),

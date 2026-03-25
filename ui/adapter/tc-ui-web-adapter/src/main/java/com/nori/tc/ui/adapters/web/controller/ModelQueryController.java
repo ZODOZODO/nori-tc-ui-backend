@@ -1,12 +1,12 @@
 package com.nori.tc.ui.adapters.web.controller;
 
-import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.ui.adapters.web.controller.support.ModelDetailResponseSupport;
 import com.nori.tc.ui.adapters.web.controller.support.UiPageRequestSupport;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.adapters.web.dto.response.ModelDetailDataResponse;
 import com.nori.tc.ui.adapters.web.dto.response.ModelInfoResponse;
 import com.nori.tc.ui.core.model.PagedResponse;
+import com.nori.tc.ui.core.model.UiPageRequest;
 import com.nori.tc.ui.core.port.db.ModelCrudPort;
 import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
 import com.nori.tc.ui.domain.model.UiModel;
@@ -48,7 +48,7 @@ public class ModelQueryController {
             @RequestParam(name = "offset", required = false) final Integer offset,
             @RequestParam(name = "limit", required = false) final Integer limit
     ) {
-        final PageRequest pageRequest = UiPageRequestSupport.resolve(offset, limit);
+        final UiPageRequest pageRequest = UiPageRequestSupport.resolve(offset, limit);
         final PagedResponse<UiModel> page = modelCrudPort.findAll(pageRequest);
         return ResponseEntity.ok(ApiResponse.success(ModelDetailResponseSupport.toModelPage(page)));
     }

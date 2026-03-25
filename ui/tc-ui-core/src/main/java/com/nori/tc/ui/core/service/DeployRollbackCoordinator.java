@@ -1,12 +1,12 @@
 package com.nori.tc.ui.core.service;
 
 import tools.jackson.databind.JsonNode;
-import com.nori.tc.messaging.kafka.contract.GatewayEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.deploy.DeployResolvedStepPlan;
 import com.nori.tc.ui.core.deploy.DeployRollbackMode;
 import com.nori.tc.ui.core.deploy.DeploySnapshotKind;
 import com.nori.tc.ui.core.deploy.DeploySnapshotScope;
 import com.nori.tc.ui.core.deploy.DeployStoredSnapshot;
+import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.port.db.DeployStorePort;
 import org.springframework.stereotype.Service;
 
@@ -93,7 +93,7 @@ public class DeployRollbackCoordinator {
             final com.nori.tc.ui.core.model.UiCommandEventType compensationEventType;
             final String compensationInterfaceType;
             final JsonNode compensationUiMessage;
-            final GatewayEquipmentProfileSnapshot equipmentProfile;
+            final UiEquipmentProfileSnapshot equipmentProfile;
             try {
                 compensationEventType = commandAssembler.parseCompensationEventType(
                         DeployServiceCommandSupport.textValue(snapshotData, "eventType")
@@ -137,7 +137,7 @@ public class DeployRollbackCoordinator {
             );
 
             final Set<String> expectedSources = commandAssembler.expectedSources(step.targetApp());
-            final var replyFuture = deployTraceRecorder.register(compensationTraceId, expectedSources);
+            final var replyFuture = deployTraceRecorder.register(compensationTraceId, expectedSources, timeoutMs);
 
             try {
                 commandAssembler.publishCommand(

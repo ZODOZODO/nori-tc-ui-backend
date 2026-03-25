@@ -1,12 +1,13 @@
 package com.nori.tc.ui.adapter.db;
 
-import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.model.store.TcModelStore;
-import com.nori.tc.db.core.model.upsert.UpsertTcModel;
+import com.nori.tc.ui.adapter.db.mapper.UiCoreCommandDbMapper;
 import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.model.PagedResponse;
+import com.nori.tc.ui.core.model.UiModelUpsertCommand;
+import com.nori.tc.ui.core.model.UiPageRequest;
 import com.nori.tc.ui.core.port.db.ModelCrudPort;
 import com.nori.tc.ui.domain.model.UiModel;
 import org.slf4j.Logger;
@@ -54,16 +55,18 @@ public class JpaModelCrudPort implements ModelCrudPort {
      * @return 저장 후 모델 스냅샷
      */
     @Override
-    public UiModel upsert(final UpsertTcModel command) {
+    public UiModel upsert(final UiModelUpsertCommand command) {
         if (log.isDebugEnabled()) {
-            log.debug("모델 업서트 시작. modelVersionKeyCompatibility={}, modelName={}, modelVersion={}",
-                    command == null ? null : command.modelKey(),
+            log.debug("모델 업서트 시작. modelVersionKey={}, modelName={}, modelVersion={}",
+                    command == null ? null : command.modelVersionKey(),
                     command == null ? null : command.modelName(),
                     command == null ? null : command.modelVersion());
         }
 
         try {
-            final UiModel saved = UiModelDbMapper.toDomain(modelStore.upsert(command));
+            final UiModel saved = UiModelDbMapper.toDomain(modelStore.upsert(
+                    UiCoreCommandDbMapper.toDbCommand(command)
+            ));
             if (log.isDebugEnabled()) {
                 log.debug("모델 업서트 완료. modelVersionKey={}, modelKey={}, modelName={}, modelVersion={}",
                         saved.modelVersionKey(), saved.modelKey(), saved.modelName(), saved.modelVersion());
@@ -127,18 +130,19 @@ public class JpaModelCrudPort implements ModelCrudPort {
      * @return 목록 + count 페이지 응답
      */
     @Override
-    public PagedResponse<UiModel> findAll(final PageRequest pageRequest) {
-        final PageRequest effectivePage = (pageRequest == null) ? PageRequest.defaultPage() : pageRequest;
+    public PagedResponse<UiModel> findAll(final UiPageRequest pageRequest) {
+        final UiPageRequest effectivePage = (pageRequest == null) ? UiPageRequest.defaultPage() : pageRequest;
+        final com.nori.tc.db.core.common.PageRequest dbPageRequest = UiCoreCommandDbMapper.toDbPageRequest(effectivePage);
 
         if (log.isDebugEnabled()) {
             log.debug("모델 목록 조회 시작. offset={}, limit={}", effectivePage.offset(), effectivePage.limit());
         }
 
         try {
-            final List<com.nori.tc.db.domain.model.TcModel> dbItems = modelStore.findAll(effectivePage);
+            final List<com.nori.tc.db.domain.model.TcModel> dbItems = modelStore.findAll(dbPageRequest);
             final long totalCount = UiDbPagedCountSupport.resolveTotalCount(
                     dbItems,
-                    effectivePage,
+                    dbPageRequest,
                     UiDbPagedCountSupport.DEFAULT_COUNT_SCAN_LIMIT,
                     modelStore::findAll,
                     log,

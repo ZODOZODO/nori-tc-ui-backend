@@ -6,6 +6,8 @@ import com.nori.tc.ui.core.deploy.DeployStepStatus;
 import com.nori.tc.ui.core.deploy.PersistedDeployTarget;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.port.db.DeployStorePort;
+import com.nori.tc.ui.core.port.redis.DeployExecutionCoordinationPort;
+import com.nori.tc.ui.core.properties.UiDeployProperties;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -15,11 +17,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Deploy target 실행 책임을 분리합니다.
@@ -31,42 +31,64 @@ public class DeployExecutor {
     private final DeployCommandAssembler commandAssembler;
     private final DeployTraceRecorder deployTraceRecorder;
     private final DeployRollbackCoordinator rollbackCoordinator;
+    private final DeployExecutionCoordinationPort deployExecutionCoordinationPort;
+    private final UiDeployProperties deployProperties;
+
+    private static final long LEASE_ACQUIRE_POLL_MS = 50L;
 
     public DeployExecutor(
             final DeployStorePort deployStorePort,
             final DeployCommandAssembler commandAssembler,
             final DeployTraceRecorder deployTraceRecorder,
-            final DeployRollbackCoordinator rollbackCoordinator
+            final DeployRollbackCoordinator rollbackCoordinator,
+            final DeployExecutionCoordinationPort deployExecutionCoordinationPort,
+            final UiDeployProperties deployProperties
     ) {
         this.deployStorePort = Objects.requireNonNull(deployStorePort, "deployStorePort is null");
         this.commandAssembler = Objects.requireNonNull(commandAssembler, "commandAssembler is null");
         this.deployTraceRecorder = Objects.requireNonNull(deployTraceRecorder, "deployTraceRecorder is null");
         this.rollbackCoordinator = Objects.requireNonNull(rollbackCoordinator, "rollbackCoordinator is null");
+        this.deployExecutionCoordinationPort = Objects.requireNonNull(
+                deployExecutionCoordinationPort,
+                "deployExecutionCoordinationPort is null"
+        );
+        this.deployProperties = Objects.requireNonNull(deployProperties, "deployProperties is null");
     }
 
     public void executeTarget(
             final long deployKey,
             final UiCommandEventType deployEventType,
             final PersistedDeployTarget target,
-            final String actor,
-            final ConcurrentHashMap<String, ReentrantLock> eqpExecutionLocks
+            final String actor
     ) {
-        final ReentrantLock lock = eqpExecutionLocks.computeIfAbsent(
-                target.planDraft().eqpId(),
-                ignored -> new ReentrantLock()
-        );
+        final String eqpId = target.planDraft().eqpId();
+        final String executionKey = buildExecutionKey(deployKey, target.deployTargetKey());
+        final long leaseTtlMs = resolveLeaseTtlMs(target);
+        final long executionTtlMs = Math.max(1L, deployProperties.summaryCacheTtlSeconds() * 1_000L);
 
-        lock.lock();
         try {
+            if (!awaitTargetLease(eqpId, executionKey, leaseTtlMs)) {
+                handleTargetFailure(
+                        deployKey,
+                        target,
+                        List.of(),
+                        null,
+                        "TARGET_LEASE_TIMEOUT",
+                        "다른 인스턴스에서 동일 설비 deploy를 처리 중입니다.",
+                        actor
+                );
+                return;
+            }
+            if (!deployExecutionCoordinationPort.registerTargetExecution(executionKey, executionTtlMs)) {
+                commandAssembler.refreshDeployStatus(deployKey, null, null);
+                return;
+            }
             doExecuteTarget(deployKey, deployEventType, target, actor);
         } finally {
             try {
                 commandAssembler.refreshDeployStatus(deployKey, null, null);
             } finally {
-                lock.unlock();
-                if (!lock.hasQueuedThreads()) {
-                    eqpExecutionLocks.remove(target.planDraft().eqpId(), lock);
-                }
+                deployExecutionCoordinationPort.releaseTargetLease(eqpId, executionKey);
             }
         }
     }
@@ -107,7 +129,7 @@ public class DeployExecutor {
                 );
 
                 final Set<String> expectedSources = commandAssembler.expectedSources(step);
-                final var replyFuture = deployTraceRecorder.register(currentTraceId, expectedSources);
+                final var replyFuture = deployTraceRecorder.register(currentTraceId, expectedSources, step.timeoutMs());
 
                 try {
                     commandAssembler.publishStepCommand(
@@ -250,5 +272,38 @@ public class DeployExecutor {
                 actor
         );
         commandAssembler.refreshDeployStatus(deployKey, errorCode, errorMessage);
+    }
+
+    private boolean awaitTargetLease(
+            final String eqpId,
+            final String ownerToken,
+            final long ttlMs
+    ) {
+        final long deadlineEpochMs = System.currentTimeMillis() + ttlMs;
+        while (System.currentTimeMillis() <= deadlineEpochMs) {
+            if (deployExecutionCoordinationPort.tryAcquireTargetLease(eqpId, ownerToken, ttlMs)) {
+                return true;
+            }
+            try {
+                Thread.sleep(LEASE_ACQUIRE_POLL_MS);
+            } catch (InterruptedException interruptedException) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private long resolveLeaseTtlMs(final PersistedDeployTarget target) {
+        long totalTimeoutMs = 0L;
+        for (DeployResolvedStepPlan step : target.planDraft().resolvedSteps()) {
+            totalTimeoutMs += Math.max(0L, step.timeoutMs());
+        }
+        return Math.max(LEASE_ACQUIRE_POLL_MS,
+                totalTimeoutMs + Math.max(0L, deployProperties.targetLockExtraTtlMs()));
+    }
+
+    private String buildExecutionKey(final long deployKey, final long deployTargetKey) {
+        return "DEPLOY-EXEC:" + deployKey + ":" + deployTargetKey;
     }
 }

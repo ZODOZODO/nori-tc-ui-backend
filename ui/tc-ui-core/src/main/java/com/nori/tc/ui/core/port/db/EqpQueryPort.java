@@ -1,7 +1,7 @@
 package com.nori.tc.ui.core.port.db;
 
-import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.ui.core.model.PagedResponse;
+import com.nori.tc.ui.core.model.UiPageRequest;
 import com.nori.tc.ui.domain.eqp.UiEqp;
 import com.nori.tc.ui.domain.eqp.UiEqpParam;
 
@@ -59,7 +59,7 @@ public interface EqpQueryPort {
      * @param pageRequest offset/limit 기반 페이지 요청
      * @return 페이지 응답(목록 + 전체 건수)
      */
-    PagedResponse<UiEqp> findAll(PageRequest pageRequest);
+    PagedResponse<UiEqp> findAll(UiPageRequest pageRequest);
 
     /**
      * 설비 식별자(eqpId)로 단건을 조회합니다.

@@ -191,7 +191,7 @@ public class UiGatewayEventKafkaPublisher implements UiGatewayEventPublishPort {
                         message.eqpId(),
                         message.interfaceType(),
                         message.uiMessage(),
-                        message.equipmentProfile()
+                        UiKafkaContractMapper.toGatewayEquipmentProfileSnapshot(message.equipmentProfile())
                 )
         );
     }

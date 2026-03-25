@@ -1,6 +1,6 @@
 package com.nori.tc.ui.adapters.web.dto.request;
 
-import com.nori.tc.db.domain.common.user.UserStatus;
+import com.nori.tc.ui.domain.auth.UiUserStatus;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 
@@ -49,11 +49,10 @@ public record UserUpsertRequest(
         @Email(message = "email 형식이 올바르지 않습니다.")
         String email,
 
-        UserStatus status,
+        UiUserStatus status,
 
         String createdBy,
 
         String updatedBy
 ) {
 }
-

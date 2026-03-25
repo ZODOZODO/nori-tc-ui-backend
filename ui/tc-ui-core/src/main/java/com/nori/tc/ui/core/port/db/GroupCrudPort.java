@@ -1,8 +1,8 @@
 package com.nori.tc.ui.core.port.db;
 
-import com.nori.tc.db.core.common.PageRequest;
-import com.nori.tc.db.core.user.upsert.UpsertTcUserGroup;
 import com.nori.tc.ui.core.model.PagedResponse;
+import com.nori.tc.ui.core.model.UiPageRequest;
+import com.nori.tc.ui.core.model.UiUserGroupUpsertCommand;
 import com.nori.tc.ui.domain.useradmin.UiUserGroup;
 
 import java.util.Optional;
@@ -27,7 +27,7 @@ public interface GroupCrudPort {
      * @param command 저장/수정 입력 명령
      * @return 저장 후 그룹 정보
      */
-    UiUserGroup upsert(UpsertTcUserGroup command);
+    UiUserGroup upsert(UiUserGroupUpsertCommand command);
 
     /**
      * 그룹 PK 기준 단건을 조회합니다.
@@ -43,7 +43,7 @@ public interface GroupCrudPort {
      * @param pageRequest offset/limit 기반 페이지 요청
      * @return 페이지 응답(목록 + 전체 건수)
      */
-    PagedResponse<UiUserGroup> findAll(PageRequest pageRequest);
+    PagedResponse<UiUserGroup> findAll(UiPageRequest pageRequest);
 
     /**
      * 그룹 PK 기준으로 삭제합니다.

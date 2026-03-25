@@ -6,6 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 /**
  * UI 인증 관련 설정 바인딩 클래스입니다.
@@ -241,10 +242,10 @@ public record UiAuthProperties(
      * @return 정규화된 문자열(값 있음) 또는 null(미설정)
      */
     private static String normalizeOptionalText(final String rawValue) {
-        if (rawValue == null || rawValue.isBlank()) {
-            return null;
-        }
-        return rawValue.trim();
+        return Optional.ofNullable(rawValue)
+                .map(String::trim)
+                .filter(normalized -> !normalized.isEmpty())
+                .orElse(null);
     }
 
     /**

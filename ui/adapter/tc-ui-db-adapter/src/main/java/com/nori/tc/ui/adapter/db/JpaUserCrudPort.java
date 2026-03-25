@@ -1,14 +1,15 @@
 package com.nori.tc.ui.adapter.db;
 
-import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.user.store.TcUiAuthSessionStore;
 import com.nori.tc.db.core.user.store.TcUserInfoStore;
-import com.nori.tc.db.core.user.upsert.UpsertTcUserInfo;
 import com.nori.tc.db.domain.user.TcUiAuthSession;
+import com.nori.tc.ui.adapter.db.mapper.UiCoreCommandDbMapper;
 import com.nori.tc.ui.adapter.db.mapper.UiUserAdminDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.model.PagedResponse;
+import com.nori.tc.ui.core.model.UiPageRequest;
+import com.nori.tc.ui.core.model.UiUserUpsertCommand;
 import com.nori.tc.ui.core.port.db.UserCrudPort;
 import com.nori.tc.ui.domain.useradmin.UiManagedUser;
 import org.slf4j.Logger;
@@ -66,7 +67,7 @@ public class JpaUserCrudPort implements UserCrudPort {
      * @return 저장 후 사용자 정보
      */
     @Override
-    public UiManagedUser upsert(final UpsertTcUserInfo command) {
+    public UiManagedUser upsert(final UiUserUpsertCommand command) {
         if (log.isDebugEnabled()) {
             log.debug("사용자 업서트 시작. userPk={}, userIdNorm={}, email={}",
                     command == null ? null : command.userPk(),
@@ -75,7 +76,9 @@ public class JpaUserCrudPort implements UserCrudPort {
         }
 
         try {
-            final UiManagedUser saved = UiUserAdminDbMapper.toDomain(userInfoStore.upsert(command));
+            final UiManagedUser saved = UiUserAdminDbMapper.toDomain(userInfoStore.upsert(
+                    UiCoreCommandDbMapper.toDbCommand(command)
+            ));
             if (log.isDebugEnabled()) {
                 log.debug("사용자 업서트 완료. userPk={}, userIdNorm={}, status={}",
                         saved.userPk(), saved.userIdNorm(), saved.status());
@@ -139,18 +142,19 @@ public class JpaUserCrudPort implements UserCrudPort {
      * @return 목록 + count 페이지 응답
      */
     @Override
-    public PagedResponse<UiManagedUser> findAll(final PageRequest pageRequest) {
-        final PageRequest effectivePage = (pageRequest == null) ? PageRequest.defaultPage() : pageRequest;
+    public PagedResponse<UiManagedUser> findAll(final UiPageRequest pageRequest) {
+        final UiPageRequest effectivePage = (pageRequest == null) ? UiPageRequest.defaultPage() : pageRequest;
+        final com.nori.tc.db.core.common.PageRequest dbPageRequest = UiCoreCommandDbMapper.toDbPageRequest(effectivePage);
 
         if (log.isDebugEnabled()) {
             log.debug("사용자 목록 조회 시작. offset={}, limit={}", effectivePage.offset(), effectivePage.limit());
         }
 
         try {
-            final List<com.nori.tc.db.domain.user.TcUserInfo> dbItems = userInfoStore.findAll(effectivePage);
+            final List<com.nori.tc.db.domain.user.TcUserInfo> dbItems = userInfoStore.findAll(dbPageRequest);
             final long totalCount = UiDbPagedCountSupport.resolveTotalCount(
                     dbItems,
-                    effectivePage,
+                    dbPageRequest,
                     UiDbPagedCountSupport.DEFAULT_COUNT_SCAN_LIMIT,
                     userInfoStore::findAll,
                     log,
@@ -241,7 +245,7 @@ public class JpaUserCrudPort implements UserCrudPort {
         while (true) {
             final List<TcUiAuthSession> sessions = authSessionStore.findAllByUserPk(
                     userPk,
-                    PageRequest.of(0, SESSION_CLEANUP_BATCH_LIMIT)
+                    com.nori.tc.db.core.common.PageRequest.of(0, SESSION_CLEANUP_BATCH_LIMIT)
             );
 
             if (sessions.isEmpty()) {

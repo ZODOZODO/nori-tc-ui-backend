@@ -26,6 +26,8 @@
 
 plugins {
     `java-library`
+    id("com.nori.tc.archunit-conventions")
+    id("com.nori.tc.dependency-matrix-conventions")
     alias(libs.plugins.spring.dependency.management)
 }
 
@@ -43,24 +45,6 @@ dependencies {
      * 도메인 모델(AuthToken, UserPrincipal, UiTaskResult)을 Port 시그니처에서 사용합니다.
      */
     api(project(":ui:tc-ui-domain"))
-
-    /*
-     * DB Core 공통 계약(PageRequest, Upsert Command)을 관리 Port 시그니처에서 사용합니다.
-     * api로 선언하여 Adapter 계층에서 동일 계약 타입을 재사용할 수 있도록 노출합니다.
-     */
-    api("com.nori.tc:tc-db-core:0.0.1-SNAPSHOT")
-
-    /*
-     * GatewayEquipmentProfileSnapshot을 Port 시그니처(UiCommandMessage)에서 사용합니다.
-     * GatewayEquipmentProfileSnapshot은 순수 Kafka payload DTO이므로 tc-messaging-kafka-contract에 위치합니다.
-     */
-    api("com.nori.tc:tc-messaging-kafka-contract:0.0.1-SNAPSHOT")
-
-    /*
-     * Kafka source 상수(TcKafkaSources.UI_BACKEND 등)를 web-adapter에서 사용합니다.
-     * api로 선언하여 web-adapter가 별도 의존성 없이 메시지 도메인 상수를 참조할 수 있도록 노출합니다.
-     */
-    api("com.nori.tc:tc-messaging-domain:0.0.1-SNAPSHOT")
 
     /*
      * Deploy orchestration T3:
@@ -83,6 +67,7 @@ dependencies {
      * - @Component, @Service 등 어노테이션은 컴파일 시에만 필요합니다.
      */
     compileOnly(libs.spring.boot)
+    compileOnly(libs.spring.boot.autoconfigure)
     compileOnly(libs.spring.context)
     compileOnly(libs.jakarta.annotation.api)
     annotationProcessor(libs.spring.boot.configuration.processor)
@@ -95,4 +80,21 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+tcDependencyMatrix {
+    forbiddenProjectPaths.addAll(
+        listOf(
+            ":ui:adapter",
+            ":ui:starter"
+        )
+    )
+    forbiddenCoordinates.addAll(
+        listOf(
+            "com.nori.tc:tc-db-core",
+            "com.nori.tc:tc-db-domain",
+            "com.nori.tc:tc-messaging-domain",
+            "com.nori.tc:tc-messaging-kafka-contract"
+        )
+    )
 }

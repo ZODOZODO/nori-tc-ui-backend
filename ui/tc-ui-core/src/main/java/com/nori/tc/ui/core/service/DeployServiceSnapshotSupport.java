@@ -3,12 +3,12 @@ package com.nori.tc.ui.core.service;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
-import com.nori.tc.messaging.kafka.contract.GatewayEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.deploy.DeployResolvedStepPlan;
 import com.nori.tc.ui.core.deploy.DeployRollbackMode;
 import com.nori.tc.ui.core.deploy.PersistedDeployTarget;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.model.UiCommandEventType;
+import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.port.db.EqpCrudPort;
 import com.nori.tc.ui.domain.eqp.UiEqpParam;
 
@@ -155,7 +155,7 @@ final class DeployServiceSnapshotSupport {
             eqpParams.put("version", currentState.appliedParamVersion());
         }
         eqpParams.putArray("items");
-        root.set("equipmentProfile", objectMapper.valueToTree(new GatewayEquipmentProfileSnapshot(
+        root.set("equipmentProfile", objectMapper.valueToTree(new UiEquipmentProfileSnapshot(
                 currentState.eqpKey(),
                 currentState.eqpId(),
                 currentState.interfaceType(),
@@ -361,8 +361,8 @@ final class DeployServiceSnapshotSupport {
         return gatewayProfile;
     }
 
-    private GatewayEquipmentProfileSnapshot buildGatewayEquipmentProfile(final EqpManagementSnapshot snapshot) {
-        return new GatewayEquipmentProfileSnapshot(
+    private UiEquipmentProfileSnapshot buildGatewayEquipmentProfile(final EqpManagementSnapshot snapshot) {
+        return new UiEquipmentProfileSnapshot(
                 snapshot.eqp().eqpKey(),
                 snapshot.eqp().eqpId(),
                 snapshot.eqp().commInterface() == null ? null : snapshot.eqp().commInterface().name(),
@@ -374,7 +374,7 @@ final class DeployServiceSnapshotSupport {
                 snapshot.eqp().commMode(),
                 snapshot.eqp().routePartition(),
                 snapshot.eqp().enabled(),
-                snapshot.hsms() == null ? null : new GatewayEquipmentProfileSnapshot.HsmsSettingsSnapshot(
+                snapshot.hsms() == null ? null : new UiEquipmentProfileSnapshot.HsmsSettingsSnapshot(
                         snapshot.hsms().deviceId(),
                         snapshot.eqp().commMode(),
                         snapshot.hsms().t3Timeout(),
@@ -386,7 +386,7 @@ final class DeployServiceSnapshotSupport {
                         snapshot.hsms().linkTestInterval(),
                         snapshot.hsms().maxMsgBytes()
                 ),
-                snapshot.socket() == null ? null : new GatewayEquipmentProfileSnapshot.SocketSettingsSnapshot(
+                snapshot.socket() == null ? null : new UiEquipmentProfileSnapshot.SocketSettingsSnapshot(
                         snapshot.socket().socketProtocolType(),
                         snapshot.eqp().commMode(),
                         snapshot.socket().charset(),
@@ -397,7 +397,7 @@ final class DeployServiceSnapshotSupport {
                         snapshot.socket().maxFrameSizeBytes(),
                         snapshot.socket().keepAliveEnabled()
                 ),
-                snapshot.runtimeState() == null ? null : new GatewayEquipmentProfileSnapshot.CurrentStateSnapshot(
+                snapshot.runtimeState() == null ? null : new UiEquipmentProfileSnapshot.CurrentStateSnapshot(
                         snapshot.runtimeState().controlState() == null ? null : snapshot.runtimeState().controlState().name(),
                         snapshot.runtimeState().eqpState() == null ? null : snapshot.runtimeState().eqpState().name(),
                         snapshot.runtimeState().sinceAt() == null ? null : snapshot.runtimeState().sinceAt().toString(),
@@ -406,7 +406,7 @@ final class DeployServiceSnapshotSupport {
                         snapshot.runtimeState().updatedAt() == null ? null : snapshot.runtimeState().updatedAt().toString()
                 ),
                 snapshot.portStatuses().stream()
-                        .map(port -> new GatewayEquipmentProfileSnapshot.PortStatusSnapshot(
+                        .map(port -> new UiEquipmentProfileSnapshot.PortStatusSnapshot(
                                 port.portId(),
                                 port.portType() == null ? null : port.portType().name(),
                                 port.portState(),
@@ -416,14 +416,14 @@ final class DeployServiceSnapshotSupport {
                                 port.updatedAt() == null ? null : port.updatedAt().toString()
                         ))
                         .toList(),
-                snapshot.logPolicy() == null ? null : new GatewayEquipmentProfileSnapshot.LogPolicySnapshot(
+                snapshot.logPolicy() == null ? null : new UiEquipmentProfileSnapshot.LogPolicySnapshot(
                         snapshot.logPolicy().logLevel() == null ? null : snapshot.logPolicy().logLevel().name(),
                         snapshot.logPolicy().logRetentionDays(),
                         snapshot.logPolicy().logPath(),
                         snapshot.logPolicy().updatedAt() == null ? null : snapshot.logPolicy().updatedAt().toString()
                 ),
                 snapshot.params().stream()
-                        .map(param -> new GatewayEquipmentProfileSnapshot.ParamSnapshot(
+                        .map(param -> new UiEquipmentProfileSnapshot.ParamSnapshot(
                                 param.eqpParamKey(),
                                 param.paramName(),
                                 param.paramVersion(),

@@ -1,6 +1,7 @@
 package com.nori.tc.ui.core.registry;
 
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Redis에 저장된 DualResponse 조회 결과입니다.
@@ -37,10 +38,10 @@ public record DualResponseRedisLookupResult(
     }
 
     private static String normalize(final String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        return value.trim();
+        return Optional.ofNullable(value)
+                .map(String::trim)
+                .filter(normalized -> !normalized.isEmpty())
+                .orElse(null);
     }
 
     public enum Status {

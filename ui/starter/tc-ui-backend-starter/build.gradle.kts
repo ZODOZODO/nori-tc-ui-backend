@@ -8,7 +8,7 @@
  * 주요 구성 (Phase 7에서 구현)
  *   - TcUiBackendAutoConfiguration
  *     @AutoConfiguration
- *     @ComponentScan("com.nori.tc.ui.core")
+ *     explicit core bean graph import
  *     @Import({
  *         UiWebAdapterAutoConfiguration,
  *         UiKafkaAdapterAutoConfiguration,
@@ -45,6 +45,10 @@ dependencies {
     /*
      * Starter는 조립 전용 모듈이므로 내부 어댑터와 core를 외부에 재노출하지 않습니다.
      */
+    implementation(libs.spring.boot.starter.actuator)
+    implementation("org.springframework.boot:spring-boot-actuator")
+    implementation(libs.spring.boot.starter.data.redis)
+    implementation("com.nori.tc:tc-common-runtime-support:0.0.1-SNAPSHOT")
     implementation(project(":ui:tc-ui-core"))
     implementation(project(":ui:adapter:tc-ui-web-adapter"))
     implementation(project(":ui:adapter:tc-ui-kafka-adapter"))

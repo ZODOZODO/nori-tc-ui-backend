@@ -1,5 +1,7 @@
 package com.nori.tc.ui.core.deploy;
 
+import java.util.Optional;
+
 /**
  * planning 시점 DB 기준 current state 입니다.
  */
@@ -44,9 +46,9 @@ public record DeployCurrentState(
     }
 
     private static String normalizeOptionalText(final String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        return value.trim();
+        return Optional.ofNullable(value)
+                .map(String::trim)
+                .filter(normalized -> !normalized.isEmpty())
+                .orElse(null);
     }
 }

@@ -76,7 +76,7 @@ class DeployServiceTest {
 
     @Test
     void createDeployCompletesSingleTargetWhenGatewayReplyPasses() throws Exception {
-        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry();
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
         final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
         deployService = newDeployService(
                 deployProperties(tempDir.resolve("missing-scenarios")),
@@ -106,7 +106,7 @@ class DeployServiceTest {
 
     @Test
     void createDeployMarksTargetFailedWhenGatewayReplyFails() throws Exception {
-        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry();
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
         final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
         deployService = newDeployService(
                 deployProperties(tempDir.resolve("missing-scenarios")),
@@ -136,7 +136,7 @@ class DeployServiceTest {
 
     @Test
     void businessJarUpdateRollsBackOnlyFailedTargetAndKeepsOtherTargetCompleted() throws Exception {
-        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry();
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
         final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
         final InMemoryEqpCrudPort eqpCrudPort = new InMemoryEqpCrudPort();
         eqpCrudPort.put(snapshot("PHOTO_001", 1L));
@@ -197,7 +197,7 @@ class DeployServiceTest {
 
     @Test
     void compensationFailureMarksTargetCompensationFailed() throws Exception {
-        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry();
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
         final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
         final InMemoryEqpCrudPort eqpCrudPort = new InMemoryEqpCrudPort();
         eqpCrudPort.put(snapshot("PHOTO_002", 2L));
@@ -231,6 +231,59 @@ class DeployServiceTest {
         assertTrue(target.rollbackRequired());
     }
 
+    @Test
+    void replyHandledByDifferentInstanceCompletesDeploy() throws Exception {
+        final InMemoryDeployTraceRedisPort sharedTracePort = new InMemoryDeployTraceRedisPort();
+        final InMemoryDeployExecutionCoordinationPort sharedCoordinationPort =
+                new InMemoryDeployExecutionCoordinationPort();
+        final DeployTraceRegistry instanceOneTraceRegistry = new DeployTraceRegistry(sharedTracePort);
+        final DeployTraceRegistry instanceTwoTraceRegistry = new DeployTraceRegistry(sharedTracePort);
+        final List<UiCommandMessage> publishedMessages = new ArrayList<>();
+
+        deployService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService(tempDir.resolve("missing-scenarios")),
+                new InMemoryDeployStorePort(),
+                new InMemoryEqpCrudPort(),
+                message -> publishedMessages.add(message),
+                UiBusinessEventPublishPort.noop(),
+                instanceOneTraceRegistry,
+                sharedCoordinationPort
+        );
+        final DeployService otherInstanceService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService(tempDir.resolve("missing-scenarios")),
+                new InMemoryDeployStorePort(),
+                new InMemoryEqpCrudPort(),
+                UiGatewayEventPublishPort.noop(),
+                UiBusinessEventPublishPort.noop(),
+                instanceTwoTraceRegistry,
+                sharedCoordinationPort
+        );
+
+        try {
+            final DeployCreateResult result = deployService.createDeploy(sendMessageCommand(), "tester");
+            final UiCommandMessage publishedMessage = awaitPublishedMessage(publishedMessages);
+
+            otherInstanceService.handleReply(new UiCommandReply(
+                    publishedMessage.traceId(),
+                    "TC-GATEWAY-APP",
+                    publishedMessage.eventType().name() + "_REP",
+                    publishedMessage.eqpId(),
+                    publishedMessage.interfaceType(),
+                    UiTaskStatus.PASS,
+                    null,
+                    null
+            ));
+
+            final var summary = awaitTerminalSummary(result.deployKey());
+            assertEquals(DeployStatus.COMPLETED, summary.deployStatus());
+            assertEquals("DEPLOY_COMPLETED", summary.resultCode());
+        } finally {
+            otherInstanceService.shutdown();
+        }
+    }
+
     private DeployService newDeployService(
             final UiDeployProperties deployProperties,
             final DeployPlanningService planningService,
@@ -239,6 +292,28 @@ class DeployServiceTest {
             final UiGatewayEventPublishPort gatewayEventPublishPort,
             final UiBusinessEventPublishPort businessEventPublishPort,
             final DeployTraceRegistry traceRegistry
+    ) {
+        return newDeployService(
+                deployProperties,
+                planningService,
+                storePort,
+                eqpCrudPort,
+                gatewayEventPublishPort,
+                businessEventPublishPort,
+                traceRegistry,
+                new InMemoryDeployExecutionCoordinationPort()
+        );
+    }
+
+    private DeployService newDeployService(
+            final UiDeployProperties deployProperties,
+            final DeployPlanningService planningService,
+            final InMemoryDeployStorePort storePort,
+            final InMemoryEqpCrudPort eqpCrudPort,
+            final UiGatewayEventPublishPort gatewayEventPublishPort,
+            final UiBusinessEventPublishPort businessEventPublishPort,
+            final DeployTraceRegistry traceRegistry,
+            final InMemoryDeployExecutionCoordinationPort coordinationPort
     ) {
         final DeployServiceCommandSupport commandSupport = new DeployServiceCommandSupport(
                 storePort,
@@ -253,7 +328,14 @@ class DeployServiceTest {
         final DeployRollbackCoordinator rollbackCoordinator =
                 new DeployRollbackCoordinator(storePort, commandAssembler, deployTraceRecorder);
         final DeployExecutor deployExecutor =
-                new DeployExecutor(storePort, commandAssembler, deployTraceRecorder, rollbackCoordinator);
+                new DeployExecutor(
+                        storePort,
+                        commandAssembler,
+                        deployTraceRecorder,
+                        rollbackCoordinator,
+                        coordinationPort,
+                        deployProperties
+                );
         return new DeployService(
                 deployProperties,
                 deployPlanner,
@@ -262,6 +344,16 @@ class DeployServiceTest {
                 commandAssembler,
                 deployExecutor
         );
+    }
+
+    private UiCommandMessage awaitPublishedMessage(final List<UiCommandMessage> publishedMessages) throws Exception {
+        for (int attempt = 0; attempt < 50; attempt++) {
+            if (!publishedMessages.isEmpty()) {
+                return publishedMessages.getFirst();
+            }
+            Thread.sleep(20L);
+        }
+        throw new AssertionError("deploy command publish 대기 중 timeout이 발생했습니다.");
     }
 
     private DeployPlanningService planningService(final Path scenarioDirectory) {

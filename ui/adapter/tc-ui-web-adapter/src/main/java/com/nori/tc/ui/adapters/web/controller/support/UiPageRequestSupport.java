@@ -1,7 +1,7 @@
 package com.nori.tc.ui.adapters.web.controller.support;
 
-import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
+import com.nori.tc.ui.core.model.UiPageRequest;
 
 /**
  * UI 관리 API의 공통 페이징 입력 해석 유틸리티입니다.
@@ -46,14 +46,14 @@ public final class UiPageRequestSupport {
     }
 
     /**
-     * 요청 파라미터를 {@link PageRequest}로 정규화합니다.
+     * 요청 파라미터를 {@link UiPageRequest}로 정규화합니다.
      *
      * @param offsetParam 요청 offset 값(없으면 null)
      * @param limitParam 요청 limit 값(없으면 null)
-     * @return 검증 및 기본값 적용이 완료된 PageRequest
+     * @return 검증 및 기본값 적용이 완료된 UiPageRequest
      * @throws UiBadRequestException offset/limit 정책 위반 시
      */
-    public static PageRequest resolve(
+    public static UiPageRequest resolve(
             final Integer offsetParam,
             final Integer limitParam
     ) {
@@ -70,7 +70,6 @@ public final class UiPageRequestSupport {
             throw new UiBadRequestException("limit은 " + MAX_LIMIT + " 이하여야 합니다.");
         }
 
-        return PageRequest.of(offset, limit);
+        return UiPageRequest.of(offset, limit);
     }
 }
-

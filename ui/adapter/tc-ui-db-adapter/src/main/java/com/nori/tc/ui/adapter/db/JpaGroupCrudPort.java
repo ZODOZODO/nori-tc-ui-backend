@@ -1,12 +1,13 @@
 package com.nori.tc.ui.adapter.db;
 
-import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.user.store.TcUserGroupStore;
-import com.nori.tc.db.core.user.upsert.UpsertTcUserGroup;
+import com.nori.tc.ui.adapter.db.mapper.UiCoreCommandDbMapper;
 import com.nori.tc.ui.adapter.db.mapper.UiUserAdminDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.model.PagedResponse;
+import com.nori.tc.ui.core.model.UiPageRequest;
+import com.nori.tc.ui.core.model.UiUserGroupUpsertCommand;
 import com.nori.tc.ui.core.port.db.GroupCrudPort;
 import com.nori.tc.ui.domain.useradmin.UiUserGroup;
 import org.slf4j.Logger;
@@ -50,7 +51,7 @@ public class JpaGroupCrudPort implements GroupCrudPort {
      * @return 저장 후 그룹 정보
      */
     @Override
-    public UiUserGroup upsert(final UpsertTcUserGroup command) {
+    public UiUserGroup upsert(final UiUserGroupUpsertCommand command) {
         if (log.isDebugEnabled()) {
             log.debug("그룹 업서트 시작. groupId={}, groupCode={}, isActive={}",
                     command == null ? null : command.groupId(),
@@ -59,7 +60,9 @@ public class JpaGroupCrudPort implements GroupCrudPort {
         }
 
         try {
-            final UiUserGroup saved = UiUserAdminDbMapper.toDomain(userGroupStore.upsert(command));
+            final UiUserGroup saved = UiUserAdminDbMapper.toDomain(userGroupStore.upsert(
+                    UiCoreCommandDbMapper.toDbCommand(command)
+            ));
             if (log.isDebugEnabled()) {
                 log.debug("그룹 업서트 완료. groupId={}, groupCode={}, isActive={}",
                         saved.groupId(), saved.groupCode(), saved.isActive());
@@ -123,18 +126,19 @@ public class JpaGroupCrudPort implements GroupCrudPort {
      * @return 목록 + count 페이지 응답
      */
     @Override
-    public PagedResponse<UiUserGroup> findAll(final PageRequest pageRequest) {
-        final PageRequest effectivePage = (pageRequest == null) ? PageRequest.defaultPage() : pageRequest;
+    public PagedResponse<UiUserGroup> findAll(final UiPageRequest pageRequest) {
+        final UiPageRequest effectivePage = (pageRequest == null) ? UiPageRequest.defaultPage() : pageRequest;
+        final com.nori.tc.db.core.common.PageRequest dbPageRequest = UiCoreCommandDbMapper.toDbPageRequest(effectivePage);
 
         if (log.isDebugEnabled()) {
             log.debug("그룹 목록 조회 시작. offset={}, limit={}", effectivePage.offset(), effectivePage.limit());
         }
 
         try {
-            final List<com.nori.tc.db.domain.user.TcUserGroup> dbItems = userGroupStore.findAll(effectivePage);
+            final List<com.nori.tc.db.domain.user.TcUserGroup> dbItems = userGroupStore.findAll(dbPageRequest);
             final long totalCount = UiDbPagedCountSupport.resolveTotalCount(
                     dbItems,
-                    effectivePage,
+                    dbPageRequest,
                     UiDbPagedCountSupport.DEFAULT_COUNT_SCAN_LIMIT,
                     userGroupStore::findAll,
                     log,

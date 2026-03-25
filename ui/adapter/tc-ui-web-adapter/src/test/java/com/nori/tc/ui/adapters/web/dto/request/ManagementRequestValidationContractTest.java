@@ -1,7 +1,6 @@
 package com.nori.tc.ui.adapters.web.dto.request;
 
-import com.nori.tc.db.domain.common.model.ModelStatus;
-import com.nori.tc.db.domain.common.model.ProtocolType;
+import com.nori.tc.ui.domain.common.model.UiModelStatus;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
@@ -49,8 +48,8 @@ class ManagementRequestValidationContractTest {
         final ModelUpsertRequest upsertRequest = new ModelUpsertRequest(
                 repeat('M', 1000),
                 repeat('V', 100),
-                ProtocolType.SECS,
-                ModelStatus.OPERATE,
+                UiProtocolType.SECS,
+                UiModelStatus.OPERATE,
                 "desc",
                 "maker",
                 "SYSTEM",
@@ -71,8 +70,8 @@ class ManagementRequestValidationContractTest {
                 new ModelUpsertRequest(
                         "MODEL",
                         repeat('V', 101),
-                        ProtocolType.SECS,
-                        ModelStatus.OPERATE,
+                        UiProtocolType.SECS,
+                        UiModelStatus.OPERATE,
                         null,
                         null,
                         "SYSTEM",

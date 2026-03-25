@@ -1,12 +1,13 @@
 package com.nori.tc.ui.adapter.db;
 
-import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.user.store.TcUiPermissionStore;
-import com.nori.tc.db.core.user.upsert.UpsertTcUiPermission;
+import com.nori.tc.ui.adapter.db.mapper.UiCoreCommandDbMapper;
 import com.nori.tc.ui.adapter.db.mapper.UiUserAdminDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.model.PagedResponse;
+import com.nori.tc.ui.core.model.UiPageRequest;
+import com.nori.tc.ui.core.model.UiPermissionUpsertCommand;
 import com.nori.tc.ui.core.port.db.PermissionCrudPort;
 import com.nori.tc.ui.domain.useradmin.UiPermission;
 import org.slf4j.Logger;
@@ -50,7 +51,7 @@ public class JpaPermissionCrudPort implements PermissionCrudPort {
      * @return 저장 후 권한 정보
      */
     @Override
-    public UiPermission upsert(final UpsertTcUiPermission command) {
+    public UiPermission upsert(final UiPermissionUpsertCommand command) {
         if (log.isDebugEnabled()) {
             log.debug("권한 업서트 시작. permId={}, permCode={}, resource={}, httpMethod={}",
                     command == null ? null : command.permId(),
@@ -60,7 +61,9 @@ public class JpaPermissionCrudPort implements PermissionCrudPort {
         }
 
         try {
-            final UiPermission saved = UiUserAdminDbMapper.toDomain(permissionStore.upsert(command));
+            final UiPermission saved = UiUserAdminDbMapper.toDomain(permissionStore.upsert(
+                    UiCoreCommandDbMapper.toDbCommand(command)
+            ));
             if (log.isDebugEnabled()) {
                 log.debug("권한 업서트 완료. permId={}, permCode={}, isActive={}",
                         saved.permId(), saved.permCode(), saved.isActive());
@@ -124,18 +127,19 @@ public class JpaPermissionCrudPort implements PermissionCrudPort {
      * @return 목록 + count 페이지 응답
      */
     @Override
-    public PagedResponse<UiPermission> findAll(final PageRequest pageRequest) {
-        final PageRequest effectivePage = (pageRequest == null) ? PageRequest.defaultPage() : pageRequest;
+    public PagedResponse<UiPermission> findAll(final UiPageRequest pageRequest) {
+        final UiPageRequest effectivePage = (pageRequest == null) ? UiPageRequest.defaultPage() : pageRequest;
+        final com.nori.tc.db.core.common.PageRequest dbPageRequest = UiCoreCommandDbMapper.toDbPageRequest(effectivePage);
 
         if (log.isDebugEnabled()) {
             log.debug("권한 목록 조회 시작. offset={}, limit={}", effectivePage.offset(), effectivePage.limit());
         }
 
         try {
-            final List<com.nori.tc.db.domain.user.TcUiPermission> dbItems = permissionStore.findAll(effectivePage);
+            final List<com.nori.tc.db.domain.user.TcUiPermission> dbItems = permissionStore.findAll(dbPageRequest);
             final long totalCount = UiDbPagedCountSupport.resolveTotalCount(
                     dbItems,
-                    effectivePage,
+                    dbPageRequest,
                     UiDbPagedCountSupport.DEFAULT_COUNT_SCAN_LIMIT,
                     permissionStore::findAll,
                     log,

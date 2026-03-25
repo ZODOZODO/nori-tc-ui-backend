@@ -1,22 +1,23 @@
 package com.nori.tc.ui.core.service;
-
 import com.nori.tc.ui.core.deploy.DeployTraceCompletion;
 import com.nori.tc.ui.core.model.UiCommandReply;
+import com.nori.tc.ui.core.port.redis.DeployTraceRedisPort;
+import com.nori.tc.ui.core.registry.DeployTraceRedisLookupResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * deploy step traceId -> reply 집계를 관리합니다.
+ *
+ * <p>분산 저장소에 실제 reply 상태를 기록하고, 현재 인스턴스에는 대기 Future만 유지합니다.</p>
  */
 @Component
 public class DeployTraceRegistry {
@@ -25,7 +26,14 @@ public class DeployTraceRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(DeployTraceRegistry.class);
 
-    private final ConcurrentHashMap<String, PendingTrace> pendingTraces = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, PendingFutureTracker> pendingFutures = new ConcurrentHashMap<>();
+    private final DeployTraceRedisPort deployTraceRedisPort;
+
+    public DeployTraceRegistry(final DeployTraceRedisPort deployTraceRedisPort) {
+        this.deployTraceRedisPort = Objects.requireNonNull(deployTraceRedisPort,
+                "deployTraceRedisPort is null");
+        this.deployTraceRedisPort.subscribe(this::completeFromRedis);
+    }
 
     /**
      * deploy orchestrator가 관리하는 traceId인지 반환합니다.
@@ -42,21 +50,29 @@ public class DeployTraceRegistry {
      *
      * @param traceId traceId
      * @param expectedSources 기대 source 집합
+     * @param timeoutMs TTL(ms)
      * @return 완료 future
      */
     public CompletableFuture<DeployTraceCompletion> register(
             final String traceId,
-            final Set<String> expectedSources
+            final Set<String> expectedSources,
+            final long timeoutMs
     ) {
         Objects.requireNonNull(traceId, "traceId is null");
         final Set<String> normalizedSources = Set.copyOf(Objects.requireNonNull(expectedSources, "expectedSources is null"));
-        final PendingTrace pendingTrace = new PendingTrace(traceId, normalizedSources);
-        pendingTraces.put(traceId, pendingTrace);
-        return pendingTrace.future();
+
+        deployTraceRedisPort.register(traceId, normalizedSources, timeoutMs);
+
+        final PendingFutureTracker tracker = new PendingFutureTracker();
+        pendingFutures.put(traceId, tracker);
+
+        // 다른 인스턴스가 먼저 reply를 기록한 경우를 대비해 등록 직후 상태를 한 번 조회합니다.
+        completeFromRedis(traceId);
+        return tracker.future();
     }
 
     /**
-     * 수신된 reply를 반영합니다.
+     * 수신된 reply를 분산 저장소에 반영합니다.
      *
      * @param reply 수신 reply
      * @return deploy trace 처리 대상이면 true
@@ -68,14 +84,9 @@ public class DeployTraceRegistry {
             return false;
         }
 
-        final PendingTrace pendingTrace = pendingTraces.get(reply.traceId());
-        if (pendingTrace == null) {
-            log.debug("대기 중이 아닌 deploy trace reply를 무시합니다. traceId={}, source={}, eventType={}",
-                    reply.traceId(), reply.source(), reply.eventType());
-            return true;
-        }
-
-        pendingTrace.record(reply);
+        deployTraceRedisPort.record(reply);
+        // 동일 인스턴스 처리 경로에서는 Pub/Sub 없이도 즉시 완료할 수 있게 바로 조회합니다.
+        completeFromRedis(reply.traceId());
         return true;
     }
 
@@ -85,55 +96,69 @@ public class DeployTraceRegistry {
      * @param traceId traceId
      */
     public void cancel(final String traceId) {
-        final PendingTrace pendingTrace = pendingTraces.remove(traceId);
-        if (pendingTrace != null) {
-            pendingTrace.future().completeExceptionally(new CancellationException("trace canceled: " + traceId));
+        deployTraceRedisPort.cancel(traceId);
+
+        final PendingFutureTracker tracker = pendingFutures.remove(traceId);
+        if (tracker != null && tracker.tryCancel()) {
+            log.debug("deploy trace 대기를 취소했습니다. traceId={}", traceId);
         }
     }
 
-    private final class PendingTrace {
+    /**
+     * Redis Pub/Sub 완료 신호 또는 로컬 즉시 조회 경로에서 완료를 반영합니다.
+     *
+     * @param traceId traceId
+     */
+    public void completeFromRedis(final String traceId) {
+        Objects.requireNonNull(traceId, "traceId is null");
 
-        private final String traceId;
-        private final Set<String> expectedSources;
-        private final Map<String, UiCommandReply> repliesBySource;
-        private final CompletableFuture<DeployTraceCompletion> future;
-
-        private PendingTrace(
-                final String traceId,
-                final Set<String> expectedSources
-        ) {
-            this.traceId = traceId;
-            this.expectedSources = expectedSources;
-            this.repliesBySource = new LinkedHashMap<>();
-            this.future = new CompletableFuture<>();
+        final PendingFutureTracker tracker = pendingFutures.get(traceId);
+        if (tracker == null) {
+            return;
         }
 
-        private synchronized void record(final UiCommandReply reply) {
-            if (!expectedSources.contains(reply.source())) {
-                log.debug("기대하지 않은 source reply를 무시합니다. traceId={}, source={}, expectedSources={}",
-                        traceId, reply.source(), expectedSources);
-                return;
-            }
-            if (repliesBySource.containsKey(reply.source())) {
-                log.debug("중복 source reply를 무시합니다. traceId={}, source={}", traceId, reply.source());
-                return;
-            }
-
-            repliesBySource.put(reply.source(), reply);
-            if (!expectedSources.stream().allMatch(repliesBySource::containsKey)) {
-                return;
-            }
-
-            pendingTraces.remove(traceId, this);
-            future.complete(new DeployTraceCompletion(
-                    traceId,
-                    expectedSources,
-                    new ArrayList<>(repliesBySource.values())
-            ));
+        final DeployTraceRedisLookupResult lookupResult = deployTraceRedisPort.getCompletion(traceId);
+        if (lookupResult.status() == DeployTraceRedisLookupResult.Status.PENDING) {
+            return;
         }
+        if (lookupResult.status() == DeployTraceRedisLookupResult.Status.INFRA_ERROR) {
+            log.error("deploy trace Redis 조회 실패. failureCode=UI_DEPLOY_TRACE_LOOKUP_FAILED, "
+                            + "failureCategory=INFRA, failureSeverity=ERROR, traceId={}, error={}",
+                    traceId, lookupResult.errorMessage());
+            return;
+        }
+
+        if (tracker.tryComplete(lookupResult.completion())) {
+            pendingFutures.remove(traceId, tracker);
+            log.debug("deploy trace 완료. traceId={}", traceId);
+        }
+    }
+
+    public int pendingCount() {
+        return pendingFutures.size();
+    }
+
+    private static final class PendingFutureTracker {
+
+        private final CompletableFuture<DeployTraceCompletion> future = new CompletableFuture<>();
+        private final AtomicBoolean terminal = new AtomicBoolean(false);
 
         private CompletableFuture<DeployTraceCompletion> future() {
             return future;
+        }
+
+        private boolean tryComplete(final DeployTraceCompletion completion) {
+            if (!terminal.compareAndSet(false, true)) {
+                return false;
+            }
+            return future.complete(completion);
+        }
+
+        private boolean tryCancel() {
+            if (!terminal.compareAndSet(false, true)) {
+                return false;
+            }
+            return future.completeExceptionally(new CancellationException("deploy trace canceled"));
         }
     }
 }

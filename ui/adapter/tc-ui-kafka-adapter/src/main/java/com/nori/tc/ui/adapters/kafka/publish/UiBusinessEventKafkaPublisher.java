@@ -154,7 +154,7 @@ public class UiBusinessEventKafkaPublisher implements UiBusinessEventPublishPort
                         message.eqpId(),
                         message.interfaceType(),
                         message.uiMessage(),
-                        message.equipmentProfile()
+                        UiKafkaContractMapper.toGatewayEquipmentProfileSnapshot(message.equipmentProfile())
                 )
         );
     }

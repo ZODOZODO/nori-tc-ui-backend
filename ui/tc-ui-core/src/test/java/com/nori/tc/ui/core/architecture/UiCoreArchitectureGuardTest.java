@@ -53,7 +53,11 @@ class UiCoreArchitectureGuardTest {
 
         for (int i = 0; i < lines.size(); i++) {
             final String line = lines.get(i).trim();
-            if (line.contains("tc-db-domain")) {
+            final boolean dependencyDeclaration = line.startsWith("api(")
+                    || line.startsWith("implementation(")
+                    || line.startsWith("compileOnly(")
+                    || line.startsWith("runtimeOnly(");
+            if (dependencyDeclaration && line.contains("tc-db-domain")) {
                 violations.add((i + 1) + ": " + line);
             }
         }

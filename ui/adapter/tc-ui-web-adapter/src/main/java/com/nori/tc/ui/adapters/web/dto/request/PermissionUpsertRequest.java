@@ -1,7 +1,7 @@
 package com.nori.tc.ui.adapters.web.dto.request;
 
-import com.nori.tc.db.domain.common.user.TcUiPermissionMatchType;
-import com.nori.tc.db.domain.common.user.TcUiPermissionResourceType;
+import com.nori.tc.ui.domain.common.user.UiPermissionMatchType;
+import com.nori.tc.ui.domain.common.user.UiPermissionResourceType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -34,9 +34,9 @@ public record PermissionUpsertRequest(
         String permName,
 
         @NotNull(message = "resourceType은 필수입니다.")
-        TcUiPermissionResourceType resourceType,
+        UiPermissionResourceType resourceType,
 
-        TcUiPermissionMatchType matchType,
+        UiPermissionMatchType matchType,
 
         @NotBlank(message = "resource는 필수입니다.")
         String resource,
@@ -52,4 +52,3 @@ public record PermissionUpsertRequest(
         String updatedBy
 ) {
 }
-
