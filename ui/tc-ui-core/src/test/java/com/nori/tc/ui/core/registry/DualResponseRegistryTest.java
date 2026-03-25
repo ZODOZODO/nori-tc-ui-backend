@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -219,6 +218,24 @@ class DualResponseRegistryTest {
         awaitPendingCount(registry, 0);
     }
 
+    @Test
+    @DisplayName("Redis infra error는 pending으로 오해하지 않고 Future를 유지한다")
+    void redisInfraError_doesNotCompleteFutureAsPending() throws Exception {
+        final InMemoryDualResponseRedisPort redisPort = new InMemoryDualResponseRedisPort();
+        final DualResponseRegistry registry = new DualResponseRegistry(redisPort);
+
+        final String traceId = "trace-infra-error-001";
+        final CompletableFuture<UiDualTaskFinalResult> future = registry.register(traceId, 1_000L);
+        redisPort.infraErrorTraceIds.add(traceId);
+
+        registry.completeFromRedis(traceId);
+
+        assertFalse(future.isDone());
+        assertTrue(registry.isPending(traceId));
+        registry.cancel(traceId);
+        awaitPendingCount(registry, 0);
+    }
+
     /**
      * 다수 traceId를 동시에 처리해도 각각 독립적으로 완료되고 최종 정리가 보장되어야 합니다.
      */
@@ -355,8 +372,17 @@ class DualResponseRegistryTest {
         }
 
         @Override
-        public Optional<UiDualTaskFinalResult> getResult(final String traceId) {
-            return Optional.ofNullable(results.get(traceId));
+        public DualResponseRedisLookupResult getResult(final String traceId) {
+            if (infraErrorTraceIds.contains(traceId)) {
+                return DualResponseRedisLookupResult.infraError("redis lookup failed");
+            }
+            final UiDualTaskFinalResult result = results.get(traceId);
+            if (result == null) {
+                return DualResponseRedisLookupResult.pending();
+            }
+            return DualResponseRedisLookupResult.completed(result);
         }
+
+        private final Set<String> infraErrorTraceIds = ConcurrentHashMap.newKeySet();
     }
 }

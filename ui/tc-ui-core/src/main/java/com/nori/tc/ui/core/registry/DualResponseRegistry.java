@@ -13,7 +13,6 @@ import org.springframework.stereotype.Component;
 import jakarta.annotation.Nullable;
 
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -182,13 +181,18 @@ public class DualResponseRegistry {
             return;
         }
 
-        final Optional<UiDualTaskFinalResult> resultOpt = dualResponseRedisPort.getResult(traceId);
-        if (resultOpt.isEmpty()) {
+        final DualResponseRedisLookupResult lookupResult = dualResponseRedisPort.getResult(traceId);
+        if (lookupResult.status() == DualResponseRedisLookupResult.Status.PENDING) {
             log.warn("완료 신호 수신했지만 Redis 결과 미완성. traceId={}", traceId);
             return;
         }
+        if (lookupResult.status() == DualResponseRedisLookupResult.Status.INFRA_ERROR) {
+            log.error("완료 신호 수신 후 Redis 조회 실패. traceId={}, error={}",
+                    traceId, lookupResult.errorMessage());
+            return;
+        }
 
-        if (tracker.tryComplete(resultOpt.get())) {
+        if (tracker.tryComplete(lookupResult.result())) {
             log.debug("Redis 완료 신호로 Future 완료. traceId={}", traceId);
         } else if (log.isDebugEnabled()) {
             log.debug("Redis 완료 신호 무시 - 이미 완료된 traceId. traceId={}", traceId);

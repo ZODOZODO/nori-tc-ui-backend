@@ -4,12 +4,9 @@ import com.nori.tc.ui.adapters.web.dto.request.ModelDetailSaveRequest;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.adapters.web.dto.response.ModelDetailDataResponse;
 import com.nori.tc.ui.adapters.web.dto.response.ModelMdfContentResponse;
-import com.nori.tc.ui.core.port.db.ModelBranchCommandPort;
 import com.nori.tc.ui.core.port.db.ModelCrudPort;
 import com.nori.tc.ui.core.port.db.ModelDetailCommandPort;
 import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
-import com.nori.tc.ui.core.port.db.ModelParentCommitPort;
-import com.nori.tc.ui.core.port.db.ModelRootCommandPort;
 import com.nori.tc.ui.domain.common.model.UiModelStatus;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import com.nori.tc.ui.domain.model.UiModel;
@@ -37,7 +34,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link ModelController}의 model detail preview 및 MDF 업로드 계약을 검증합니다.
+ * model query/detail controller의 detail preview 및 MDF 업로드 계약을 검증합니다.
  */
 class ModelControllerTest {
 
@@ -87,7 +84,7 @@ class ModelControllerTest {
         when(fixture.modelCrudPort.findByModelVersionKey(101L)).thenReturn(Optional.of(model));
         when(fixture.modelDetailQueryPort.findWorkflowsByModelVersionKey(101L)).thenReturn(List.of(workflow));
 
-        final ResponseEntity<ApiResponse<ModelDetailDataResponse>> response = fixture.controller.getDetail(101L, "workflow");
+        final ResponseEntity<ApiResponse<ModelDetailDataResponse>> response = fixture.queryController.getDetail(101L, "workflow");
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         final ApiResponse<ModelDetailDataResponse> responseBody = response.getBody();
@@ -132,7 +129,7 @@ class ModelControllerTest {
         );
 
         final ResponseEntity<ApiResponse<ModelDetailDataResponse>> response =
-                fixture.controller.saveDetailRows(101L, "workflow", request);
+                fixture.detailController.saveDetailRows(101L, "workflow", request);
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -173,7 +170,7 @@ class ModelControllerTest {
         );
 
         final ResponseEntity<ApiResponse<ModelDetailDataResponse>> response =
-                fixture.controller.saveDetailRows(101L, "workflow", request);
+                fixture.detailController.saveDetailRows(101L, "workflow", request);
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -205,7 +202,7 @@ class ModelControllerTest {
                 .thenReturn(mdf(88L, 101L, "EXISTING_MDF", xml));
 
         final ResponseEntity<ApiResponse<ModelMdfContentResponse>> response =
-                fixture.controller.uploadMdf(101L, file, null);
+                fixture.detailController.uploadMdf(101L, file, null);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         final ApiResponse<ModelMdfContentResponse> responseBody = response.getBody();
@@ -283,16 +280,14 @@ class ModelControllerTest {
         private final ModelCrudPort modelCrudPort = mock(ModelCrudPort.class);
         private final ModelDetailQueryPort modelDetailQueryPort = mock(ModelDetailQueryPort.class);
         private final ModelDetailCommandPort modelDetailCommandPort = mock(ModelDetailCommandPort.class);
-        private final ModelRootCommandPort modelRootCommandPort = mock(ModelRootCommandPort.class);
-        private final ModelBranchCommandPort modelBranchCommandPort = mock(ModelBranchCommandPort.class);
-        private final ModelParentCommitPort modelParentCommitPort = mock(ModelParentCommitPort.class);
-        private final ModelController controller = new ModelController(
+        private final ModelQueryController queryController = new ModelQueryController(
+                modelCrudPort,
+                modelDetailQueryPort
+        );
+        private final ModelDetailController detailController = new ModelDetailController(
                 modelCrudPort,
                 modelDetailQueryPort,
-                modelDetailCommandPort,
-                modelRootCommandPort,
-                modelBranchCommandPort,
-                modelParentCommitPort
+                modelDetailCommandPort
         );
     }
 }

@@ -21,12 +21,14 @@ import com.nori.tc.ui.core.port.db.DeployStorePort;
 import com.nori.tc.ui.core.port.db.EqpCrudPort;
 import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
 import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
+import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -34,6 +36,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * DeployService의 메시지/payload/스냅샷/요약 보조 책임을 분리합니다.
  */
+@Service
 final class DeployServiceCommandSupport {
 
     private static final String UI_SOURCE = "TC-UI-APP";
@@ -175,11 +178,11 @@ final class DeployServiceCommandSupport {
         };
     }
 
-    JsonNode captureTargetPreState(final PersistedDeployTarget target) {
+    Optional<JsonNode> captureTargetPreState(final PersistedDeployTarget target) {
         final boolean hasRollbackStep = target.planDraft().resolvedSteps().stream()
                 .anyMatch(DeployResolvedStepPlan::rollbackEnabled);
         if (!hasRollbackStep) {
-            return null;
+            return Optional.empty();
         }
 
         final JsonNode snapshot = snapshotSupport.buildTargetPreStateSnapshot(target);
@@ -191,7 +194,7 @@ final class DeployServiceCommandSupport {
                 SNAPSHOT_SOURCE_DB,
                 snapshot
         );
-        return snapshot;
+        return Optional.of(snapshot);
     }
 
     void saveCompensationSnapshot(
@@ -231,26 +234,19 @@ final class DeployServiceCommandSupport {
     }
 
     GatewayEquipmentProfileSnapshot parseEquipmentProfile(final JsonNode equipmentProfileNode) {
-        if (equipmentProfileNode == null || equipmentProfileNode.isNull()) {
-            return null;
-        }
-        try {
-            return objectMapper.treeToValue(equipmentProfileNode, GatewayEquipmentProfileSnapshot.class);
-        } catch (Exception exception) {
-            throw new UiBadRequestException("보상 equipmentProfile 역직렬화에 실패했습니다.");
-        }
+        return optionalEquipmentProfile(equipmentProfileNode).orElse(null);
     }
 
     DeployTargetStatus parseTargetStatus(final String rawStatus) {
-        final String normalized = normalizeOptionalText(rawStatus);
-        if (normalized == null) {
-            return null;
-        }
-        try {
-            return DeployTargetStatus.valueOf(normalized.toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException exception) {
-            throw new UiBadRequestException("지원하지 않는 targetStatus 입니다. status=" + rawStatus);
-        }
+        return normalizedOptionalText(rawStatus)
+                .map(normalized -> {
+                    try {
+                        return DeployTargetStatus.valueOf(normalized.toUpperCase(Locale.ROOT));
+                    } catch (IllegalArgumentException exception) {
+                        throw new UiBadRequestException("지원하지 않는 targetStatus 입니다. status=" + rawStatus);
+                    }
+                })
+                .orElse(null);
     }
 
     boolean isTerminal(final DeployStatus deployStatus) {
@@ -334,10 +330,7 @@ final class DeployServiceCommandSupport {
     }
 
     String normalizeOptionalText(final String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        return value.trim();
+        return normalizedOptionalText(value).orElse(null);
     }
 
     ThreadFactory namedThreadFactory(final String prefix, final AtomicInteger targetExecutorThreadSequence) {
@@ -443,11 +436,11 @@ final class DeployServiceCommandSupport {
             final JsonNode stepUiMessage
     ) {
         if (messageEventType != UiCommandEventType.EQP_CREATE && messageEventType != UiCommandEventType.EQP_UPDATE) {
-            return null;
+            return Optional.<GatewayEquipmentProfileSnapshot>empty().orElse(null);
         }
         final JsonNode gatewayProfile = stepUiMessage.get("gatewayProfile");
         if (gatewayProfile == null || !gatewayProfile.isObject()) {
-            return null;
+            return Optional.<GatewayEquipmentProfileSnapshot>empty().orElse(null);
         }
 
         final Long eqpKey = target.planDraft().currentState() == null ? null : target.planDraft().currentState().eqpKey();
@@ -534,37 +527,63 @@ final class DeployServiceCommandSupport {
             final JsonNode parent,
             final String fieldName
     ) {
-        if (parent == null || !parent.isObject()) {
-            return null;
-        }
-        final JsonNode node = parent.get(fieldName);
-        if (node == null || node.isNull()) {
-            return null;
-        }
-        return normalizeOptionalTextValue(node.asString(null));
+        return optionalTextValue(parent, fieldName).orElse(null);
     }
 
     static Integer intValue(
             final JsonNode parent,
             final String fieldName
     ) {
-        if (parent == null || !parent.isObject()) {
-            return null;
-        }
-        final JsonNode node = parent.get(fieldName);
-        if (node == null || node.isNull()) {
-            return null;
-        }
-        if (!node.canConvertToInt()) {
-            return null;
-        }
-        return node.intValue();
+        return optionalIntValue(parent, fieldName).orElse(null);
     }
 
     static String normalizeOptionalTextValue(final String value) {
-        if (value == null || value.isBlank()) {
-            return null;
+        return normalizedOptionalText(value).orElse(null);
+    }
+
+    private Optional<GatewayEquipmentProfileSnapshot> optionalEquipmentProfile(final JsonNode equipmentProfileNode) {
+        if (equipmentProfileNode == null || equipmentProfileNode.isNull()) {
+            return Optional.empty();
         }
-        return value.trim();
+        try {
+            return Optional.of(objectMapper.treeToValue(equipmentProfileNode, GatewayEquipmentProfileSnapshot.class));
+        } catch (Exception exception) {
+            throw new UiBadRequestException("보상 equipmentProfile 역직렬화에 실패했습니다.");
+        }
+    }
+
+    private static Optional<String> optionalTextValue(
+            final JsonNode parent,
+            final String fieldName
+    ) {
+        if (parent == null || !parent.isObject()) {
+            return Optional.empty();
+        }
+        final JsonNode node = parent.get(fieldName);
+        if (node == null || node.isNull()) {
+            return Optional.empty();
+        }
+        return normalizedOptionalText(node.asString(null));
+    }
+
+    private static Optional<Integer> optionalIntValue(
+            final JsonNode parent,
+            final String fieldName
+    ) {
+        if (parent == null || !parent.isObject()) {
+            return Optional.empty();
+        }
+        final JsonNode node = parent.get(fieldName);
+        if (node == null || node.isNull() || !node.canConvertToInt()) {
+            return Optional.empty();
+        }
+        return Optional.of(node.intValue());
+    }
+
+    private static Optional<String> normalizedOptionalText(final String value) {
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(value.trim());
     }
 }

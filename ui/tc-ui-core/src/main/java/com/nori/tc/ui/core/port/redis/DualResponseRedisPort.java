@@ -1,9 +1,7 @@
 package com.nori.tc.ui.core.port.redis;
 
-import com.nori.tc.ui.core.registry.UiDualTaskFinalResult;
+import com.nori.tc.ui.core.registry.DualResponseRedisLookupResult;
 import com.nori.tc.ui.domain.task.UiTaskResult;
-
-import java.util.Optional;
 
 /**
  * DualResponse 분산 상태 저장 포트입니다.
@@ -43,9 +41,9 @@ public interface DualResponseRedisPort {
      * Redis에 저장된 양방향 응답을 읽어 최종 결과를 반환합니다.
      *
      * @param traceId 조회할 추적 ID
-     * @return 양쪽 응답이 모두 존재하면 최종 결과, 아니면 빈 Optional
+     * @return Redis 조회 상태
      */
-    Optional<UiDualTaskFinalResult> getResult(String traceId);
+    DualResponseRedisLookupResult getResult(String traceId);
 
     /**
      * 테스트/초기 부팅용 noop 구현체입니다.
@@ -70,8 +68,8 @@ public interface DualResponseRedisPort {
             }
 
             @Override
-            public Optional<UiDualTaskFinalResult> getResult(final String traceId) {
-                return Optional.empty();
+            public DualResponseRedisLookupResult getResult(final String traceId) {
+                return DualResponseRedisLookupResult.pending();
             }
         };
     }

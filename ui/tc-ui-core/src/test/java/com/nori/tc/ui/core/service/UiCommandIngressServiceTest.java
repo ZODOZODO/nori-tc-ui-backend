@@ -3,6 +3,7 @@ package com.nori.tc.ui.core.service;
 import com.nori.tc.ui.core.model.UiCommandReply;
 import com.nori.tc.ui.core.port.redis.AsyncResultStorePort;
 import com.nori.tc.ui.core.registry.DualResponseRegistry;
+import com.nori.tc.ui.core.registry.DualResponseRedisLookupResult;
 import com.nori.tc.ui.domain.task.UiTaskResult;
 import com.nori.tc.ui.domain.task.UiTaskStatus;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,8 +11,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -123,8 +122,8 @@ class UiCommandIngressServiceTest {
         }
 
         @Override
-        public Optional<com.nori.tc.ui.core.registry.UiDualTaskFinalResult> getResult(final String traceId) {
-            return Optional.empty();
+        public DualResponseRedisLookupResult getResult(final String traceId) {
+            return DualResponseRedisLookupResult.pending();
         }
 
         @Override

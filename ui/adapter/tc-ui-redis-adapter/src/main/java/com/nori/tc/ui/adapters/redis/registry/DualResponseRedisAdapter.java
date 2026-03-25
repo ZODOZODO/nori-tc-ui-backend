@@ -1,6 +1,7 @@
 package com.nori.tc.ui.adapters.redis.registry;
 
 import com.nori.tc.ui.core.port.redis.DualResponseRedisPort;
+import com.nori.tc.ui.core.registry.DualResponseRedisLookupResult;
 import com.nori.tc.ui.core.registry.DualResponseRegistry;
 import com.nori.tc.ui.core.registry.UiDualTaskFinalResult;
 import com.nori.tc.ui.domain.task.UiTaskResult;
@@ -15,7 +16,6 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 
 /**
  * DualResponse 분산 상태를 Redis에 저장/조회하는 어댑터입니다.
@@ -153,10 +153,10 @@ public class DualResponseRedisAdapter implements DualResponseRedisPort {
      * Redis Hash의 gateway/business 결과를 읽어 최종 판정 결과를 반환합니다.
      *
      * @param traceId traceId
-     * @return 양쪽 결과가 모두 있으면 final result, 아니면 빈 Optional
+     * @return 조회 결과 상태
      */
     @Override
-    public Optional<UiDualTaskFinalResult> getResult(final String traceId) {
+    public DualResponseRedisLookupResult getResult(final String traceId) {
         Objects.requireNonNull(traceId, "traceId is null");
 
         final String key = buildKey(traceId);
@@ -166,17 +166,21 @@ public class DualResponseRedisAdapter implements DualResponseRedisPort {
             final Object businessRaw = hashOps.get(key, FIELD_BUSINESS);
 
             if (gatewayRaw == null || businessRaw == null) {
-                return Optional.empty();
+                return DualResponseRedisLookupResult.pending();
             }
 
             final UiTaskResult gatewayResult = toTaskResult(gatewayRaw);
             final UiTaskResult businessResult = toTaskResult(businessRaw);
             final boolean success = gatewayResult.isSuccess() && businessResult.isSuccess();
 
-            return Optional.of(new UiDualTaskFinalResult(traceId, success, gatewayResult, businessResult));
+            return DualResponseRedisLookupResult.completed(
+                    new UiDualTaskFinalResult(traceId, success, gatewayResult, businessResult)
+            );
         } catch (Exception e) {
             log.error("DualResponse Redis 조회 실패. traceId={}, key={}", traceId, key, e);
-            return Optional.empty();
+            return DualResponseRedisLookupResult.infraError(
+                    e.getMessage() == null ? "DualResponse Redis 조회 중 내부 오류가 발생했습니다." : e.getMessage()
+            );
         }
     }
 

@@ -27,12 +27,6 @@ java {
 }
 
 dependencies {
-    /*
-     * 도메인 계층에서 로깅 인터페이스를 사용할 수 있도록 SLF4J API를 노출합니다.
-     * - 구현체(Logback)는 상위 계층(Starter/App)에서 제공합니다.
-     */
-    api(libs.slf4j.api)
-
     testImplementation(platform(libs.junit.bom))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

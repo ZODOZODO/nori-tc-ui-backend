@@ -22,6 +22,7 @@ import com.nori.tc.ui.domain.eqp.UiEqpPortStatus;
 import com.nori.tc.ui.domain.task.UiTaskResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -36,7 +37,8 @@ import java.util.concurrent.TimeoutException;
 /**
  * EQP 관리의 runtime 동기화, JAR 반영, 복구 보조 책임을 담당합니다.
  */
-final class EqpManagementRuntimeSupport {
+@Service
+public final class EqpManagementRuntimeSupport {
 
     private static final Logger log = LoggerFactory.getLogger(EqpManagementRuntimeSupport.class);
 
@@ -393,51 +395,57 @@ final class EqpManagementRuntimeSupport {
         );
     }
 
-    void safeRuntimeDelete(final EqpManagementSnapshot snapshot, final long timeoutMs) {
+    EqpRepairAttemptResult tryRuntimeDelete(final EqpManagementSnapshot snapshot, final long timeoutMs) {
         try {
             awaitDualSuccess(UiCommandEventType.EQP_DELETE, snapshot, timeoutMs);
+            return EqpRepairAttemptResult.successResult();
         } catch (Exception exception) {
-            log.error("EQP create 보상용 runtime delete 실패. eqpId={}", snapshot.eqp().eqpId(), exception);
+            return failure("RUNTIME_DELETE_FAILED", "EQP create 보상용 runtime delete 실패", snapshot.eqp().eqpId(), exception);
         }
     }
 
-    void safeRuntimeUpdate(final EqpManagementSnapshot snapshot, final long timeoutMs) {
+    EqpRepairAttemptResult tryRuntimeUpdate(final EqpManagementSnapshot snapshot, final long timeoutMs) {
         try {
             awaitDualSuccess(UiCommandEventType.EQP_UPDATE, snapshot, timeoutMs);
+            return EqpRepairAttemptResult.successResult();
         } catch (Exception exception) {
-            log.error("EQP update 보상용 runtime sync 실패. eqpId={}", snapshot.eqp().eqpId(), exception);
+            return failure("RUNTIME_UPDATE_FAILED", "EQP update 보상용 runtime sync 실패", snapshot.eqp().eqpId(), exception);
         }
     }
 
-    void safeRuntimeCreate(final EqpManagementSnapshot snapshot, final long timeoutMs) {
+    EqpRepairAttemptResult tryRuntimeCreate(final EqpManagementSnapshot snapshot, final long timeoutMs) {
         try {
             awaitDualSuccess(UiCommandEventType.EQP_CREATE, snapshot, timeoutMs);
+            return EqpRepairAttemptResult.successResult();
         } catch (Exception exception) {
-            log.error("EQP delete 보상용 runtime recreate 실패. eqpId={}", snapshot.eqp().eqpId(), exception);
+            return failure("RUNTIME_CREATE_FAILED", "EQP delete 보상용 runtime recreate 실패", snapshot.eqp().eqpId(), exception);
         }
     }
 
-    void safeJarReload(final EqpManagementSnapshot snapshot, final long timeoutMs) {
+    EqpRepairAttemptResult tryJarReload(final EqpManagementSnapshot snapshot, final long timeoutMs) {
         try {
             awaitJarReloadSuccess(snapshot, timeoutMs);
+            return EqpRepairAttemptResult.successResult();
         } catch (Exception exception) {
-            log.error("EQP jar reload 보상 실패. eqpId={}", snapshot.eqp().eqpId(), exception);
+            return failure("JAR_RELOAD_FAILED", "EQP jar reload 보상 실패", snapshot.eqp().eqpId(), exception);
         }
     }
 
-    void safeDelete(final String eqpId) {
+    EqpRepairAttemptResult tryDelete(final String eqpId) {
         try {
             eqpCrudPort.delete(eqpId);
+            return EqpRepairAttemptResult.successResult();
         } catch (Exception exception) {
-            log.error("EQP create 보상용 DB delete 실패. eqpId={}", eqpId, exception);
+            return failure("DB_DELETE_FAILED", "EQP create 보상용 DB delete 실패", eqpId, exception);
         }
     }
 
-    void safeRestore(final EqpManagementSnapshot snapshot) {
+    EqpRepairAttemptResult tryRestore(final EqpManagementSnapshot snapshot) {
         try {
             eqpCrudPort.restore(snapshot);
+            return EqpRepairAttemptResult.successResult();
         } catch (Exception exception) {
-            log.error("EQP 스냅샷 복구 실패. eqpId={}", snapshot.eqp().eqpId(), exception);
+            return failure("DB_RESTORE_FAILED", "EQP 스냅샷 복구 실패", snapshot.eqp().eqpId(), exception);
         }
     }
 
@@ -448,7 +456,9 @@ final class EqpManagementRuntimeSupport {
 
         final boolean eqpStateDown = snapshot.runtimeState() != null
                 && snapshot.runtimeState().eqpState() == UiEqpState.DOWN;
-        final boolean disconnected = "DISCONNECTED".equalsIgnoreCase(normalizeText(snapshot.connectionState()));
+        final boolean disconnected = normalizeText(snapshot.connectionState())
+                .filter("DISCONNECTED"::equalsIgnoreCase)
+                .isPresent();
 
         return eqpStateDown || disconnected;
     }
@@ -484,10 +494,23 @@ final class EqpManagementRuntimeSupport {
         );
     }
 
-    private String normalizeText(final String value) {
+    private Optional<String> normalizeText(final String value) {
         if (value == null || value.isBlank()) {
-            return null;
+            return Optional.empty();
         }
-        return value.trim().toUpperCase();
+        return Optional.of(value.trim().toUpperCase());
+    }
+
+    private EqpRepairAttemptResult failure(
+            final String errorCode,
+            final String actionDescription,
+            final String eqpId,
+            final Exception exception
+    ) {
+        final String errorMessage = exception.getMessage() == null
+                ? actionDescription + " 중 내부 오류가 발생했습니다."
+                : exception.getMessage();
+        log.error("{} . eqpId={}", actionDescription, eqpId, exception);
+        return EqpRepairAttemptResult.failureResult(errorCode, errorMessage);
     }
 }

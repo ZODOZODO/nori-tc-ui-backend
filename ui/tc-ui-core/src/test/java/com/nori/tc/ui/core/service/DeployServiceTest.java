@@ -78,15 +78,14 @@ class DeployServiceTest {
     void createDeployCompletesSingleTargetWhenGatewayReplyPasses() throws Exception {
         final DeployTraceRegistry traceRegistry = new DeployTraceRegistry();
         final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
-        deployService = new DeployService(
+        deployService = newDeployService(
                 deployProperties(tempDir.resolve("missing-scenarios")),
                 planningService(tempDir.resolve("missing-scenarios")),
                 storePort,
                 new InMemoryEqpCrudPort(),
                 passGatewayPublisher(traceRegistry),
                 UiBusinessEventPublishPort.noop(),
-                traceRegistry,
-                objectMapper
+                traceRegistry
         );
 
         final DeployCreateResult result = deployService.createDeploy(sendMessageCommand(), "tester");
@@ -109,15 +108,14 @@ class DeployServiceTest {
     void createDeployMarksTargetFailedWhenGatewayReplyFails() throws Exception {
         final DeployTraceRegistry traceRegistry = new DeployTraceRegistry();
         final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
-        deployService = new DeployService(
+        deployService = newDeployService(
                 deployProperties(tempDir.resolve("missing-scenarios")),
                 planningService(tempDir.resolve("missing-scenarios")),
                 storePort,
                 new InMemoryEqpCrudPort(),
                 failGatewayPublisher(traceRegistry),
                 UiBusinessEventPublishPort.noop(),
-                traceRegistry,
-                objectMapper
+                traceRegistry
         );
 
         final DeployCreateResult result = deployService.createDeploy(sendMessageCommand(), "tester");
@@ -142,18 +140,17 @@ class DeployServiceTest {
         final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
         final InMemoryEqpCrudPort eqpCrudPort = new InMemoryEqpCrudPort();
         eqpCrudPort.put(snapshot("PHOTO_001", 1L));
-        eqpCrudPort.put(snapshot("PHOTO_002", 2L));
+       eqpCrudPort.put(snapshot("PHOTO_002", 2L));
         final List<UiCommandMessage> publishedMessages = new ArrayList<>();
 
-        deployService = new DeployService(
+        deployService = newDeployService(
                 deployProperties(tempDir.resolve("missing-scenarios")),
                 planningService(tempDir.resolve("missing-scenarios")),
                 storePort,
                 eqpCrudPort,
                 UiGatewayEventPublishPort.noop(),
                 businessPublisherForRollbackSuccess(traceRegistry, publishedMessages),
-                traceRegistry,
-                objectMapper
+                traceRegistry
         );
 
         final DeployCreateResult result = deployService.createDeploy(
@@ -205,15 +202,14 @@ class DeployServiceTest {
         final InMemoryEqpCrudPort eqpCrudPort = new InMemoryEqpCrudPort();
         eqpCrudPort.put(snapshot("PHOTO_002", 2L));
 
-        deployService = new DeployService(
+        deployService = newDeployService(
                 deployProperties(tempDir.resolve("missing-scenarios")),
                 planningService(tempDir.resolve("missing-scenarios")),
                 storePort,
                 eqpCrudPort,
                 UiGatewayEventPublishPort.noop(),
                 businessPublisherForCompensationFailure(traceRegistry),
-                traceRegistry,
-                objectMapper
+                traceRegistry
         );
 
         final DeployCreateResult result = deployService.createDeploy(
@@ -233,6 +229,39 @@ class DeployServiceTest {
         assertEquals(DeployStepStatus.COMPENSATION_FAILED, target.currentStepStatus());
         assertEquals("PLUGIN_ROLLBACK_FAILED", target.lastErrorCode());
         assertTrue(target.rollbackRequired());
+    }
+
+    private DeployService newDeployService(
+            final UiDeployProperties deployProperties,
+            final DeployPlanningService planningService,
+            final InMemoryDeployStorePort storePort,
+            final InMemoryEqpCrudPort eqpCrudPort,
+            final UiGatewayEventPublishPort gatewayEventPublishPort,
+            final UiBusinessEventPublishPort businessEventPublishPort,
+            final DeployTraceRegistry traceRegistry
+    ) {
+        final DeployServiceCommandSupport commandSupport = new DeployServiceCommandSupport(
+                storePort,
+                eqpCrudPort,
+                gatewayEventPublishPort,
+                businessEventPublishPort,
+                objectMapper
+        );
+        final DeployPlanner deployPlanner = new DeployPlanner(planningService);
+        final DeployTraceRecorder deployTraceRecorder = new DeployTraceRecorder(traceRegistry);
+        final DeployCommandAssembler commandAssembler = new DeployCommandAssembler(commandSupport);
+        final DeployRollbackCoordinator rollbackCoordinator =
+                new DeployRollbackCoordinator(storePort, commandAssembler, deployTraceRecorder);
+        final DeployExecutor deployExecutor =
+                new DeployExecutor(storePort, commandAssembler, deployTraceRecorder, rollbackCoordinator);
+        return new DeployService(
+                deployProperties,
+                deployPlanner,
+                storePort,
+                deployTraceRecorder,
+                commandAssembler,
+                deployExecutor
+        );
     }
 
     private DeployPlanningService planningService(final Path scenarioDirectory) {

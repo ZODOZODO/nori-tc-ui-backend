@@ -107,14 +107,14 @@ public class DeployPlanningService {
                 currentStateOptional.orElse(null),
                 desiredState
         );
-        final DeployScenarioDefinition scenario = selectScenario(
+        final Optional<DeployScenarioDefinition> scenarioOptional = selectScenario(
                 catalog,
                 command.eventType(),
                 deltaKinds
         );
-        final List<DeployResolvedStepPlan> resolvedSteps = scenario == null
-                ? List.of()
-                : resolveSteps(scenario, deltaKinds);
+        final List<DeployResolvedStepPlan> resolvedSteps = scenarioOptional
+                .map(scenario -> resolveSteps(scenario, deltaKinds))
+                .orElseGet(List::of);
         final boolean noChange = isNoChange(deltaKinds, resolvedSteps);
 
         return new DeployTargetPlanDraft(
@@ -123,8 +123,8 @@ public class DeployPlanningService {
                 currentStateOptional.orElse(null),
                 desiredState,
                 deltaKinds,
-                scenario == null ? null : scenario.scenario().code(),
-                scenario == null ? null : scenario.version(),
+                scenarioOptional.map(scenario -> scenario.scenario().code()).orElse(null),
+                scenarioOptional.map(DeployScenarioDefinition::version).orElse(null),
                 resolvedSteps,
                 objectMapper.valueToTree(desiredState),
                 toDeltaJson(deltaKinds),
@@ -168,7 +168,7 @@ public class DeployPlanningService {
         validateUiMessage(eventType, interfaceType, uiMessage);
 
         return new DeployDesiredState(
-                normalizedText(interfaceType),
+                normalizedText(interfaceType).orElse(null),
                 longValue(uiMessage, "modelInfo", "modelVersionKey"),
                 longValue(uiMessage, "businessJar", "jarRef"),
                 longValue(uiMessage, "gatewayJar", "jarRef"),
@@ -308,7 +308,7 @@ public class DeployPlanningService {
         return Set.copyOf(deltaKinds);
     }
 
-    private DeployScenarioDefinition selectScenario(
+    private Optional<DeployScenarioDefinition> selectScenario(
             final DeployScenarioCatalog catalog,
             final UiCommandEventType eventType,
             final Set<DeployDeltaKind> deltaKinds
@@ -323,13 +323,13 @@ public class DeployPlanningService {
 
         if (candidates.isEmpty()) {
             if (deltaKinds.equals(Set.of(DeployDeltaKind.NO_CHANGE))) {
-                return null;
+                return Optional.empty();
             }
             throw new UiBadRequestException("eventType와 delta에 맞는 scenario를 찾을 수 없습니다. eventType="
                     + eventType + ", delta=" + deltaKinds);
         }
 
-        return candidates.getFirst();
+        return Optional.of(candidates.getFirst());
     }
 
     private int specificityScore(final DeployScenarioCondition condition) {
@@ -485,15 +485,7 @@ public class DeployPlanningService {
             final JsonNode parent,
             final String fieldName
     ) {
-        if (parent == null || !parent.isObject()) {
-            return null;
-        }
-        final JsonNode node = parent.get(fieldName);
-        if (node == null || node.isNull()) {
-            return null;
-        }
-        final String raw = node.asString(null);
-        return normalizedText(raw);
+        return optionalTextValue(parent, fieldName).orElse(null);
     }
 
     private static String textValue(
@@ -501,14 +493,36 @@ public class DeployPlanningService {
             final String objectField,
             final String fieldName
     ) {
+        return optionalTextValue(parent, objectField, fieldName).orElse(null);
+    }
+
+    private static Optional<String> optionalTextValue(
+            final JsonNode parent,
+            final String fieldName
+    ) {
         if (parent == null || !parent.isObject()) {
-            return null;
+            return Optional.empty();
+        }
+        final JsonNode node = parent.get(fieldName);
+        if (node == null || node.isNull()) {
+            return Optional.empty();
+        }
+        return normalizedText(node.asString(null));
+    }
+
+    private static Optional<String> optionalTextValue(
+            final JsonNode parent,
+            final String objectField,
+            final String fieldName
+    ) {
+        if (parent == null || !parent.isObject()) {
+            return Optional.empty();
         }
         final JsonNode objectNode = parent.get(objectField);
         if (objectNode == null || !objectNode.isObject()) {
-            return null;
+            return Optional.empty();
         }
-        return textValue(objectNode, fieldName);
+        return optionalTextValue(objectNode, fieldName);
     }
 
     private static Long longValue(
@@ -516,21 +530,29 @@ public class DeployPlanningService {
             final String objectField,
             final String fieldName
     ) {
+        return optionalLongValue(parent, objectField, fieldName).orElse(null);
+    }
+
+    private static Optional<Long> optionalLongValue(
+            final JsonNode parent,
+            final String objectField,
+            final String fieldName
+    ) {
         if (parent == null || !parent.isObject()) {
-            return null;
+            return Optional.empty();
         }
         final JsonNode objectNode = parent.get(objectField);
         if (objectNode == null || !objectNode.isObject()) {
-            return null;
+            return Optional.empty();
         }
         final JsonNode valueNode = objectNode.get(fieldName);
         if (valueNode == null || valueNode.isNull()) {
-            return null;
+            return Optional.empty();
         }
         if (!valueNode.canConvertToLong()) {
             throw new UiBadRequestException(objectField + "." + fieldName + " 값은 숫자여야 합니다.");
         }
-        return valueNode.longValue();
+        return Optional.of(valueNode.longValue());
     }
 
     private static Integer intValue(
@@ -538,28 +560,36 @@ public class DeployPlanningService {
             final String objectField,
             final String fieldName
     ) {
+        return optionalIntValue(parent, objectField, fieldName).orElse(null);
+    }
+
+    private static Optional<Integer> optionalIntValue(
+            final JsonNode parent,
+            final String objectField,
+            final String fieldName
+    ) {
         if (parent == null || !parent.isObject()) {
-            return null;
+            return Optional.empty();
         }
         final JsonNode objectNode = parent.get(objectField);
         if (objectNode == null || !objectNode.isObject()) {
-            return null;
+            return Optional.empty();
         }
         final JsonNode valueNode = objectNode.get(fieldName);
         if (valueNode == null || valueNode.isNull()) {
-            return null;
+            return Optional.empty();
         }
         if (!valueNode.canConvertToInt()) {
             throw new UiBadRequestException(objectField + "." + fieldName + " 값은 숫자여야 합니다.");
         }
-        return valueNode.intValue();
+        return Optional.of(valueNode.intValue());
     }
 
-    private static String normalizedText(final String value) {
+    private static Optional<String> normalizedText(final String value) {
         if (value == null || value.isBlank()) {
-            return null;
+            return Optional.empty();
         }
-        return value.trim();
+        return Optional.of(value.trim());
     }
 
     private static Long safeLong(final Long value) {
