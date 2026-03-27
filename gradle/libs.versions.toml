@@ -128,6 +128,7 @@ spring-boot-starter-webmvc-test = { module = "org.springframework.boot:spring-bo
 ################################################################################
 spring-kafka = { module = "org.springframework.kafka:spring-kafka" }
 kafka-clients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafkaClients" }
+jackson-annotations = { module = "com.fasterxml.jackson.core:jackson-annotations" }
 jackson-databind = { module = "tools.jackson.core:jackson-databind" }
 netty-all = { module = "io.netty:netty-all", version.ref = "netty" }
 

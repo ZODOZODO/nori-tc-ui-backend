@@ -61,6 +61,7 @@ dependencies {
     compileOnly(libs.spring.boot)
     compileOnly(libs.spring.boot.autoconfigure)
     compileOnly(libs.spring.context)
+    compileOnly(libs.jackson.annotations)
 
     testImplementation(libs.spring.boot.starter.test)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
