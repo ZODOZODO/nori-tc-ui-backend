@@ -16,3 +16,6 @@ out/
 .DS_Store
 libs/vendor/
 .serena
+
+# 로컬 Codex 지침 파일
+/AGENTS.md
