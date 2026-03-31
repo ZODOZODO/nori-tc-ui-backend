@@ -1,6 +1,7 @@
 package com.nori.tc.ui.adapter.db;
 
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 import tools.jackson.databind.ObjectMapper;
 import com.nori.tc.ui.core.deploy.DeployPlanCommand;
 import com.nori.tc.ui.core.deploy.DeployPlanningResult;
@@ -9,6 +10,7 @@ import com.nori.tc.ui.core.deploy.DeploySnapshotScope;
 import com.nori.tc.ui.core.deploy.DeployStatus;
 import com.nori.tc.ui.core.deploy.DeployStepStatus;
 import com.nori.tc.ui.core.deploy.DeployStoredSnapshot;
+import com.nori.tc.ui.core.deploy.DeployHistoryView;
 import com.nori.tc.ui.core.deploy.DeploySummarySnapshot;
 import com.nori.tc.ui.core.deploy.DeployTargetCounts;
 import com.nori.tc.ui.core.deploy.DeployTargetPage;
@@ -16,6 +18,8 @@ import com.nori.tc.ui.core.deploy.DeployTargetSnapshot;
 import com.nori.tc.ui.core.deploy.DeployTargetStatus;
 import com.nori.tc.ui.core.deploy.PersistedDeploy;
 import com.nori.tc.ui.core.deploy.PersistedDeployTarget;
+import com.nori.tc.ui.core.model.PagedResponse;
+import com.nori.tc.ui.core.model.UiPageRequest;
 import com.nori.tc.ui.core.port.db.DeployStorePort;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -95,8 +99,6 @@ public class DeployJdbcStorePort implements DeployStorePort {
     public void updateDeployStatus(
             final long deployKey,
             final DeployStatus deployStatus,
-            final OffsetDateTime startedAt,
-            final OffsetDateTime finishedAt,
             final String lastErrorCode,
             final String lastErrorMessage
     ) {
@@ -104,8 +106,6 @@ public class DeployJdbcStorePort implements DeployStorePort {
         final MapSqlParameterSource parameters = new MapSqlParameterSource()
                 .addValue("deployKey", deployKey)
                 .addValue("deployStatus", deployStatus.name())
-                .addValue("startedAt", startedAt)
-                .addValue("finishedAt", finishedAt)
                 .addValue("targetTotalCount", counts.total())
                 .addValue("targetNoChangeCount", counts.noChange())
                 .addValue("targetCompletedCount", counts.completed())
@@ -117,8 +117,6 @@ public class DeployJdbcStorePort implements DeployStorePort {
         jdbcTemplate.update("""
                         UPDATE tc_deploy
                            SET deploy_status = :deployStatus,
-                               started_at = COALESCE(:startedAt, started_at),
-                               finished_at = COALESCE(:finishedAt, finished_at),
                                target_total_count = :targetTotalCount,
                                target_no_change_count = :targetNoChangeCount,
                                target_completed_count = :targetCompletedCount,
@@ -463,25 +461,32 @@ public class DeployJdbcStorePort implements DeployStorePort {
         return Optional.of(rows.getFirst());
     }
 
-    @Override
+      @Override
     public Optional<DeploySummarySnapshot> findDeploySummary(final long deployKey) {
         final MapSqlParameterSource parameters = new MapSqlParameterSource()
                 .addValue("deployKey", deployKey);
 
-        final List<DeploySummarySnapshot> rows = jdbcTemplate.query("""
+        final StringBuilder sql = new StringBuilder("""
                         SELECT deploy_key,
                                deploy_name,
                                event_type,
                                deploy_status,
                                execution_policy,
                                created_at,
-                               started_at,
-                               finished_at,
+                               created_at as started_at,
+                               updated_at as finished_at,
                                last_error_code,
                                last_error_message
-                          FROM tc_deploy
-                         WHERE deploy_key = :deployKey
-                        """,
+                          FROM tc_deploy d
+                         WHERE d.deploy_key = :deployKey
+                        """);
+        support.appendKnownDeployCommandFilters(
+                sql,
+                parameters,
+                "d"
+        );
+        final List<DeploySummarySnapshot> rows = jdbcTemplate.query(
+                sql.toString(),
                 parameters,
                 (resultSet, rowNum) -> support.mapDeploySummary(resultSet, summarizeTargets(deployKey))
         );
@@ -490,6 +495,256 @@ public class DeployJdbcStorePort implements DeployStorePort {
             return Optional.empty();
         }
         return Optional.of(rows.getFirst());
+    }
+
+    @Override
+    public Optional<DeployPlanCommand> findRedeployCommand(final long deployKey) {
+        final MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("deployKey", deployKey);
+
+        final StringBuilder sql = new StringBuilder("""
+                        SELECT deploy_name,
+                               event_type,
+                               execution_policy,
+                               desired_common_state_json
+                          FROM tc_deploy d
+                         WHERE d.deploy_key = :deployKey
+                        """);
+        support.appendKnownDeployCommandFilters(
+                sql,
+                parameters,
+                "d"
+        );
+        final List<DeployPlanCommand> commands = jdbcTemplate.query(
+                sql.toString(),
+                parameters,
+                (resultSet, rowNum) -> {
+                    final JsonNode commonState = support.parseJson(resultSet.getString("desired_common_state_json"));
+                    final String interfaceType = support.normalizeOptionalText(commonState.path("interfaceType").asString(null));
+                    final JsonNode uiMessageNode = commonState.get("uiMessage");
+                    if (!(uiMessageNode instanceof ObjectNode uiMessage)) {
+                        throw new IllegalStateException("desired_common_state_json.uiMessage 는 JSON object 여야 합니다. deployKey="
+                                + deployKey);
+                    }
+                    final DeployPlanCommand.CommonRequest commonRequest =
+                            new DeployPlanCommand.CommonRequest(interfaceType, uiMessage.deepCopy());
+                    final List<DeployPlanCommand.TargetRequest> targets = loadRedeployTargets(
+                            deployKey,
+                            parameters,
+                            commonRequest.uiMessage()
+                    );
+                    return new DeployPlanCommand(
+                            resultSet.getString("deploy_name"),
+                            com.nori.tc.ui.core.model.UiCommandEventType.fromText(resultSet.getString("event_type")),
+                            com.nori.tc.ui.core.deploy.DeployExecutionPolicy.fromText(resultSet.getString("execution_policy")),
+                            commonRequest,
+                            targets
+                    );
+                }
+        );
+
+        if (commands.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(commands.getFirst());
+    }
+
+    @Override
+    public List<String> findActiveTraceIds(final long deployKey) {
+        final MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("deployKey", deployKey);
+
+        return jdbcTemplate.query("""
+                        SELECT DISTINCT s.current_trace_id
+                          FROM tc_deploy_target_plan p
+                          JOIN tc_deploy_target_state s
+                            ON s.deploy_target_key = p.deploy_target_key
+                         WHERE p.deploy_key = :deployKey
+                           AND s.current_trace_id IS NOT NULL
+                           AND s.target_status IN ('PENDING', 'RUNNING', 'ROLLING_BACK')
+                         ORDER BY s.current_trace_id ASC
+                        """,
+                parameters,
+                (resultSet, rowNum) -> resultSet.getString("current_trace_id")
+        );
+    }
+
+    @Override
+    @Transactional
+    public void markTargetsCanceled(
+            final long deployKey,
+            final OffsetDateTime finishedAt,
+            final String lastErrorCode,
+            final String lastErrorMessage
+    ) {
+        final MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("deployKey", deployKey)
+                .addValue("finishedAt", finishedAt)
+                .addValue("lastErrorCode", support.normalizeOptionalText(lastErrorCode))
+                .addValue("lastErrorMessage", support.normalizeOptionalText(lastErrorMessage));
+
+        jdbcTemplate.update("""
+                        UPDATE tc_deploy_target_state s
+                           SET target_status = :targetStatus,
+                               current_step_status = :stepStatus,
+                               current_trace_id = NULL,
+                               current_step_timeout_at = NULL,
+                               last_error_code = COALESCE(:lastErrorCode, s.last_error_code),
+                               last_error_message = COALESCE(:lastErrorMessage, s.last_error_message),
+                               finished_at = COALESCE(s.finished_at, :finishedAt),
+                               updated_at = CURRENT_TIMESTAMP,
+                               row_version = row_version + 1
+                          FROM tc_deploy_target_plan p
+                         WHERE p.deploy_key = :deployKey
+                           AND p.deploy_target_key = s.deploy_target_key
+                           AND s.target_status IN ('PENDING', 'RUNNING', 'ROLLING_BACK')
+                        """,
+                parameters
+                        .addValue("targetStatus", DeployTargetStatus.CANCELED.name())
+                        .addValue("stepStatus", DeployStepStatus.CANCELED.name())
+        );
+    }
+
+    @Override
+    @Transactional
+    public boolean deleteDeploy(final long deployKey) {
+        final MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("deployKey", deployKey);
+
+        jdbcTemplate.update("""
+                        DELETE FROM tc_deploy_target_snapshot
+                         WHERE deploy_target_key IN (
+                                SELECT deploy_target_key
+                                  FROM tc_deploy_target_plan
+                                 WHERE deploy_key = :deployKey
+                         )
+                        """,
+                parameters
+        );
+        jdbcTemplate.update("""
+                        DELETE FROM tc_deploy_target_state
+                         WHERE deploy_target_key IN (
+                                SELECT deploy_target_key
+                                  FROM tc_deploy_target_plan
+                                 WHERE deploy_key = :deployKey
+                         )
+                        """,
+                parameters
+        );
+        jdbcTemplate.update("""
+                        DELETE FROM tc_deploy_target_plan
+                         WHERE deploy_key = :deployKey
+                        """,
+                parameters
+        );
+        final int deletedCount = jdbcTemplate.update("""
+                        DELETE FROM tc_deploy
+                         WHERE deploy_key = :deployKey
+                        """,
+                parameters
+        );
+        return deletedCount > 0;
+    }
+
+    @Override
+    public PagedResponse<DeployHistoryView> findDeployHistory(
+            final String modelName,
+            final String requestedBy,
+            final OffsetDateTime fromCreatedAt,
+            final OffsetDateTime toCreatedAtExclusive,
+            final boolean terminalOnly,
+            final UiPageRequest pageRequest
+    ) {
+        final StringBuilder countSql = new StringBuilder("""
+                SELECT COUNT(*)
+                  FROM tc_deploy d
+                 WHERE 1 = 1
+                """);
+                final StringBuilder dataSql = new StringBuilder("""
+                SELECT d.deploy_key,
+                       d.deploy_name,
+                       d.event_type,
+                       d.deploy_status,
+                       d.execution_policy,
+                       d.created_at,
+                       d.created_at AS started_at,
+                       d.updated_at AS finished_at,
+                       d.created_by,
+                       d.desired_common_state_json ->> 'interfaceType' AS interface_type,
+                       d.desired_common_state_json #>> '{uiMessage,modelInfo,modelName}' AS selected_model_name,
+                       d.desired_common_state_json #>> '{uiMessage,modelInfo,modelVersion}' AS selected_model_version,
+                       d.desired_common_state_json #>> '{uiMessage,businessJar,jarFileName}' AS selected_business_jar_name,
+                       COALESCE(target_counts.total_count, 0) AS total_count,
+                       COALESCE(target_counts.pending_count, 0) AS pending_count,
+                       COALESCE(target_counts.no_change_count, 0) AS no_change_count,
+                       COALESCE(target_counts.running_count, 0) AS running_count,
+                       COALESCE(target_counts.completed_count, 0) AS completed_count,
+                       COALESCE(target_counts.failed_count, 0) AS failed_count,
+                       COALESCE(target_counts.rolling_back_count, 0) AS rolling_back_count,
+                       COALESCE(target_counts.rolled_back_count, 0) AS rolled_back_count,
+                       COALESCE(target_counts.compensation_failed_count, 0) AS compensation_failed_count,
+                       COALESCE(target_counts.canceled_count, 0) AS canceled_count
+                  FROM tc_deploy d
+                  LEFT JOIN LATERAL (
+                        SELECT COUNT(*)::INT AS total_count,
+                               COUNT(*) FILTER (WHERE s.target_status = 'PENDING')::INT AS pending_count,
+                               COUNT(*) FILTER (WHERE s.target_status = 'NO_CHANGE')::INT AS no_change_count,
+                               COUNT(*) FILTER (WHERE s.target_status = 'RUNNING')::INT AS running_count,
+                               COUNT(*) FILTER (WHERE s.target_status = 'COMPLETED')::INT AS completed_count,
+                               COUNT(*) FILTER (WHERE s.target_status = 'FAILED')::INT AS failed_count,
+                               COUNT(*) FILTER (WHERE s.target_status = 'ROLLING_BACK')::INT AS rolling_back_count,
+                               COUNT(*) FILTER (WHERE s.target_status = 'ROLLED_BACK')::INT AS rolled_back_count,
+                               COUNT(*) FILTER (WHERE s.target_status = 'COMPENSATION_FAILED')::INT AS compensation_failed_count,
+                               COUNT(*) FILTER (WHERE s.target_status = 'CANCELED')::INT AS canceled_count
+                          FROM tc_deploy_target_plan p
+                          JOIN tc_deploy_target_state s
+                            ON s.deploy_target_key = p.deploy_target_key
+                         WHERE p.deploy_key = d.deploy_key
+                  ) target_counts ON TRUE
+                 WHERE 1 = 1
+                """);
+        final MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("offset", pageRequest.offset())
+                .addValue("limit", pageRequest.limit());
+
+        support.appendHistoryFilters(
+                countSql,
+                parameters,
+                modelName,
+                requestedBy,
+                fromCreatedAt,
+                toCreatedAtExclusive,
+                terminalOnly
+        );
+        support.appendHistoryFilters(
+                dataSql,
+                parameters,
+                modelName,
+                requestedBy,
+                fromCreatedAt,
+                toCreatedAtExclusive,
+                terminalOnly
+        );
+        dataSql.append("""
+
+                 ORDER BY d.created_at DESC, d.deploy_key DESC
+                 LIMIT :limit
+                 OFFSET :offset
+                """);
+
+        final Long totalCount = jdbcTemplate.queryForObject(countSql.toString(), parameters, Long.class);
+        final List<DeployHistoryView> items = jdbcTemplate.query(
+                dataSql.toString(),
+                parameters,
+                (resultSet, rowNum) -> support.mapDeployHistory(resultSet)
+        );
+
+        return PagedResponse.of(
+                items,
+                pageRequest.offset(),
+                pageRequest.limit(),
+                totalCount == null ? 0L : totalCount
+        );
     }
 
     @Override
@@ -595,6 +850,48 @@ public class DeployJdbcStorePort implements DeployStorePort {
                 totalElements,
                 totalPages,
                 targets
+        );
+    }
+
+    private JsonNode buildUiMessageOverride(
+            final JsonNode commonUiMessage,
+            final String targetEqpParamVersion
+    ) {
+        final String commonEqpParamVersion = support.normalizeOptionalText(
+                commonUiMessage == null ? null : commonUiMessage.path("eqpParams").path("version").asString(null)
+        );
+        if (targetEqpParamVersion == null || Objects.equals(commonEqpParamVersion, targetEqpParamVersion)) {
+            return null;
+        }
+
+        final ObjectNode root = support.objectMapper().createObjectNode();
+        root.putObject("eqpParams").put("version", targetEqpParamVersion);
+        return root;
+    }
+
+    private List<DeployPlanCommand.TargetRequest> loadRedeployTargets(
+            final long deployKey,
+            final MapSqlParameterSource parameters,
+            final JsonNode commonUiMessage
+    ) {
+        return jdbcTemplate.query("""
+                        SELECT eqp_id,
+                               desired_state_json
+                          FROM tc_deploy_target_plan
+                         WHERE deploy_key = :deployKey
+                         ORDER BY target_order ASC
+                        """,
+                parameters,
+                (resultSet, rowNum) -> {
+                    final JsonNode desiredState = support.parseJson(resultSet.getString("desired_state_json"));
+                    final String targetEqpParamVersion = support.normalizeOptionalText(
+                            desiredState.path("eqpParamVersion").asString(null)
+                    );
+                    return new DeployPlanCommand.TargetRequest(
+                            resultSet.getString("eqp_id"),
+                            buildUiMessageOverride(commonUiMessage, targetEqpParamVersion)
+                    );
+                }
         );
     }
 

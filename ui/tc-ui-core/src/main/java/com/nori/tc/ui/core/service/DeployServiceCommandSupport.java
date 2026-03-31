@@ -10,6 +10,7 @@ import com.nori.tc.ui.core.deploy.DeployScenarioAction;
 import com.nori.tc.ui.core.deploy.DeploySnapshotKind;
 import com.nori.tc.ui.core.deploy.DeploySnapshotScope;
 import com.nori.tc.ui.core.deploy.DeployStatus;
+import com.nori.tc.ui.core.deploy.DeploySummarySnapshot;
 import com.nori.tc.ui.core.deploy.DeployTargetCounts;
 import com.nori.tc.ui.core.deploy.DeployTargetStatus;
 import com.nori.tc.ui.core.deploy.PersistedDeployTarget;
@@ -73,6 +74,11 @@ final class DeployServiceCommandSupport {
             final String lastErrorCode,
             final String lastErrorMessage
     ) {
+        final DeploySummarySnapshot currentSummary = deployStorePort.findDeploySummary(deployKey).orElse(null);
+        if (currentSummary == null || currentSummary.deployStatus() == DeployStatus.CANCELED) {
+            return;
+        }
+
         final DeployTargetCounts counts = deployStorePort.summarizeTargets(deployKey);
         if (counts.hasActiveTarget()) {
             return;
@@ -90,8 +96,6 @@ final class DeployServiceCommandSupport {
         deployStorePort.updateDeployStatus(
                 deployKey,
                 deployStatus,
-                null,
-                OffsetDateTime.now(ZoneOffset.UTC),
                 normalizeOptionalText(lastErrorCode),
                 normalizeOptionalText(lastErrorMessage)
         );

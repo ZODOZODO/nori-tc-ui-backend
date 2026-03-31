@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -105,6 +106,9 @@ public class DeployExecutor {
 
         try {
             for (DeployResolvedStepPlan step : target.planDraft().resolvedSteps()) {
+                if (isDeployCanceled(deployKey)) {
+                    return;
+                }
                 currentStep = step;
                 if (step.rollbackEnabled()) {
                     commandAssembler.saveCompensationSnapshot(target, step, targetPreState);
@@ -156,6 +160,11 @@ public class DeployExecutor {
                     return;
                 }
 
+                if (isDeployCanceled(deployKey)) {
+                    deployTraceRecorder.cancel(currentTraceId);
+                    return;
+                }
+
                 try {
                     final var completion = replyFuture.get(step.timeoutMs(), TimeUnit.MILLISECONDS);
                     if (!completion.success()) {
@@ -195,11 +204,16 @@ public class DeployExecutor {
                             actor
                     );
                     return;
+                } catch (CancellationException cancellationException) {
+                    return;
                 } catch (ExecutionException executionException) {
                     deployTraceRecorder.cancel(currentTraceId);
                     final Throwable cause = executionException.getCause() == null
                             ? executionException
                             : executionException.getCause();
+                    if (cause instanceof CancellationException) {
+                        return;
+                    }
                     handleTargetFailure(
                             deployKey,
                             target,
@@ -305,5 +319,11 @@ public class DeployExecutor {
 
     private String buildExecutionKey(final long deployKey, final long deployTargetKey) {
         return "DEPLOY-EXEC:" + deployKey + ":" + deployTargetKey;
+    }
+
+    private boolean isDeployCanceled(final long deployKey) {
+        return deployStorePort.findDeploySummary(deployKey)
+                .map(summary -> summary.deployStatus() == com.nori.tc.ui.core.deploy.DeployStatus.CANCELED)
+                .orElse(false);
     }
 }

@@ -4,6 +4,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 import com.nori.tc.ui.core.deploy.DeployExecutionPolicy;
+import com.nori.tc.ui.core.deploy.DeployHistoryView;
 import com.nori.tc.ui.core.deploy.DeployPlanCommand;
 import com.nori.tc.ui.core.deploy.DeployPlanningResult;
 import com.nori.tc.ui.core.deploy.DeployStatus;
@@ -19,6 +20,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -27,6 +29,23 @@ import java.util.Objects;
  * <p>어댑터 본체는 유스케이스 흐름만 유지하고, SQL 세부 구현은 이 지원 클래스로 위임합니다.</p>
  */
 final class DeployJdbcStoreSupport {
+
+    private static final List<String> ALLOWED_EVENT_TYPES = List.of(
+            "EQP_CREATE",
+            "EQP_UPDATE",
+            "EQP_DELETE",
+            "EQP_START",
+            "EQP_END",
+            "EQP_SEND_MESSAGE",
+            "EQP_RECONNECT",
+            "EQP_PARAMETER_UPDATE",
+            "EQP_GATEWAY_JARFILE_UPDATE",
+            "EQP_BUSINESS_JARFILE_UPDATE"
+    );
+    private static final List<String> ALLOWED_EXECUTION_POLICIES = List.of(
+            "BEST_EFFORT",
+            "FAIL_FAST"
+    );
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -212,6 +231,74 @@ final class DeployJdbcStoreSupport {
         }
     }
 
+    void appendHistoryFilters(
+            final StringBuilder sql,
+            final MapSqlParameterSource parameters,
+            final String modelName,
+            final String requestedBy,
+            final OffsetDateTime fromCreatedAt,
+            final OffsetDateTime toCreatedAtExclusive,
+            final boolean terminalOnly
+    ) {
+        if (modelName != null && !modelName.isBlank()) {
+            sql.append("""
+
+                       AND (
+                               d.deploy_name ILIKE :modelNamePattern
+                            OR d.desired_common_state_json #>> '{uiMessage,modelInfo,modelName}' ILIKE :modelNamePattern
+                       )
+                    """);
+            parameters.addValue("modelNamePattern", "%" + modelName.trim() + "%");
+        }
+        if (requestedBy != null && !requestedBy.isBlank()) {
+            sql.append("\n   AND d.created_by ILIKE :requestedByPattern");
+            parameters.addValue("requestedByPattern", "%" + requestedBy.trim() + "%");
+        }
+        if (fromCreatedAt != null) {
+            sql.append("\n   AND d.created_at >= :fromCreatedAt");
+            parameters.addValue("fromCreatedAt", fromCreatedAt);
+        }
+        if (toCreatedAtExclusive != null) {
+            sql.append("\n   AND d.created_at < :toCreatedAtExclusive");
+            parameters.addValue("toCreatedAtExclusive", toCreatedAtExclusive);
+        }
+        sql.append("""
+
+                   AND UPPER(TRIM(d.event_type)) IN (:allowedEventTypes)
+                   AND UPPER(TRIM(COALESCE(d.execution_policy, ''))) IN (:allowedExecutionPolicies)
+                """);
+        parameters.addValue("allowedEventTypes", ALLOWED_EVENT_TYPES);
+        parameters.addValue("allowedExecutionPolicies", ALLOWED_EXECUTION_POLICIES);
+        if (terminalOnly) {
+            sql.append("""
+
+                       AND d.deploy_status IN ('COMPLETED', 'PARTIAL_FAILED', 'FAILED', 'CANCELED')
+                    """);
+            return;
+        }
+
+        sql.append("""
+
+                   AND d.deploy_status IN ('PLANNING', 'READY', 'RUNNING')
+                """);
+    }
+
+    void appendKnownDeployCommandFilters(
+            final StringBuilder sql,
+            final MapSqlParameterSource parameters,
+            final String tableAlias
+    ) {
+        final String prefix = tableAlias == null || tableAlias.isBlank() ? "" : tableAlias + ".";
+        sql.append("\n                   AND UPPER(TRIM(")
+                .append(prefix)
+                .append("event_type)) IN (:allowedEventTypes)\n")
+                .append("                   AND UPPER(TRIM(COALESCE(")
+                .append(prefix)
+                .append("execution_policy, ''))) IN (:allowedExecutionPolicies)\n");
+        parameters.addValue("allowedEventTypes", ALLOWED_EVENT_TYPES);
+        parameters.addValue("allowedExecutionPolicies", ALLOWED_EXECUTION_POLICIES);
+    }
+
     DeploySummarySnapshot mapDeploySummary(
             final ResultSet resultSet,
             final DeployTargetCounts targetCounts
@@ -228,6 +315,38 @@ final class DeployJdbcStoreSupport {
                 targetCounts,
                 resultSet.getString("last_error_code"),
                 resultSet.getString("last_error_message")
+        );
+    }
+
+    DeployHistoryView mapDeployHistory(final ResultSet resultSet) throws SQLException {
+        final DeployStatus deployStatus = DeployStatus.valueOf(resultSet.getString("deploy_status"));
+        return new DeployHistoryView(
+                resultSet.getLong("deploy_key"),
+                resultSet.getString("deploy_name"),
+                UiCommandEventType.fromText(resultSet.getString("event_type")),
+                deployStatus,
+                DeployExecutionPolicy.fromText(resultSet.getString("execution_policy")),
+                normalizeActor(resultSet.getString("created_by")),
+                resultSet.getObject("created_at", OffsetDateTime.class),
+                resultSet.getObject("started_at", OffsetDateTime.class),
+                resultSet.getObject("finished_at", OffsetDateTime.class),
+                isTerminal(deployStatus),
+                normalizeOptionalText(resultSet.getString("interface_type")),
+                normalizeOptionalText(resultSet.getString("selected_model_name")),
+                normalizeOptionalText(resultSet.getString("selected_model_version")),
+                normalizeOptionalText(resultSet.getString("selected_business_jar_name")),
+                new DeployTargetCounts(
+                        resultSet.getInt("total_count"),
+                        resultSet.getInt("pending_count"),
+                        resultSet.getInt("no_change_count"),
+                        resultSet.getInt("running_count"),
+                        resultSet.getInt("completed_count"),
+                        resultSet.getInt("failed_count"),
+                        resultSet.getInt("rolling_back_count"),
+                        resultSet.getInt("rolled_back_count"),
+                        resultSet.getInt("compensation_failed_count"),
+                        resultSet.getInt("canceled_count")
+                )
         );
     }
 
@@ -262,6 +381,10 @@ final class DeployJdbcStoreSupport {
         }
     }
 
+    ObjectMapper objectMapper() {
+        return objectMapper;
+    }
+
     String normalizeActor(final String actor) {
         if (actor == null || actor.isBlank()) {
             return "SYSTEM";
@@ -290,6 +413,13 @@ final class DeployJdbcStoreSupport {
     private Integer nullableInt(final ResultSet resultSet, final String columnName) throws SQLException {
         final int value = resultSet.getInt(columnName);
         return resultSet.wasNull() ? null : value;
+    }
+
+    private boolean isTerminal(final DeployStatus deployStatus) {
+        return switch (deployStatus) {
+            case COMPLETED, PARTIAL_FAILED, FAILED, CANCELED -> true;
+            case PLANNING, READY, RUNNING -> false;
+        };
     }
 
     private static String requireText(final String fieldName, final String value) {

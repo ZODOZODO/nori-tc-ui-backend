@@ -8,11 +8,14 @@ import com.nori.tc.ui.core.deploy.DeploySnapshotScope;
 import com.nori.tc.ui.core.deploy.DeployStatus;
 import com.nori.tc.ui.core.deploy.DeployStepStatus;
 import com.nori.tc.ui.core.deploy.DeployStoredSnapshot;
+import com.nori.tc.ui.core.deploy.DeployHistoryView;
 import com.nori.tc.ui.core.deploy.DeploySummarySnapshot;
 import com.nori.tc.ui.core.deploy.DeployTargetCounts;
 import com.nori.tc.ui.core.deploy.DeployTargetPage;
 import com.nori.tc.ui.core.deploy.DeployTargetStatus;
 import com.nori.tc.ui.core.deploy.PersistedDeploy;
+import com.nori.tc.ui.core.model.PagedResponse;
+import com.nori.tc.ui.core.model.UiPageRequest;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
@@ -27,8 +30,6 @@ public interface DeployStorePort {
     void updateDeployStatus(
             long deployKey,
             DeployStatus deployStatus,
-            OffsetDateTime startedAt,
-            OffsetDateTime finishedAt,
             String lastErrorCode,
             String lastErrorMessage
     );
@@ -101,6 +102,28 @@ public interface DeployStorePort {
     );
 
     Optional<DeploySummarySnapshot> findDeploySummary(long deployKey);
+
+    Optional<DeployPlanCommand> findRedeployCommand(long deployKey);
+
+    java.util.List<String> findActiveTraceIds(long deployKey);
+
+    void markTargetsCanceled(
+            long deployKey,
+            OffsetDateTime finishedAt,
+            String lastErrorCode,
+            String lastErrorMessage
+    );
+
+    boolean deleteDeploy(long deployKey);
+
+    PagedResponse<DeployHistoryView> findDeployHistory(
+            String modelName,
+            String requestedBy,
+            OffsetDateTime fromCreatedAt,
+            OffsetDateTime toCreatedAtExclusive,
+            boolean terminalOnly,
+            UiPageRequest pageRequest
+    );
 
     DeployTargetCounts summarizeTargets(long deployKey);
 

@@ -64,6 +64,14 @@ dependencies {
     compileOnly(libs.jackson.annotations)
 
     testImplementation(libs.spring.boot.starter.test)
+    /*
+     * starter 테스트는 자동 구성 클래스를 직접 컴파일/로딩하면서
+     * 외부 클래스 파일에 기록된 Jackson annotation 메타데이터까지 함께 해석합니다.
+     * main 쪽 compileOnly 의존성은 testCompileClasspath로 전파되지 않으므로,
+     * 테스트 컴파일 경고(unknown enum constant Include.NON_EMPTY)를 막기 위해
+     * annotation jar를 test 스코프에 명시적으로 포함합니다.
+     */
+    testImplementation(libs.jackson.annotations)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

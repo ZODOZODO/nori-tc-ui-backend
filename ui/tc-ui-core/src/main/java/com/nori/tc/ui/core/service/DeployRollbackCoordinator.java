@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -50,6 +51,9 @@ public class DeployRollbackCoordinator {
             final String actor
     ) {
         for (int index = completedSteps.size() - 1; index >= 0; index--) {
+            if (isDeployCanceled(deployKey)) {
+                return;
+            }
             final DeployResolvedStepPlan step = completedSteps.get(index);
             if (!step.rollbackEnabled()) {
                 continue;
@@ -139,6 +143,11 @@ public class DeployRollbackCoordinator {
             final Set<String> expectedSources = commandAssembler.expectedSources(step.targetApp());
             final var replyFuture = deployTraceRecorder.register(compensationTraceId, expectedSources, timeoutMs);
 
+            if (isDeployCanceled(deployKey)) {
+                deployTraceRecorder.cancel(compensationTraceId);
+                return;
+            }
+
             try {
                 commandAssembler.publishCommand(
                         deployKey,
@@ -226,11 +235,16 @@ public class DeployRollbackCoordinator {
                     OffsetDateTime.now(ZoneOffset.UTC)
             );
             return Optional.empty();
+        } catch (CancellationException cancellationException) {
+            return Optional.empty();
         } catch (ExecutionException executionException) {
             deployTraceRecorder.cancel(compensationTraceId);
             final Throwable cause = executionException.getCause() == null
                     ? executionException
                     : executionException.getCause();
+            if (cause instanceof CancellationException) {
+                return Optional.empty();
+            }
             deployStorePort.markTargetCompensationFailed(
                     deployTargetKey,
                     step.order(),
@@ -243,5 +257,11 @@ public class DeployRollbackCoordinator {
             );
             return Optional.empty();
         }
+    }
+
+    private boolean isDeployCanceled(final long deployKey) {
+        return deployStorePort.findDeploySummary(deployKey)
+                .map(summary -> summary.deployStatus() == com.nori.tc.ui.core.deploy.DeployStatus.CANCELED)
+                .orElse(false);
     }
 }
