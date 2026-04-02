@@ -14,17 +14,13 @@ import com.nori.tc.ui.adapters.web.dto.response.EqpInfoResponse;
 import com.nori.tc.ui.adapters.web.dto.response.EqpManageDetailResponse;
 import com.nori.tc.ui.adapters.web.dto.response.EqpManageOptionsResponse;
 import com.nori.tc.ui.adapters.web.dto.response.EqpRuntimeStateResponse;
+import com.nori.tc.ui.core.eqp.EqpAsyncAcceptResult;
 import com.nori.tc.ui.core.eqp.EqpCommandResult;
 import com.nori.tc.ui.core.eqp.EqpManagementOptions;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.model.PagedResponse;
-import com.nori.tc.ui.core.model.UiCommandEventType;
-import com.nori.tc.ui.core.model.UiCommandMessage;
-import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.model.UiPageRequest;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
-import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
-import com.nori.tc.ui.core.port.redis.AsyncResultStorePort;
 import com.nori.tc.ui.core.service.EqpManagementService;
 import com.nori.tc.ui.domain.eqp.UiEqp;
 import jakarta.validation.Valid;
@@ -49,7 +45,6 @@ import org.springframework.web.context.request.async.DeferredResult;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -65,12 +60,9 @@ public class EqpController {
 
     private static final Logger log = LoggerFactory.getLogger(EqpController.class);
     private static final String TRACE_ID_MDC_KEY = "traceId";
-    private static final String UI_SOURCE = "TC-UI-APP";
 
     private final EqpQueryPort eqpQueryPort;
     private final EqpManagementService eqpManagementService;
-    private final UiGatewayEventPublishPort gatewayEventPublishPort;
-    private final AsyncResultStorePort asyncResultStorePort;
     private final UiDualRequestProperties dualRequestProperties;
 
     /**
@@ -78,21 +70,15 @@ public class EqpController {
      *
      * @param eqpQueryPort 설비 조회 포트
      * @param eqpManagementService EQP 관리 orchestration 서비스
-     * @param gatewayEventPublishPort Gateway Kafka 이벤트 발행 포트
-     * @param asyncResultStorePort START/END polling 상태 저장 포트
      * @param dualRequestProperties 비동기 timeout 설정
      */
     public EqpController(
             final EqpQueryPort eqpQueryPort,
             final EqpManagementService eqpManagementService,
-            final UiGatewayEventPublishPort gatewayEventPublishPort,
-            final AsyncResultStorePort asyncResultStorePort,
             final UiDualRequestProperties dualRequestProperties
     ) {
         this.eqpQueryPort = Objects.requireNonNull(eqpQueryPort, "eqpQueryPort is null");
         this.eqpManagementService = Objects.requireNonNull(eqpManagementService, "eqpManagementService is null");
-        this.gatewayEventPublishPort = Objects.requireNonNull(gatewayEventPublishPort, "gatewayEventPublishPort is null");
-        this.asyncResultStorePort = Objects.requireNonNull(asyncResultStorePort, "asyncResultStorePort is null");
         this.dualRequestProperties = Objects.requireNonNull(dualRequestProperties, "dualRequestProperties is null");
     }
 
@@ -291,18 +277,17 @@ public class EqpController {
             @PathVariable final String eqpId,
             @Valid @RequestBody final EqpLifecycleRequest request
     ) {
-        final String traceId = generateTraceId();
+        final EqpAsyncAcceptResult acceptResult = eqpManagementService.startAsync(
+                eqpId,
+                request.interfaceType(),
+                request.uiMessage(),
+                dualRequestProperties.getDualRequestTimeoutMs()
+        );
 
-        try (MdcTraceScope ignored = openTraceMdcScope(traceId)) {
+        try (MdcTraceScope ignored = openTraceMdcScope(acceptResult.traceId())) {
             log.info("EQP_START 요청. eqpId={}, interfaceType={}, traceId={}",
-                    eqpId, request.interfaceType(), traceId);
-
-            final UiCommandMessage message = buildMessage(
-                    UiCommandEventType.EQP_START, traceId, eqpId,
-                    request.interfaceType(), request.uiMessage(), null
-            );
-
-            return publishLifecycleAndAccept(UiCommandEventType.EQP_START, traceId, eqpId, message);
+                    eqpId, request.interfaceType(), acceptResult.traceId());
+            return toAsyncAcceptResponse(acceptResult);
         }
     }
 
@@ -318,18 +303,17 @@ public class EqpController {
             @PathVariable final String eqpId,
             @Valid @RequestBody final EqpLifecycleRequest request
     ) {
-        final String traceId = generateTraceId();
+        final EqpAsyncAcceptResult acceptResult = eqpManagementService.endAsync(
+                eqpId,
+                request.interfaceType(),
+                request.uiMessage(),
+                dualRequestProperties.getDualRequestTimeoutMs()
+        );
 
-        try (MdcTraceScope ignored = openTraceMdcScope(traceId)) {
+        try (MdcTraceScope ignored = openTraceMdcScope(acceptResult.traceId())) {
             log.info("EQP_END 요청. eqpId={}, interfaceType={}, traceId={}",
-                    eqpId, request.interfaceType(), traceId);
-
-            final UiCommandMessage message = buildMessage(
-                    UiCommandEventType.EQP_END, traceId, eqpId,
-                    request.interfaceType(), request.uiMessage(), null
-            );
-
-            return publishLifecycleAndAccept(UiCommandEventType.EQP_END, traceId, eqpId, message);
+                    eqpId, request.interfaceType(), acceptResult.traceId());
+            return toAsyncAcceptResponse(acceptResult);
         }
     }
 
@@ -372,75 +356,13 @@ public class EqpController {
         return deferredResult;
     }
 
-    /**
-     * START/END lifecycle 이벤트를 Gateway에 발행하고 polling용 traceId를 반환합니다.
-     *
-     * @param eventType 이벤트 타입
-     * @param traceId trace id
-     * @param eqpId 설비 ID
-     * @param message 발행 메시지
-     * @return 202 Accepted 응답
-     */
-    private ResponseEntity<ApiResponse<AsyncAcceptResponse>> publishLifecycleAndAccept(
-            final UiCommandEventType eventType,
-            final String traceId,
-            final String eqpId,
-            final UiCommandMessage message
-    ) {
-        final long lifecycleTimeoutMs = dualRequestProperties.getDualRequestTimeoutMs();
-        asyncResultStorePort.registerPending(traceId, lifecycleTimeoutMs);
-
-        try {
-            gatewayEventPublishPort.publish(message);
-            log.info("{} Kafka 발행 완료. eqpId={}, traceId={}", eventType, eqpId, traceId);
-        } catch (Exception exception) {
-            log.error("{} Kafka 발행 실패. eqpId={}, traceId={}", eventType, eqpId, traceId, exception);
-            asyncResultStorePort.markTimeout(traceId);
-            return ResponseEntity.internalServerError()
-                    .body(ApiResponse.error("PUBLISH_FAILED", "Kafka 발행 중 오류가 발생했습니다."));
+    private ResponseEntity<ApiResponse<AsyncAcceptResponse>> toAsyncAcceptResponse(final EqpAsyncAcceptResult acceptResult) {
+        if (!acceptResult.accepted()) {
+            return ResponseEntity.status(acceptResult.statusCode())
+                    .body(ApiResponse.error(acceptResult.errorCode(), acceptResult.errorMessage()));
         }
-
         return ResponseEntity.accepted()
-                .body(ApiResponse.success(new AsyncAcceptResponse(traceId)));
-    }
-
-    /**
-     * UI 명령 메시지를 생성합니다.
-     *
-     * @param eventType 이벤트 타입
-     * @param traceId trace id
-     * @param eqpId 설비 ID
-     * @param interfaceType 통신 인터페이스 문자열
-     * @param uiMessage UI payload(JSON object)
-     * @param equipmentProfile 설비 프로파일
-     * @return UI 명령 메시지
-     */
-    private UiCommandMessage buildMessage(
-            final UiCommandEventType eventType,
-            final String traceId,
-            final String eqpId,
-            final String interfaceType,
-            final JsonNode uiMessage,
-            final UiEquipmentProfileSnapshot equipmentProfile
-    ) {
-        return new UiCommandMessage(
-                eventType,
-                traceId,
-                UI_SOURCE,
-                eqpId,
-                interfaceType,
-                uiMessage,
-                equipmentProfile
-        );
-    }
-
-    /**
-     * 요청별 고유 trace id를 생성합니다.
-     *
-     * @return UUID 문자열
-     */
-    private static String generateTraceId() {
-        return UUID.randomUUID().toString();
+                .body(ApiResponse.success(new AsyncAcceptResponse(acceptResult.traceId())));
     }
 
     /**

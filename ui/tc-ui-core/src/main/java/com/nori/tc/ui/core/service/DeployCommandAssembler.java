@@ -3,6 +3,7 @@ package com.nori.tc.ui.core.service;
 import tools.jackson.databind.JsonNode;
 import com.nori.tc.ui.core.deploy.DeployResolvedStepPlan;
 import com.nori.tc.ui.core.deploy.DeployResultMessage;
+import com.nori.tc.ui.core.deploy.DeployScenarioAction;
 import com.nori.tc.ui.core.deploy.DeployStatus;
 import com.nori.tc.ui.core.deploy.DeployTargetCounts;
 import com.nori.tc.ui.core.deploy.DeployTargetStatus;
@@ -130,6 +131,46 @@ public class DeployCommandAssembler {
             final String actor
     ) {
         commandSupport.publishCommand(deployKey, targetApp, eventType, target, interfaceType, uiMessage, equipmentProfile, traceId, actor);
+    }
+
+    public void publishDirectCommand(
+            final com.nori.tc.ui.core.deploy.DeployTargetApp targetApp,
+            final UiCommandEventType eventType,
+            final String eqpId,
+            final String interfaceType,
+            final JsonNode uiMessage,
+            final UiEquipmentProfileSnapshot equipmentProfile,
+            final String traceId
+    ) {
+        commandSupport.publishDirectCommand(targetApp, eventType, eqpId, interfaceType, uiMessage, equipmentProfile, traceId);
+    }
+
+    public UiCommandEventType resolveMessageEventType(
+            final UiCommandEventType deployEventType,
+            final DeployScenarioAction action
+    ) {
+        return commandSupport.resolveMessageEventType(deployEventType, action);
+    }
+
+    public JsonNode buildDirectStepUiMessage(
+            final String executionId,
+            final UiCommandEventType eventType,
+            final DeployResolvedStepPlan step,
+            final String traceId,
+            final String actor,
+            final JsonNode mergedUiMessage
+    ) {
+        return commandSupport.buildDirectStepUiMessage(executionId, eventType, step, traceId, actor, mergedUiMessage);
+    }
+
+    public UiEquipmentProfileSnapshot buildDirectEquipmentProfile(
+            final UiCommandEventType messageEventType,
+            final String eqpId,
+            final String interfaceType,
+            final Long eqpKey,
+            final JsonNode stepUiMessage
+    ) {
+        return commandSupport.buildDirectEquipmentProfile(messageEventType, eqpId, interfaceType, eqpKey, stepUiMessage);
     }
 
     public UiCommandEventType parseCompensationEventType(final String eventTypeText) {

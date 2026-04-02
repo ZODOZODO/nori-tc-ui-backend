@@ -1,11 +1,17 @@
 package com.nori.tc.ui.core.service;
 
+import tools.jackson.databind.JsonNode;
+import com.nori.tc.ui.core.eqp.EqpAsyncAcceptResult;
 import com.nori.tc.ui.core.eqp.EqpCommandResult;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementOptions;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
+import com.nori.tc.ui.core.model.UiCommandEventType;
+import com.nori.tc.ui.core.model.UiCommandReply;
 import com.nori.tc.ui.core.port.db.EqpManageQueryPort;
 import com.nori.tc.ui.core.port.db.EqpOptionsQueryPort;
+import com.nori.tc.ui.core.port.redis.AsyncResultStorePort;
+import com.nori.tc.ui.domain.task.UiTaskStatus;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
@@ -23,10 +29,12 @@ import java.util.concurrent.Executor;
 public class EqpManagementService {
 
     public static final String EQP_MANAGEMENT_EXECUTOR_BEAN_NAME = "uiEqpManagementExecutor";
+    private static final String DIRECT_ASYNC_SOURCE = "TC-UI-APP";
     private final EqpManageQueryPort eqpManageQueryPort;
     private final EqpOptionsQueryPort eqpOptionsQueryPort;
-    private final EqpCommandOrchestrator eqpCommandOrchestrator;
+    private final EqpDirectScenarioService eqpDirectScenarioService;
     private final Executor eqpManagementExecutor;
+    private final AsyncResultStorePort asyncResultStorePort;
 
     /**
      * 필수 의존성을 초기화합니다.
@@ -34,12 +42,14 @@ public class EqpManagementService {
     public EqpManagementService(
             final EqpManageQueryPort eqpManageQueryPort,
             final EqpOptionsQueryPort eqpOptionsQueryPort,
-            final EqpCommandOrchestrator eqpCommandOrchestrator,
+            final EqpDirectScenarioService eqpDirectScenarioService,
+            final AsyncResultStorePort asyncResultStorePort,
             @Qualifier(EQP_MANAGEMENT_EXECUTOR_BEAN_NAME) final Executor eqpManagementExecutor
     ) {
         this.eqpManageQueryPort = Objects.requireNonNull(eqpManageQueryPort, "eqpManageQueryPort is null");
         this.eqpOptionsQueryPort = Objects.requireNonNull(eqpOptionsQueryPort, "eqpOptionsQueryPort is null");
-        this.eqpCommandOrchestrator = Objects.requireNonNull(eqpCommandOrchestrator, "eqpCommandOrchestrator is null");
+        this.eqpDirectScenarioService = Objects.requireNonNull(eqpDirectScenarioService, "eqpDirectScenarioService is null");
+        this.asyncResultStorePort = Objects.requireNonNull(asyncResultStorePort, "asyncResultStorePort is null");
         this.eqpManagementExecutor = Objects.requireNonNull(eqpManagementExecutor, "eqpManagementExecutor is null");
     }
 
@@ -76,7 +86,7 @@ public class EqpManagementService {
             final EqpManagementCommand.Create command,
             final long timeoutMs
     ) {
-        return CompletableFuture.supplyAsync(() -> eqpCommandOrchestrator.create(command, timeoutMs), eqpManagementExecutor);
+        return CompletableFuture.supplyAsync(() -> eqpDirectScenarioService.executeCreate(command), eqpManagementExecutor);
     }
 
     /**
@@ -92,7 +102,7 @@ public class EqpManagementService {
             final EqpManagementCommand.Update command,
             final long timeoutMs
     ) {
-        return CompletableFuture.supplyAsync(() -> eqpCommandOrchestrator.update(eqpId, command, timeoutMs), eqpManagementExecutor);
+        return CompletableFuture.supplyAsync(() -> eqpDirectScenarioService.executeUpdate(eqpId, command), eqpManagementExecutor);
     }
 
     /**
@@ -106,6 +116,91 @@ public class EqpManagementService {
             final String eqpId,
             final long timeoutMs
     ) {
-        return CompletableFuture.supplyAsync(() -> eqpCommandOrchestrator.delete(eqpId, timeoutMs), eqpManagementExecutor);
+        return CompletableFuture.supplyAsync(() -> eqpDirectScenarioService.executeDelete(eqpId), eqpManagementExecutor);
+    }
+
+    /**
+     * EQP 시작 명령을 scenario 경로로 비동기 실행하고 polling traceId를 반환합니다.
+     */
+    public EqpAsyncAcceptResult startAsync(
+            final String eqpId,
+            final String interfaceType,
+            final JsonNode uiMessage,
+            final long timeoutMs
+    ) {
+        return submitAsyncScenario(
+                eqpId,
+                interfaceType,
+                UiCommandEventType.EQP_START,
+                timeoutMs,
+                () -> eqpDirectScenarioService.executeStart(eqpId, interfaceType, uiMessage, "SYSTEM")
+        );
+    }
+
+    /**
+     * EQP 종료 명령을 scenario 경로로 비동기 실행하고 polling traceId를 반환합니다.
+     */
+    public EqpAsyncAcceptResult endAsync(
+            final String eqpId,
+            final String interfaceType,
+            final JsonNode uiMessage,
+            final long timeoutMs
+    ) {
+        return submitAsyncScenario(
+                eqpId,
+                interfaceType,
+                UiCommandEventType.EQP_END,
+                timeoutMs,
+                () -> eqpDirectScenarioService.executeEnd(eqpId, interfaceType, uiMessage, "SYSTEM")
+        );
+    }
+
+    private EqpAsyncAcceptResult submitAsyncScenario(
+            final String eqpId,
+            final String interfaceType,
+            final UiCommandEventType eventType,
+            final long timeoutMs,
+            final java.util.function.Supplier<EqpCommandResult> action
+    ) {
+        final String traceId = java.util.UUID.randomUUID().toString();
+        asyncResultStorePort.registerPending(traceId, timeoutMs);
+
+        try {
+            CompletableFuture.runAsync(() -> {
+                final EqpCommandResult result = action.get();
+                if (!result.success() && "TIMEOUT".equalsIgnoreCase(result.errorCode())) {
+                    asyncResultStorePort.markTimeout(traceId);
+                    return;
+                }
+                asyncResultStorePort.markCompleted(traceId, toAsyncReply(traceId, eqpId, interfaceType, eventType, result));
+            }, eqpManagementExecutor);
+            return EqpAsyncAcceptResult.accepted(traceId);
+        } catch (RuntimeException exception) {
+            asyncResultStorePort.markTimeout(traceId);
+            return EqpAsyncAcceptResult.error(
+                    500,
+                    "PUBLISH_FAILED",
+                    exception.getMessage() == null ? "비동기 작업 등록 중 오류가 발생했습니다." : exception.getMessage()
+            );
+        }
+    }
+
+    private UiCommandReply toAsyncReply(
+            final String traceId,
+            final String eqpId,
+            final String interfaceType,
+            final UiCommandEventType eventType,
+            final EqpCommandResult result
+    ) {
+        return new UiCommandReply(
+                traceId,
+                DIRECT_ASYNC_SOURCE,
+                eventType.name() + "_REP",
+                eqpId,
+                interfaceType,
+                result.success() ? UiTaskStatus.PASS : UiTaskStatus.FAIL,
+                result.errorCode(),
+                result.errorMessage()
+        );
     }
 }

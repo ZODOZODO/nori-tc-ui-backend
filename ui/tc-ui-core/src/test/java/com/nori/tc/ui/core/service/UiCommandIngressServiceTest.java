@@ -62,6 +62,27 @@ class UiCommandIngressServiceTest {
     }
 
     @Test
+    void directTraceReplyIsHandledBeforeLegacyRouting() {
+        final UiCommandReply reply = new UiCommandReply(
+                "DIRECT-trace-001",
+                "TC-GATEWAY-APP",
+                "EQP_START_REP",
+                "PHOTO_001",
+                "SOCKET",
+                UiTaskStatus.PASS,
+                null,
+                null
+        );
+        when(deployService.handleReply(reply)).thenReturn(true);
+
+        ingressService.handle(reply);
+
+        verify(deployService).handleReply(reply);
+        verify(asyncResultStorePort, never()).markCompleted(any(), any());
+        assertEquals(0, dualResponseRedisPort.recordedResults.size());
+    }
+
+    @Test
     void createReplyRoutesToDualResponseRegistry() {
         final UiCommandReply reply = new UiCommandReply(
                 "trace-create-001",

@@ -187,6 +187,32 @@ final class DeployServiceCommandSupport {
         businessEventPublishPort.publish(message);
     }
 
+    void publishDirectCommand(
+            final com.nori.tc.ui.core.deploy.DeployTargetApp targetApp,
+            final UiCommandEventType eventType,
+            final String eqpId,
+            final String interfaceType,
+            final JsonNode uiMessage,
+            final UiEquipmentProfileSnapshot equipmentProfile,
+            final String traceId
+    ) {
+        final UiCommandMessage message = new UiCommandMessage(
+                eventType,
+                traceId,
+                UI_SOURCE,
+                eqpId,
+                interfaceType,
+                uiMessage == null ? objectMapper.createObjectNode() : uiMessage,
+                equipmentProfile
+        );
+
+        if (targetApp == com.nori.tc.ui.core.deploy.DeployTargetApp.GATEWAY) {
+            gatewayEventPublishPort.publish(message);
+            return;
+        }
+        businessEventPublishPort.publish(message);
+    }
+
     Set<String> expectedSources(final DeployResolvedStepPlan step) {
         return expectedSources(step.targetApp());
     }
@@ -362,7 +388,7 @@ final class DeployServiceCommandSupport {
         };
     }
 
-    private UiCommandEventType resolveMessageEventType(
+    UiCommandEventType resolveMessageEventType(
             final UiCommandEventType deployEventType,
             final DeployScenarioAction action
     ) {
@@ -396,6 +422,29 @@ final class DeployServiceCommandSupport {
                  RESTORE_PREVIOUS_BUSINESS_BINDING ->
                     throw new UiBadRequestException("rollback action은 T4에서 직접 실행하지 않습니다. action=" + action);
         };
+    }
+
+    JsonNode buildDirectStepUiMessage(
+            final String executionId,
+            final UiCommandEventType eventType,
+            final DeployResolvedStepPlan step,
+            final String traceId,
+            final String actor,
+            final JsonNode mergedUiMessage
+    ) {
+        final ObjectNode root = objectMapper.createObjectNode();
+        copyCommonDeployPayload(root, mergedUiMessage, step.action());
+
+        final ObjectNode orchestration = root.putObject("_direct");
+        orchestration.put("executionId", executionId);
+        orchestration.put("eventType", eventType.name());
+        orchestration.put("targetApp", step.targetApp().name());
+        orchestration.put("stepCode", step.code());
+        orchestration.put("stepAction", step.action().name());
+        orchestration.put("traceId", traceId);
+        orchestration.put("requestedBy", actor);
+
+        return root;
     }
 
     private JsonNode buildStepUiMessage(
@@ -453,9 +502,11 @@ final class DeployServiceCommandSupport {
         }
     }
 
-    private UiEquipmentProfileSnapshot buildEquipmentProfile(
+    UiEquipmentProfileSnapshot buildDirectEquipmentProfile(
             final UiCommandEventType messageEventType,
-            final PersistedDeployTarget target,
+            final String eqpId,
+            final String interfaceType,
+            final Long eqpKey,
             final JsonNode stepUiMessage
     ) {
         if (messageEventType != UiCommandEventType.EQP_CREATE && messageEventType != UiCommandEventType.EQP_UPDATE) {
@@ -466,11 +517,10 @@ final class DeployServiceCommandSupport {
             return Optional.<UiEquipmentProfileSnapshot>empty().orElse(null);
         }
 
-        final Long eqpKey = target.planDraft().currentState() == null ? null : target.planDraft().currentState().eqpKey();
         return new UiEquipmentProfileSnapshot(
                 eqpKey,
-                target.planDraft().eqpId(),
-                target.planDraft().interfaceType(),
+                eqpId,
+                interfaceType,
                 textValue(gatewayProfile, "socketType"),
                 intValue(gatewayProfile, "hsmsDeviceId"),
                 textValue(gatewayProfile, "eqpIp"),
@@ -486,6 +536,29 @@ final class DeployServiceCommandSupport {
                 null,
                 List.of(),
                 OffsetDateTime.now(ZoneOffset.UTC).toString()
+        );
+    }
+
+    private UiEquipmentProfileSnapshot buildEquipmentProfile(
+            final UiCommandEventType messageEventType,
+            final PersistedDeployTarget target,
+            final JsonNode stepUiMessage
+    ) {
+        if (messageEventType != UiCommandEventType.EQP_CREATE && messageEventType != UiCommandEventType.EQP_UPDATE) {
+            return Optional.<UiEquipmentProfileSnapshot>empty().orElse(null);
+        }
+        final JsonNode gatewayProfile = stepUiMessage.get("gatewayProfile");
+        if (gatewayProfile == null || !gatewayProfile.isObject()) {
+            return Optional.<UiEquipmentProfileSnapshot>empty().orElse(null);
+        }
+
+        final Long eqpKey = target.planDraft().currentState() == null ? null : target.planDraft().currentState().eqpKey();
+        return buildDirectEquipmentProfile(
+                messageEventType,
+                target.planDraft().eqpId(),
+                target.planDraft().interfaceType(),
+                eqpKey,
+                stepUiMessage
         );
     }
 

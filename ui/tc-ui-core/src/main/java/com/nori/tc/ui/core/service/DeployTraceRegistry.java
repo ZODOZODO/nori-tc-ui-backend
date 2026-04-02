@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class DeployTraceRegistry {
 
     public static final String DEPLOY_TRACE_PREFIX = "DEPLOY-";
+    public static final String DIRECT_TRACE_PREFIX = "DIRECT-";
 
     private static final Logger log = LoggerFactory.getLogger(DeployTraceRegistry.class);
 
@@ -36,13 +37,14 @@ public class DeployTraceRegistry {
     }
 
     /**
-     * deploy orchestrator가 관리하는 traceId인지 반환합니다.
+     * deploy/direct scenario orchestrator가 관리하는 traceId인지 반환합니다.
      *
      * @param traceId 확인 대상 traceId
-     * @return deploy traceId 여부
+     * @return 관리 대상 traceId 여부
      */
     public boolean isDeployTrace(final String traceId) {
-        return traceId != null && traceId.startsWith(DEPLOY_TRACE_PREFIX);
+        return traceId != null
+                && (traceId.startsWith(DEPLOY_TRACE_PREFIX) || traceId.startsWith(DIRECT_TRACE_PREFIX));
     }
 
     /**
