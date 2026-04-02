@@ -16,13 +16,29 @@ package com.nori.tc.ui.core.exception;
  */
 public class UiConflictException extends RuntimeException {
 
+    private final String errorCode;
+
     /**
      * 메시지만 포함한 409 계열 예외를 생성합니다.
      *
      * @param message 충돌 원인 메시지
      */
     public UiConflictException(final String message) {
+        this(UiErrorCode.CONFLICT, message);
+    }
+
+    /**
+     * 오류 코드를 포함한 409 계열 예외를 생성합니다.
+     *
+     * @param errorCode 충돌 오류 코드
+     * @param message 충돌 원인 메시지
+     */
+    public UiConflictException(
+            final String errorCode,
+            final String message
+    ) {
         super(message);
+        this.errorCode = errorCode == null || errorCode.isBlank() ? UiErrorCode.CONFLICT : errorCode;
     }
 
     /**
@@ -32,6 +48,26 @@ public class UiConflictException extends RuntimeException {
      * @param cause 원인 예외
      */
     public UiConflictException(final String message, final Throwable cause) {
+        this(UiErrorCode.CONFLICT, message, cause);
+    }
+
+    /**
+     * 오류 코드와 원인 예외를 포함한 409 계열 예외를 생성합니다.
+     *
+     * @param errorCode 충돌 오류 코드
+     * @param message 충돌 원인 메시지
+     * @param cause 원인 예외
+     */
+    public UiConflictException(
+            final String errorCode,
+            final String message,
+            final Throwable cause
+    ) {
         super(message, cause);
+        this.errorCode = errorCode == null || errorCode.isBlank() ? UiErrorCode.CONFLICT : errorCode;
+    }
+
+    public String errorCode() {
+        return errorCode;
     }
 }

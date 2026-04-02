@@ -4,15 +4,18 @@ import com.nori.tc.common.runtime.support.ExecutorShutdownResult;
 import com.nori.tc.common.runtime.support.ExecutorShutdownSupport;
 import com.nori.tc.common.runtime.support.RuntimeExecutorFactory;
 import com.nori.tc.common.runtime.support.RuntimeLogSummary;
-import com.nori.tc.ui.core.deploy.DeployCreateResult;
+import com.nori.tc.ui.core.deploy.DeployActiveEqpConflict;
 import com.nori.tc.ui.core.deploy.DeployActionResult;
+import com.nori.tc.ui.core.deploy.DeployCreateResult;
 import com.nori.tc.ui.core.deploy.DeployDeleteResult;
+import com.nori.tc.ui.core.deploy.DeployExecutionPlan;
+import com.nori.tc.ui.core.deploy.DeployExecutionTarget;
+import com.nori.tc.ui.core.deploy.DeployHistoryView;
 import com.nori.tc.ui.core.deploy.DeployPlanCommand;
 import com.nori.tc.ui.core.deploy.DeployPlanningResult;
 import com.nori.tc.ui.core.deploy.DeployResultMessage;
 import com.nori.tc.ui.core.deploy.DeployResultSeverity;
 import com.nori.tc.ui.core.deploy.DeployStatus;
-import com.nori.tc.ui.core.deploy.DeployHistoryView;
 import com.nori.tc.ui.core.deploy.DeploySummarySnapshot;
 import com.nori.tc.ui.core.deploy.DeploySummaryView;
 import com.nori.tc.ui.core.deploy.DeployTargetCounts;
@@ -21,6 +24,7 @@ import com.nori.tc.ui.core.deploy.PersistedDeploy;
 import com.nori.tc.ui.core.deploy.PersistedDeployTarget;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
+import com.nori.tc.ui.core.exception.UiErrorCode;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
@@ -34,6 +38,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -88,7 +93,7 @@ public class DeployService {
     }
 
     /**
-     * deploy를 생성하고 background execution을 시작합니다.
+     * deploy를 생성하고 실행 대기 상태로 저장합니다.
      *
      * @param command deploy 입력
      * @param actor 요청 사용자
@@ -98,6 +103,7 @@ public class DeployService {
             final DeployPlanCommand command,
             final String actor
     ) {
+        rejectWhenActiveEqpConflict(resolveTargetEqpIds(command), null);
         final DeployPlanningResult planningResult = deployPlanner.plan(command);
         final String normalizedActor = commandAssembler.normalizeActor(actor);
         final PersistedDeploy persistedDeploy = deployStorePort.createDeploy(
@@ -112,6 +118,7 @@ public class DeployService {
             deployStorePort.updateDeployStatus(
                     persistedDeploy.deployKey(),
                     DeployStatus.COMPLETED,
+                    false,
                     null,
                     null
             );
@@ -136,23 +143,18 @@ public class DeployService {
 
         deployStorePort.updateDeployStatus(
                 persistedDeploy.deployKey(),
-                DeployStatus.RUNNING,
+                DeployStatus.READY,
+                false,
                 null,
                 null
         );
-        executableTargets.forEach(target -> targetExecutor.submit(() -> deployExecutor.executeTarget(
-                persistedDeploy.deployKey(),
-                planningResult.eventType(),
-                target,
-                normalizedActor
-        )));
         return new DeployCreateResult(
                 persistedDeploy.deployKey(),
-                DeployStatus.RUNNING,
-                "DEPLOY_ACCEPTED",
+                DeployStatus.READY,
+                "DEPLOY_CREATED",
                 new DeployResultMessage(
-                        "작업이 접수되었습니다.",
-                        "설비 " + persistedDeploy.targets().size() + "대에 대한 작업이 등록되었습니다.",
+                        "Deploy가 생성되었습니다.",
+                        "Deploy 탭에서 실행해 주세요.",
                         DeployResultSeverity.INFO
                 )
         );
@@ -180,6 +182,7 @@ public class DeployService {
                 snapshot.deployName(),
                 snapshot.eventType(),
                 snapshot.deployStatus(),
+                snapshot.pauseRequested(),
                 snapshot.executionPolicy(),
                 snapshot.createdAt(),
                 snapshot.startedAt(),
@@ -300,6 +303,7 @@ public class DeployService {
         deployStorePort.updateDeployStatus(
                 deployKey,
                 DeployStatus.CANCELED,
+                false,
                 "DEPLOY_CANCELED",
                 "사용자 취소 요청으로 작업이 중단되었습니다."
         );
@@ -315,6 +319,7 @@ public class DeployService {
         return new DeployActionResult(
                 deployKey,
                 DeployStatus.CANCELED,
+                false,
                 "DEPLOY_CANCELED",
                 new DeployResultMessage(
                         "Deploy가 취소되었습니다.",
@@ -347,7 +352,106 @@ public class DeployService {
     }
 
     /**
-     * terminal deploy 이력을 삭제합니다.
+     * READY deploy 를 실행 상태로 전이하고 target dispatch 를 시작합니다.
+     *
+     * @param deployKey deploy key
+     * @param actor 요청 사용자
+     * @return 실행 시작 결과
+     */
+    public DeployActionResult startDeploy(
+            final long deployKey,
+            final String actor
+    ) {
+        final DeploySummarySnapshot summary = requireDeploySummary(deployKey);
+        if (summary.deployStatus() != DeployStatus.READY) {
+            throw new UiConflictException("READY 상태의 Deploy만 실행할 수 있습니다. deployKey=" + deployKey);
+        }
+        if (summary.pauseRequested()) {
+            throw new UiConflictException("hold 요청이 남아 있는 Deploy는 실행할 수 없습니다. deployKey=" + deployKey);
+        }
+
+        final DeployExecutionPlan executionPlan = deployStorePort.findDeployExecutionPlan(deployKey)
+                .orElseThrow(() -> new UiNotFoundException("실행할 Deploy target 정보를 찾을 수 없습니다. deployKey=" + deployKey));
+        rejectWhenActiveEqpConflict(
+                executionPlan.targets().stream()
+                        .map(target -> target.target().planDraft().eqpId())
+                        .toList(),
+                deployKey
+        );
+        final List<DeployExecutionTarget> dispatchTargets = executionPlan.targets().stream()
+                .filter(target -> target.targetStatus() == com.nori.tc.ui.core.deploy.DeployTargetStatus.PENDING)
+                .filter(target -> !target.target().planDraft().noChange())
+                .toList();
+
+        deployStorePort.updateDeployStatus(
+                deployKey,
+                DeployStatus.RUNNING,
+                false,
+                null,
+                null
+        );
+        dispatchTargets.forEach(target -> targetExecutor.submit(() -> deployExecutor.executeTarget(
+                deployKey,
+                executionPlan.eventType(),
+                target,
+                commandAssembler.normalizeActor(actor)
+        )));
+
+        return new DeployActionResult(
+                deployKey,
+                DeployStatus.RUNNING,
+                false,
+                "DEPLOY_STARTED",
+                new DeployResultMessage(
+                        "Deploy가 시작되었습니다.",
+                        "선택한 Deploy 실행을 시작했습니다.",
+                        DeployResultSeverity.INFO
+                )
+        );
+    }
+
+    /**
+     * RUNNING deploy 에 safe hold 를 요청합니다.
+     *
+     * @param deployKey deploy key
+     * @param actor 요청 사용자
+     * @return hold 요청 결과
+     */
+    public DeployActionResult holdDeploy(
+            final long deployKey,
+            final String actor
+    ) {
+        final DeploySummarySnapshot summary = requireDeploySummary(deployKey);
+        if (summary.deployStatus() != DeployStatus.RUNNING) {
+            throw new UiConflictException("RUNNING 상태의 Deploy만 hold 할 수 있습니다. deployKey=" + deployKey);
+        }
+        if (summary.pauseRequested()) {
+            throw new UiConflictException("이미 hold 요청이 접수된 Deploy 입니다. deployKey=" + deployKey);
+        }
+
+        final String normalizedActor = commandAssembler.normalizeActor(actor);
+        deployStorePort.updatePauseRequested(deployKey, true);
+        log.info("Deploy hold 요청 접수. {}",
+                RuntimeLogSummary.kv(
+                        "deployKey", deployKey,
+                        "actor", normalizedActor
+                ));
+
+        return new DeployActionResult(
+                deployKey,
+                DeployStatus.RUNNING,
+                true,
+                "DEPLOY_HOLD_REQUESTED",
+                new DeployResultMessage(
+                        "Hold 요청이 접수되었습니다.",
+                        "현재 step 완료 후 Deploy가 대기 상태로 전환됩니다.",
+                        DeployResultSeverity.INFO
+                )
+        );
+    }
+
+    /**
+     * 실행 전 또는 종료된 deploy 항목을 삭제합니다.
      *
      * @param deployKey deploy key
      * @param actor 요청 사용자
@@ -358,8 +462,8 @@ public class DeployService {
             final String actor
     ) {
         final DeploySummarySnapshot summary = requireDeploySummary(deployKey);
-        if (!commandAssembler.isTerminal(summary.deployStatus())) {
-            throw new UiConflictException("종료된 Deploy 이력만 삭제할 수 있습니다. deployKey=" + deployKey);
+        if (!isDeletable(summary.deployStatus())) {
+            throw new UiConflictException("실행 전 또는 종료된 Deploy만 삭제할 수 있습니다. deployKey=" + deployKey);
         }
 
         final String normalizedActor = commandAssembler.normalizeActor(actor);
@@ -368,7 +472,7 @@ public class DeployService {
             throw new UiNotFoundException("삭제할 Deploy를 찾을 수 없습니다. deployKey=" + deployKey);
         }
 
-        log.info("Deploy 이력 삭제 완료. {}",
+        log.info("Deploy 삭제 완료. {}",
                 RuntimeLogSummary.kv(
                         "deployKey", deployKey,
                         "actor", normalizedActor
@@ -379,8 +483,8 @@ public class DeployService {
                 true,
                 "DEPLOY_DELETED",
                 new DeployResultMessage(
-                        "Deploy 이력이 삭제되었습니다.",
-                        "선택한 Deploy 이력을 목록에서 제거했습니다.",
+                        "Deploy가 삭제되었습니다.",
+                        "선택한 Deploy 항목을 목록에서 제거했습니다.",
                         DeployResultSeverity.INFO
                 )
         );
@@ -419,10 +523,40 @@ public class DeployService {
                 .orElseThrow(() -> new UiNotFoundException("deploy를 찾을 수 없습니다. deployKey=" + deployKey));
     }
 
+    private List<String> resolveTargetEqpIds(final DeployPlanCommand command) {
+        return command.targets().stream()
+                .map(DeployPlanCommand.TargetRequest::eqpId)
+                .toList();
+    }
+
+    private void rejectWhenActiveEqpConflict(
+            final Collection<String> eqpIds,
+            final Long excludedDeployKey
+    ) {
+        deployStorePort.findActiveEqpConflict(eqpIds, excludedDeployKey)
+                .ifPresent(this::throwActiveEqpConflict);
+    }
+
+    private void throwActiveEqpConflict(final DeployActiveEqpConflict conflict) {
+        throw new UiConflictException(
+                UiErrorCode.DEPLOY_ACTIVE_EQP_CONFLICT,
+                "이미 active Deploy에 포함된 설비입니다. eqpId=" + conflict.eqpId()
+                        + ", activeDeployKey=" + conflict.deployKey()
+                        + ", activeDeployStatus=" + conflict.deployStatus().name()
+        );
+    }
+
     private boolean isCancelable(final DeployStatus deployStatus) {
         return switch (deployStatus) {
             case PLANNING, READY, RUNNING -> true;
             case COMPLETED, PARTIAL_FAILED, FAILED, CANCELED -> false;
+        };
+    }
+
+    private boolean isDeletable(final DeployStatus deployStatus) {
+        return switch (deployStatus) {
+            case PLANNING, READY, COMPLETED, PARTIAL_FAILED, FAILED, CANCELED -> true;
+            case RUNNING -> false;
         };
     }
 }

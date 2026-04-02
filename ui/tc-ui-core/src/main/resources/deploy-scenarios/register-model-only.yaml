@@ -1,0 +1,53 @@
+version: 1
+
+scenario:
+  code: REGISTER_MODEL_ONLY
+  name: Model 변경
+  summary: Model 또는 Model Version 변경만 반영한다.
+
+appliesTo:
+  eventTypes:
+    - EQP_REGISTER_DEPLOY
+  deltaAll:
+    - MODEL_CHANGED
+
+steps:
+  - order: 10
+    code: RELOAD_BUSINESS_MODEL_RUNTIME
+    name: Business model runtime 재적재
+    targetApp: BUSINESS
+    description: model 변경이 있는 설비의 runtime 을 재준비한다.
+    when:
+      deltaAny:
+        - MODEL_CHANGED
+    run:
+      action: RELOAD_BUSINESS_MODEL_RUNTIME
+      timeoutMs: 15000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: AUTO_COMPENSATABLE
+      action: RESTORE_PREVIOUS_BUSINESS_RUNTIME
+
+  - order: 20
+    code: UPDATE_MODEL_BINDING
+    name: Business model binding 전환
+    targetApp: BUSINESS
+    description: 설비를 새 model runtime 으로 재바인딩한다.
+    when:
+      deltaAny:
+        - MODEL_CHANGED
+    run:
+      action: UPDATE_MODEL_BINDING
+      timeoutMs: 10000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: AUTO_COMPENSATABLE
+      action: RESTORE_PREVIOUS_MODEL_BINDING

@@ -8,6 +8,7 @@ public record DeploySummaryResponse(
         String deployName,
         String eventType,
         String deployStatus,
+        boolean pauseRequested,
         String executionPolicy,
         String createdAt,
         String startedAt,

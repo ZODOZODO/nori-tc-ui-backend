@@ -18,6 +18,9 @@ import com.nori.tc.ui.core.deploy.DeployTargetSnapshot;
 import com.nori.tc.ui.core.deploy.DeployTargetStatus;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
+import com.nori.tc.ui.core.exception.UiConflictException;
+import com.nori.tc.ui.core.exception.UiErrorCode;
+import com.nori.tc.ui.core.service.DeployPlanner;
 import com.nori.tc.ui.core.service.DeployRegisterQueryService;
 import com.nori.tc.ui.core.service.DeployScenarioCatalogService;
 import com.nori.tc.ui.core.service.DeployService;
@@ -47,6 +50,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class DeployControllerTest {
 
     private DeployService deployService;
+    private DeployPlanner deployPlanner;
     private DeployRegisterQueryService deployRegisterQueryService;
     private DeployScenarioCatalogService deployScenarioCatalogService;
     private MockMvc mockMvc;
@@ -54,11 +58,13 @@ class DeployControllerTest {
     @BeforeEach
     void setUp() {
         deployService = mock(DeployService.class);
+        deployPlanner = mock(DeployPlanner.class);
         deployRegisterQueryService = mock(DeployRegisterQueryService.class);
         deployScenarioCatalogService = mock(DeployScenarioCatalogService.class);
         mockMvc = MockMvcBuilders.standaloneSetup(
                         new DeployController(
                                 deployService,
+                                deployPlanner,
                                 deployRegisterQueryService,
                                 deployScenarioCatalogService,
                                 new ObjectMapper()
@@ -66,6 +72,68 @@ class DeployControllerTest {
                 )
                 .setControllerAdvice(new UiApiExceptionHandler())
                 .build();
+    }
+
+    @Test
+    void previewRegisterScenarioReturnsRecommendedCandidates() throws Exception {
+        when(deployPlanner.previewRegisterScenarioSelection(any()))
+                .thenReturn(new com.nori.tc.ui.core.deploy.DeployRegisterScenarioPreviewResult(
+                        List.of("PHOTO_003"),
+                        List.of("PHOTO_001", "PHOTO_002"),
+                        java.util.Set.of(
+                                com.nori.tc.ui.core.deploy.DeployDeltaKind.MODEL_CHANGED,
+                                com.nori.tc.ui.core.deploy.DeployDeltaKind.EQP_PARAM_CHANGED
+                        ),
+                        "REGISTER_MODEL_EQP_PARAM",
+                        "감지된 변경 조합과 정확히 일치합니다.",
+                        List.of(new com.nori.tc.ui.core.deploy.DeployRegisterScenarioPreviewResult.ScenarioCandidate(
+                                "REGISTER_MODEL_EQP_PARAM",
+                                "Model + Eqp Param 변경",
+                                "Model 변경과 설비 파라미터 버전 반영을 함께 수행한다.",
+                                1,
+                                3,
+                                java.util.Set.of(
+                                        com.nori.tc.ui.core.deploy.DeployDeltaKind.MODEL_CHANGED,
+                                        com.nori.tc.ui.core.deploy.DeployDeltaKind.EQP_PARAM_CHANGED
+                                ),
+                                true,
+                                true,
+                                "감지된 변경 조합과 정확히 일치합니다."
+                        ))
+                ));
+
+        mockMvc.perform(post("/api/deploys/register/scenario-preview")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "commonRequest": {
+                                    "interfaceType": "SOCKET",
+                                    "uiMessage": {
+                                      "modelInfo": {
+                                        "modelVersionKey": 1002
+                                      }
+                                    }
+                                  },
+                                  "targets": [
+                                    {
+                                      "eqpId": "PHOTO_001",
+                                      "uiMessageOverride": {
+                                        "eqpParams": {
+                                          "version": "EQP_PARAM_V2"
+                                        }
+                                      }
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.removedEqpIds[0]").value("PHOTO_003"))
+                .andExpect(jsonPath("$.data.recommendedScenarioCode").value("REGISTER_MODEL_EQP_PARAM"))
+                .andExpect(jsonPath("$.data.scenarios[0].recommended").value(true))
+                .andExpect(jsonPath("$.data.scenarios[0].code").value("REGISTER_MODEL_EQP_PARAM"));
+
+        verify(deployPlanner).previewRegisterScenarioSelection(any());
     }
 
     @Test
@@ -84,7 +152,12 @@ class DeployControllerTest {
                                 UiModelStatus.OPERATE,
                                 9001L,
                                 "photo-business-v2.jar",
-                                "p2.4.1"
+                                "p2.4.1",
+                                true,
+                                7001L,
+                                DeployStatus.RUNNING,
+                                "PHOTO Active Deploy",
+                                "ops-user"
                         )),
                         0,
                         50,
@@ -103,6 +176,11 @@ class DeployControllerTest {
                 .andExpect(jsonPath("$.data.items[0].commInterface").value("SOCKET"))
                 .andExpect(jsonPath("$.data.items[0].modelStatus").value("OPERATE"))
                 .andExpect(jsonPath("$.data.items[0].businessJarFileName").value("photo-business-v2.jar"))
+                .andExpect(jsonPath("$.data.items[0].blockedByActiveDeploy").value(true))
+                .andExpect(jsonPath("$.data.items[0].activeDeployKey").value(7001))
+                .andExpect(jsonPath("$.data.items[0].activeDeployStatus").value("RUNNING"))
+                .andExpect(jsonPath("$.data.items[0].activeDeployName").value("PHOTO Active Deploy"))
+                .andExpect(jsonPath("$.data.items[0].activeRequestedBy").value("ops-user"))
                 .andExpect(jsonPath("$.data.count").value(1));
 
         verify(deployRegisterQueryService).findRegisterTargets("PhotoCell-A", 2401L, "PHOTO", pageRequest);
@@ -126,6 +204,7 @@ class DeployControllerTest {
                         "PhotoCell-A v2.4 Deploy",
                         com.nori.tc.ui.core.model.UiCommandEventType.EQP_UPDATE,
                         DeployStatus.COMPLETED,
+                        false,
                         DeployExecutionPolicy.BEST_EFFORT,
                         "ops-user",
                         OffsetDateTime.parse("2026-03-30T08:00:00Z"),
@@ -188,6 +267,7 @@ class DeployControllerTest {
                         "PhotoCell-A v2.5 Deploy",
                         com.nori.tc.ui.core.model.UiCommandEventType.EQP_UPDATE,
                         DeployStatus.RUNNING,
+                        false,
                         DeployExecutionPolicy.BEST_EFFORT,
                         "ops-user",
                         OffsetDateTime.parse("2026-03-31T08:00:00Z"),
@@ -230,11 +310,11 @@ class DeployControllerTest {
         when(deployService.createDeploy(any(), anyString()))
                 .thenReturn(new DeployCreateResult(
                         1001L,
-                        DeployStatus.RUNNING,
-                        "DEPLOY_ACCEPTED",
+                        DeployStatus.READY,
+                        "DEPLOY_CREATED",
                         new DeployResultMessage(
-                                "작업이 접수되었습니다.",
-                                "설비 2대에 대한 작업이 등록되었습니다.",
+                                "Deploy가 생성되었습니다.",
+                                "Deploy 탭에서 실행해 주세요.",
                                 DeployResultSeverity.INFO
                         )
                 ));
@@ -264,10 +344,46 @@ class DeployControllerTest {
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.deployKey").value(1001))
-                .andExpect(jsonPath("$.data.deployStatus").value("RUNNING"))
-                .andExpect(jsonPath("$.data.resultCode").value("DEPLOY_ACCEPTED"))
+                .andExpect(jsonPath("$.data.deployStatus").value("READY"))
+                .andExpect(jsonPath("$.data.resultCode").value("DEPLOY_CREATED"))
                 .andExpect(jsonPath("$.data.polling.summaryUrl").value("/api/deploys/1001"))
                 .andExpect(jsonPath("$.data.polling.targetsUrl").value("/api/deploys/1001/targets"));
+    }
+
+    @Test
+    void createReturnsConflictResponseWhenEqpAlreadyActive() throws Exception {
+        when(deployService.createDeploy(any(), anyString()))
+                .thenThrow(new UiConflictException(
+                        UiErrorCode.DEPLOY_ACTIVE_EQP_CONFLICT,
+                        "이미 active Deploy에 포함된 설비입니다. eqpId=PHOTO_001, activeDeployKey=7001, activeDeployStatus=RUNNING"
+                ));
+
+        mockMvc.perform(post("/api/deploys")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "deployName": "PHOTO Update",
+                                  "eventType": "EQP_SEND_MESSAGE",
+                                  "executionPolicy": "BEST_EFFORT",
+                                  "commonRequest": {
+                                    "interfaceType": "SOCKET",
+                                    "uiMessage": {
+                                      "messageName": "EQP_CONDITION_CHECK",
+                                      "rawMessage": "CMD=CHECK"
+                                    }
+                                  },
+                                  "targets": [
+                                    {
+                                      "eqpId": "PHOTO_001",
+                                      "uiMessageOverride": {}
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("DEPLOY_ACTIVE_EQP_CONFLICT"))
+                .andExpect(jsonPath("$.errorMsg").value("이미 active Deploy에 포함된 설비입니다. eqpId=PHOTO_001, activeDeployKey=7001, activeDeployStatus=RUNNING"));
     }
 
     @Test
@@ -278,6 +394,7 @@ class DeployControllerTest {
                         "PHOTO Update",
                         com.nori.tc.ui.core.model.UiCommandEventType.EQP_UPDATE,
                         DeployStatus.RUNNING,
+                        true,
                         DeployExecutionPolicy.BEST_EFFORT,
                         OffsetDateTime.now(ZoneOffset.UTC),
                         OffsetDateTime.now(ZoneOffset.UTC),
@@ -299,6 +416,7 @@ class DeployControllerTest {
                 .andExpect(jsonPath("$.data.deployKey").value(1001))
                 .andExpect(jsonPath("$.data.eventType").value("EQP_UPDATE"))
                 .andExpect(jsonPath("$.data.deployStatus").value("RUNNING"))
+                .andExpect(jsonPath("$.data.pauseRequested").value(true))
                 .andExpect(jsonPath("$.data.targetSummary.total").value(10))
                 .andExpect(jsonPath("$.data.resultCode").value("DEPLOY_RUNNING"));
     }
@@ -309,6 +427,7 @@ class DeployControllerTest {
                 .thenReturn(new DeployActionResult(
                         1001L,
                         DeployStatus.CANCELED,
+                        false,
                         "DEPLOY_CANCELED",
                         new DeployResultMessage(
                                 "Deploy가 취소되었습니다.",
@@ -322,6 +441,7 @@ class DeployControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.deployKey").value(1001))
                 .andExpect(jsonPath("$.data.deployStatus").value("CANCELED"))
+                .andExpect(jsonPath("$.data.pauseRequested").value(false))
                 .andExpect(jsonPath("$.data.resultCode").value("DEPLOY_CANCELED"));
 
         verify(deployService).cancelDeploy(1001L, "SYSTEM");
@@ -332,11 +452,11 @@ class DeployControllerTest {
         when(deployService.redeploy(1001L, "SYSTEM"))
                 .thenReturn(new DeployCreateResult(
                         1101L,
-                        DeployStatus.RUNNING,
-                        "DEPLOY_ACCEPTED",
+                        DeployStatus.READY,
+                        "DEPLOY_CREATED",
                         new DeployResultMessage(
-                                "작업이 접수되었습니다.",
-                                "설비 1대에 대한 작업이 등록되었습니다.",
+                                "Deploy가 생성되었습니다.",
+                                "Deploy 탭에서 실행해 주세요.",
                                 DeployResultSeverity.INFO
                         )
                 ));
@@ -345,11 +465,63 @@ class DeployControllerTest {
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.deployKey").value(1101))
-                .andExpect(jsonPath("$.data.deployStatus").value("RUNNING"))
+                .andExpect(jsonPath("$.data.deployStatus").value("READY"))
                 .andExpect(jsonPath("$.data.polling.summaryUrl").value("/api/deploys/1101"))
                 .andExpect(jsonPath("$.data.polling.targetsUrl").value("/api/deploys/1101/targets"));
 
         verify(deployService).redeploy(1001L, "SYSTEM");
+    }
+
+    @Test
+    void startReturnsActionResponse() throws Exception {
+        when(deployService.startDeploy(1001L, "SYSTEM"))
+                .thenReturn(new DeployActionResult(
+                        1001L,
+                        DeployStatus.RUNNING,
+                        false,
+                        "DEPLOY_STARTED",
+                        new DeployResultMessage(
+                                "Deploy가 시작되었습니다.",
+                                "선택한 Deploy 실행을 시작했습니다.",
+                                DeployResultSeverity.INFO
+                        )
+                ));
+
+        mockMvc.perform(post("/api/deploys/1001/start"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.deployKey").value(1001))
+                .andExpect(jsonPath("$.data.deployStatus").value("RUNNING"))
+                .andExpect(jsonPath("$.data.pauseRequested").value(false))
+                .andExpect(jsonPath("$.data.resultCode").value("DEPLOY_STARTED"));
+
+        verify(deployService).startDeploy(1001L, "SYSTEM");
+    }
+
+    @Test
+    void holdReturnsActionResponse() throws Exception {
+        when(deployService.holdDeploy(1001L, "SYSTEM"))
+                .thenReturn(new DeployActionResult(
+                        1001L,
+                        DeployStatus.RUNNING,
+                        true,
+                        "DEPLOY_HOLD_REQUESTED",
+                        new DeployResultMessage(
+                                "Hold 요청이 접수되었습니다.",
+                                "현재 step 완료 후 Deploy가 대기 상태로 전환됩니다.",
+                                DeployResultSeverity.INFO
+                        )
+                ));
+
+        mockMvc.perform(post("/api/deploys/1001/hold"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.deployKey").value(1001))
+                .andExpect(jsonPath("$.data.deployStatus").value("RUNNING"))
+                .andExpect(jsonPath("$.data.pauseRequested").value(true))
+                .andExpect(jsonPath("$.data.resultCode").value("DEPLOY_HOLD_REQUESTED"));
+
+        verify(deployService).holdDeploy(1001L, "SYSTEM");
     }
 
     @Test

@@ -39,13 +39,15 @@ public record DeployPlanCommand(
 
     public record CommonRequest(
             String interfaceType,
-            JsonNode uiMessage
+            JsonNode uiMessage,
+            String resolvedScenarioCode
     ) {
         public CommonRequest {
             interfaceType = requireText("commonRequest.interfaceType", interfaceType);
             if (uiMessage == null || !uiMessage.isObject()) {
                 throw new IllegalArgumentException("commonRequest.uiMessage must be a JSON object");
             }
+            resolvedScenarioCode = normalizeOptionalText(resolvedScenarioCode);
         }
     }
 
@@ -64,6 +66,13 @@ public record DeployPlanCommand(
     private static String requireText(final String fieldName, final String value) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(fieldName + " must not be blank");
+        }
+        return value.trim();
+    }
+
+    private static String normalizeOptionalText(final String value) {
+        if (value == null || value.isBlank()) {
+            return null;
         }
         return value.trim();
     }

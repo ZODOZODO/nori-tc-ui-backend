@@ -1,5 +1,7 @@
 package com.nori.tc.ui.adapter.db;
 
+import tools.jackson.databind.ObjectMapper;
+import com.nori.tc.ui.core.deploy.DeployActiveEqpConflict;
 import com.nori.tc.ui.core.deploy.DeployRegisterTargetView;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
@@ -7,6 +9,7 @@ import com.nori.tc.ui.core.port.db.DeployRegisterQueryPort;
 import com.nori.tc.ui.domain.eqp.UiEqp;
 import com.nori.tc.ui.domain.jar.UiBusinessJar;
 import com.nori.tc.ui.domain.model.UiModel;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.util.Comparator;
@@ -23,9 +26,15 @@ import java.util.stream.Collectors;
 public class JpaDeployRegisterQueryPort implements DeployRegisterQueryPort {
 
     private final EqpManagementDbSupport dbSupport;
+    private final DeployJdbcStoreSupport deployStoreSupport;
 
-    public JpaDeployRegisterQueryPort(final EqpManagementDbSupport dbSupport) {
+    public JpaDeployRegisterQueryPort(
+            final EqpManagementDbSupport dbSupport,
+            final NamedParameterJdbcTemplate jdbcTemplate,
+            final ObjectMapper objectMapper
+    ) {
         this.dbSupport = Objects.requireNonNull(dbSupport, "dbSupport is null");
+        this.deployStoreSupport = new DeployJdbcStoreSupport(jdbcTemplate, objectMapper);
     }
 
     @Override
@@ -49,9 +58,26 @@ public class JpaDeployRegisterQueryPort implements DeployRegisterQueryPort {
                         Function.identity(),
                         (left, right) -> left
                 ));
+        final List<UiEqp> allEqps = dbSupport.loadAllEqps();
+        final Map<String, DeployActiveEqpConflict> activeConflictByEqpId = deployStoreSupport.findActiveEqpConflicts(
+                        allEqps.stream()
+                                .map(UiEqp::eqpId)
+                                .toList(),
+                        null
+                ).stream()
+                .collect(Collectors.toMap(
+                        DeployActiveEqpConflict::eqpId,
+                        Function.identity(),
+                        (left, right) -> left
+                ));
 
-        final List<DeployRegisterTargetView> filteredItems = dbSupport.loadAllEqps().stream()
-                .map(eqp -> toView(eqp, modelByVersionKey.get(eqp.modelVersionKey()), businessJarByKey.get(eqp.businessJarKey())))
+        final List<DeployRegisterTargetView> filteredItems = allEqps.stream()
+                .map(eqp -> toView(
+                        eqp,
+                        modelByVersionKey.get(eqp.modelVersionKey()),
+                        businessJarByKey.get(eqp.businessJarKey()),
+                        activeConflictByEqpId.get(eqp.eqpId())
+                ))
                 .filter(item -> matchesModelName(item, modelName))
                 .filter(item -> matchesModelVersionKey(item, modelVersionKey))
                 .filter(item -> matchesEqpId(item, eqpId))
@@ -77,7 +103,8 @@ public class JpaDeployRegisterQueryPort implements DeployRegisterQueryPort {
     private DeployRegisterTargetView toView(
             final UiEqp eqp,
             final UiModel model,
-            final UiBusinessJar businessJar
+            final UiBusinessJar businessJar,
+            final DeployActiveEqpConflict activeConflict
     ) {
         return new DeployRegisterTargetView(
                 eqp.eqpKey(),
@@ -90,7 +117,12 @@ public class JpaDeployRegisterQueryPort implements DeployRegisterQueryPort {
                 model == null ? null : model.status(),
                 eqp.businessJarKey(),
                 businessJar == null ? null : businessJar.jarFileName(),
-                eqp.appliedParamVersion()
+                eqp.appliedParamVersion(),
+                activeConflict != null,
+                activeConflict == null ? null : activeConflict.deployKey(),
+                activeConflict == null ? null : activeConflict.deployStatus(),
+                activeConflict == null ? null : activeConflict.deployName(),
+                activeConflict == null ? null : activeConflict.requestedBy()
         );
     }
 

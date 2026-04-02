@@ -8,6 +8,7 @@ import java.util.Objects;
 public record DeployActionResult(
         long deployKey,
         DeployStatus deployStatus,
+        Boolean pauseRequested,
         String resultCode,
         DeployResultMessage resultMessage
 ) {

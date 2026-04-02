@@ -3,11 +3,12 @@ package com.nori.tc.ui.adapters.redis.registry;
 import com.nori.tc.ui.core.service.DeployTraceRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.connection.Message;
 import org.springframework.data.redis.connection.MessageListener;
+import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.stereotype.Component;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 /**
@@ -19,10 +20,16 @@ public class DeployTracePubSubListener implements MessageListener {
     private static final Logger log = LoggerFactory.getLogger(DeployTracePubSubListener.class);
 
     private final DeployTraceRegistry deployTraceRegistry;
+    private final RedisSerializer<Object> valueSerializer;
 
-    public DeployTracePubSubListener(final DeployTraceRegistry deployTraceRegistry) {
+    public DeployTracePubSubListener(
+            final DeployTraceRegistry deployTraceRegistry,
+            @Qualifier("uiRedisValueSerializer") final RedisSerializer<Object> valueSerializer
+    ) {
         this.deployTraceRegistry = Objects.requireNonNull(deployTraceRegistry,
                 "deployTraceRegistry is null");
+        this.valueSerializer = Objects.requireNonNull(valueSerializer,
+                "valueSerializer is null");
     }
 
     @Override
@@ -32,7 +39,7 @@ public class DeployTracePubSubListener implements MessageListener {
             return;
         }
 
-        final String traceId = new String(message.getBody(), StandardCharsets.UTF_8).trim();
+        final String traceId = RedisPubSubTextPayloadSupport.readTextPayload(message, valueSerializer);
         if (traceId.isEmpty()) {
             log.warn("Deploy trace Pub/Sub traceId 공백 메시지 수신 - 무시");
             return;

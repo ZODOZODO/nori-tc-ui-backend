@@ -120,6 +120,42 @@ public class JpaGroupCrudPort implements GroupCrudPort {
     }
 
     /**
+     * 그룹 코드 기준 단건을 조회합니다.
+     *
+     * @param groupCode 그룹 코드
+     * @return 조회 결과(없으면 빈 Optional)
+     */
+    @Override
+    public Optional<UiUserGroup> findByGroupCode(final String groupCode) {
+        final String normalizedGroupCode = groupCode == null ? null : groupCode.trim();
+        if (normalizedGroupCode == null || normalizedGroupCode.isEmpty()) {
+            log.warn("그룹 코드 조회 요청 거부 - groupCode는 비어 있을 수 없습니다.");
+            throw new UiBadRequestException("groupCode는 비어 있을 수 없습니다.");
+        }
+
+        if (log.isDebugEnabled()) {
+            log.debug("그룹 코드 조회 시작. groupCode={}", normalizedGroupCode);
+        }
+
+        try {
+            final Optional<UiUserGroup> result = userGroupStore.findByGroupCode(normalizedGroupCode)
+                    .map(UiUserAdminDbMapper::toDomain);
+            if (log.isDebugEnabled()) {
+                log.debug("그룹 코드 조회 완료. groupCode={}, found={}", normalizedGroupCode, result.isPresent());
+            }
+            return result;
+        } catch (RuntimeException e) {
+            if (UiDbAdapterExceptionSupport.isBadRequest(e)) {
+                log.warn("그룹 코드 조회 요청 거부 - 잘못된 입력. groupCode={}, reason={}",
+                        normalizedGroupCode, UiDbAdapterExceptionSupport.resolveMessage(e, "invalid groupCode"));
+                throw new UiBadRequestException("그룹 코드 조회 입력이 올바르지 않습니다.", e);
+            }
+            log.error("그룹 코드 조회 실패. groupCode={}", normalizedGroupCode, e);
+            throw e;
+        }
+    }
+
+    /**
      * 그룹 목록을 페이지 단위로 조회합니다.
      *
      * @param pageRequest offset/limit 요청(없으면 기본 페이지 사용)

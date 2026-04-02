@@ -1,0 +1,33 @@
+version: 1
+
+scenario:
+  code: REGISTER_EQP_PARAM_ONLY
+  name: Eqp Param 변경
+  summary: 설비 파라미터 버전만 반영한다.
+
+appliesTo:
+  eventTypes:
+    - EQP_REGISTER_DEPLOY
+  deltaAll:
+    - EQP_PARAM_CHANGED
+
+steps:
+  - order: 10
+    code: UPDATE_EQP_PARAM
+    name: Eqp parameter 반영
+    targetApp: BUSINESS
+    description: 설비별 parameter snapshot 을 최신 버전으로 반영한다.
+    when:
+      deltaAny:
+        - EQP_PARAM_CHANGED
+    run:
+      action: UPDATE_EQP_PARAM
+      timeoutMs: 10000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: CONDITIONAL_COMPENSATABLE
+      action: RESTORE_PREVIOUS_EQP_PARAM

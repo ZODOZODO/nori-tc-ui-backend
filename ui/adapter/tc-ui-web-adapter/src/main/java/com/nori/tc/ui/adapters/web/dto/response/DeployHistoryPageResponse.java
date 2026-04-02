@@ -20,6 +20,7 @@ public record DeployHistoryPageResponse(
             String deployName,
             String eventType,
             String deployStatus,
+            boolean pauseRequested,
             String executionPolicy,
             String requestedBy,
             String createdAt,

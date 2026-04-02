@@ -7,6 +7,7 @@ import com.nori.tc.ui.core.deploy.DeployDeltaKind;
 import com.nori.tc.ui.core.deploy.DeployExecutionPolicy;
 import com.nori.tc.ui.core.deploy.DeployPlanCommand;
 import com.nori.tc.ui.core.deploy.DeployPlanningResult;
+import com.nori.tc.ui.core.deploy.DeployRegisterScenarioPreviewCommand;
 import com.nori.tc.ui.core.deploy.DeployScenarioCatalogMeta;
 import com.nori.tc.ui.core.port.db.DeployScenarioCatalogMetaPort;
 import com.nori.tc.ui.core.properties.UiDeployProperties;
@@ -71,7 +72,7 @@ class DeployPlanningServiceTest {
                 "PHOTO Update",
                 UiCommandEventType.EQP_UPDATE,
                 DeployExecutionPolicy.BEST_EFFORT,
-                new DeployPlanCommand.CommonRequest("SOCKET", updateUiMessage()),
+                new DeployPlanCommand.CommonRequest("SOCKET", updateUiMessage(), null),
                 List.of(new DeployPlanCommand.TargetRequest("PHOTO_001", objectMapper.createObjectNode()))
         );
 
@@ -102,7 +103,7 @@ class DeployPlanningServiceTest {
                 "PHOTO Update No Change",
                 UiCommandEventType.EQP_UPDATE,
                 DeployExecutionPolicy.BEST_EFFORT,
-                new DeployPlanCommand.CommonRequest("SOCKET", noChangeUiMessage()),
+                new DeployPlanCommand.CommonRequest("SOCKET", noChangeUiMessage(), null),
                 List.of(new DeployPlanCommand.TargetRequest("PHOTO_001", objectMapper.createObjectNode()))
         );
 
@@ -113,6 +114,58 @@ class DeployPlanningServiceTest {
         assertEquals(Set.of(DeployDeltaKind.NO_CHANGE), target.deltaKinds());
         assertTrue(target.resolvedSteps().isEmpty());
         assertEquals("EQP_UPDATE_GENERIC", target.resolvedScenarioCode());
+    }
+
+    @Test
+    void previewRegisterScenarioRemovesNoChangeTargetAndRecommendsExactScenario() {
+        final var preview = deployPlanningService.previewRegisterScenarioSelection(
+                new DeployRegisterScenarioPreviewCommand(
+                        "SOCKET",
+                        objectMapper.createObjectNode(),
+                        List.of(
+                                new DeployRegisterScenarioPreviewCommand.TargetRequest(
+                                        "PHOTO_001",
+                                        registerEqpParamUiMessage("EQP_PARAM_V2")
+                                ),
+                                new DeployRegisterScenarioPreviewCommand.TargetRequest(
+                                        "PHOTO_002",
+                                        objectMapper.createObjectNode()
+                                )
+                        )
+                )
+        );
+
+        assertEquals(List.of("PHOTO_002"), preview.removedEqpIds());
+        assertEquals(List.of("PHOTO_001"), preview.remainingEqpIds());
+        assertEquals(Set.of(DeployDeltaKind.EQP_PARAM_CHANGED), preview.unionChangeKinds());
+        assertEquals("REGISTER_EQP_PARAM_ONLY", preview.recommendedScenarioCode());
+        assertTrue(preview.scenarios().stream().anyMatch(candidate ->
+                candidate.code().equals("REGISTER_EQP_PARAM_ONLY") && candidate.recommended()));
+    }
+
+    @Test
+    void planRegisterDeployUsesSelectedScenarioAndFiltersTargetStepsByDelta() {
+        final DeployPlanCommand command = new DeployPlanCommand(
+                "Register Deploy",
+                UiCommandEventType.EQP_REGISTER_DEPLOY,
+                DeployExecutionPolicy.BEST_EFFORT,
+                new DeployPlanCommand.CommonRequest(
+                        "SOCKET",
+                        registerModelUiMessage(),
+                        "REGISTER_MODEL_EQP_PARAM"
+                ),
+                List.of(new DeployPlanCommand.TargetRequest("PHOTO_001", objectMapper.createObjectNode()))
+        );
+
+        final DeployPlanningResult result = deployPlanningService.plan(command);
+        final var target = result.targets().getFirst();
+
+        assertEquals("REGISTER_MODEL_EQP_PARAM", target.resolvedScenarioCode());
+        assertEquals(Set.of(DeployDeltaKind.MODEL_CHANGED), target.deltaKinds());
+        assertIterableEquals(
+                List.of("RELOAD_BUSINESS_MODEL_RUNTIME", "UPDATE_MODEL_BINDING"),
+                target.resolvedSteps().stream().map(step -> step.code()).toList()
+        );
     }
 
     private ObjectNode updateUiMessage() {
@@ -168,6 +221,20 @@ class DeployPlanningServiceTest {
                 .put("jarFileName", "gateway.jar")
                 .put("expectedSha256", "def")
                 .put("sourceType", "DB");
+        return root;
+    }
+
+    private ObjectNode registerModelUiMessage() {
+        final ObjectNode root = objectMapper.createObjectNode();
+        root.putObject("modelInfo")
+                .put("modelVersionKey", 1002L);
+        return root;
+    }
+
+    private ObjectNode registerEqpParamUiMessage(final String version) {
+        final ObjectNode root = objectMapper.createObjectNode();
+        root.putObject("eqpParams")
+                .put("version", version);
         return root;
     }
 

@@ -4,10 +4,12 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import com.nori.tc.ui.adapters.web.controller.support.UiPageRequestSupport;
 import com.nori.tc.ui.adapters.web.dto.request.DeployCreateRequest;
+import com.nori.tc.ui.adapters.web.dto.request.DeployRegisterScenarioPreviewRequest;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.adapters.web.dto.response.DeployActionResponse;
 import com.nori.tc.ui.adapters.web.dto.response.DeployCreateResponse;
 import com.nori.tc.ui.adapters.web.dto.response.DeployHistoryPageResponse;
+import com.nori.tc.ui.adapters.web.dto.response.DeployRegisterScenarioPreviewResponse;
 import com.nori.tc.ui.adapters.web.dto.response.DeployRegisterTargetPageResponse;
 import com.nori.tc.ui.adapters.web.dto.response.DeployResultMessageResponse;
 import com.nori.tc.ui.adapters.web.dto.response.DeployScenarioCatalogResponse;
@@ -21,12 +23,15 @@ import com.nori.tc.ui.core.deploy.DeployHistoryView;
 import com.nori.tc.ui.core.deploy.DeployPlanCommand;
 import com.nori.tc.ui.core.deploy.DeployResultMessage;
 import com.nori.tc.ui.core.deploy.DeployScenarioDefinition;
+import com.nori.tc.ui.core.deploy.DeployRegisterScenarioPreviewCommand;
+import com.nori.tc.ui.core.deploy.DeployRegisterScenarioPreviewResult;
 import com.nori.tc.ui.core.deploy.DeploySummaryView;
 import com.nori.tc.ui.core.deploy.DeployTargetCounts;
 import com.nori.tc.ui.core.deploy.DeployTargetPage;
 import com.nori.tc.ui.core.deploy.DeployRegisterTargetView;
 import com.nori.tc.ui.core.deploy.DeployTargetSnapshot;
 import com.nori.tc.ui.core.deploy.DeployScenarioCatalog;
+import com.nori.tc.ui.core.service.DeployPlanner;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiCommandEventType;
@@ -65,17 +70,20 @@ public class DeployController {
     private static final String DEFAULT_ACTOR = "SYSTEM";
 
     private final DeployService deployService;
+    private final DeployPlanner deployPlanner;
     private final DeployRegisterQueryService deployRegisterQueryService;
     private final DeployScenarioCatalogService deployScenarioCatalogService;
     private final ObjectMapper objectMapper;
 
     public DeployController(
             final DeployService deployService,
+            final DeployPlanner deployPlanner,
             final DeployRegisterQueryService deployRegisterQueryService,
             final DeployScenarioCatalogService deployScenarioCatalogService,
             final ObjectMapper objectMapper
     ) {
         this.deployService = Objects.requireNonNull(deployService, "deployService is null");
+        this.deployPlanner = Objects.requireNonNull(deployPlanner, "deployPlanner is null");
         this.deployRegisterQueryService = Objects.requireNonNull(
                 deployRegisterQueryService,
                 "deployRegisterQueryService is null"
@@ -158,7 +166,7 @@ public class DeployController {
     }
 
     /**
-     * deploy를 생성하고 background execution을 시작합니다.
+     * deploy를 생성하고 실행 대기 상태로 반환합니다.
      *
      * @param request 생성 요청
      * @param authentication 현재 인증 정보
@@ -185,6 +193,22 @@ public class DeployController {
                 result.resultCode(),
                 toResultMessage(result.resultMessage())
         )));
+    }
+
+    /**
+     * Register deploy 시나리오 preview 를 계산합니다.
+     *
+     * @param request preview 요청
+     * @return 권장 시나리오와 선택 가능 목록
+     */
+    @PostMapping("/register/scenario-preview")
+    public ResponseEntity<ApiResponse<DeployRegisterScenarioPreviewResponse>> previewRegisterScenario(
+            @Valid @RequestBody final DeployRegisterScenarioPreviewRequest request
+    ) {
+        final DeployRegisterScenarioPreviewResult result = deployPlanner.previewRegisterScenarioSelection(
+                toPreviewCommand(request)
+        );
+        return ResponseEntity.ok(ApiResponse.success(toRegisterScenarioPreviewResponse(result)));
     }
 
     /**
@@ -232,6 +256,7 @@ public class DeployController {
         return ResponseEntity.ok(ApiResponse.success(new DeployActionResponse(
                 result.deployKey(),
                 result.deployStatus().name(),
+                result.pauseRequested(),
                 null,
                 result.resultCode(),
                 toResultMessage(result.resultMessage())
@@ -239,7 +264,53 @@ public class DeployController {
     }
 
     /**
-     * 종료된 deploy 를 기준으로 새 deploy 를 다시 생성합니다.
+     * READY deploy 를 실행합니다.
+     *
+     * @param deployKey deploy key
+     * @param authentication 현재 인증 정보
+     * @return 실행 시작 결과 응답
+     */
+    @PostMapping("/{deployKey}/start")
+    public ResponseEntity<ApiResponse<DeployActionResponse>> start(
+            @PathVariable final long deployKey,
+            final Authentication authentication
+    ) {
+        final DeployActionResult result = deployService.startDeploy(deployKey, resolveActor(authentication));
+        return ResponseEntity.ok(ApiResponse.success(new DeployActionResponse(
+                result.deployKey(),
+                result.deployStatus().name(),
+                result.pauseRequested(),
+                null,
+                result.resultCode(),
+                toResultMessage(result.resultMessage())
+        )));
+    }
+
+    /**
+     * RUNNING deploy 에 safe hold 를 요청합니다.
+     *
+     * @param deployKey deploy key
+     * @param authentication 현재 인증 정보
+     * @return hold 요청 결과 응답
+     */
+    @PostMapping("/{deployKey}/hold")
+    public ResponseEntity<ApiResponse<DeployActionResponse>> hold(
+            @PathVariable final long deployKey,
+            final Authentication authentication
+    ) {
+        final DeployActionResult result = deployService.holdDeploy(deployKey, resolveActor(authentication));
+        return ResponseEntity.ok(ApiResponse.success(new DeployActionResponse(
+                result.deployKey(),
+                result.deployStatus().name(),
+                result.pauseRequested(),
+                null,
+                result.resultCode(),
+                toResultMessage(result.resultMessage())
+        )));
+    }
+
+    /**
+     * 종료된 deploy 를 기준으로 새 대기 deploy 를 다시 생성합니다.
      *
      * @param deployKey 원본 deploy key
      * @param authentication 현재 인증 정보
@@ -279,6 +350,7 @@ public class DeployController {
         final DeployDeleteResult result = deployService.deleteDeploy(deployKey, resolveActor(authentication));
         return ResponseEntity.ok(ApiResponse.success(new DeployActionResponse(
                 result.deployKey(),
+                null,
                 null,
                 result.deleted(),
                 result.resultCode(),
@@ -336,7 +408,8 @@ public class DeployController {
                     DeployExecutionPolicy.fromText(request.executionPolicy()),
                     new DeployPlanCommand.CommonRequest(
                             request.commonRequest().interfaceType(),
-                            toJsonObject(request.commonRequest().uiMessage(), "commonRequest.uiMessage")
+                            toJsonObject(request.commonRequest().uiMessage(), "commonRequest.uiMessage"),
+                            request.commonRequest().resolvedScenarioCode()
                     ),
                     request.targets().stream()
                             .map(target -> new DeployPlanCommand.TargetRequest(
@@ -350,12 +423,57 @@ public class DeployController {
         }
     }
 
+    private DeployRegisterScenarioPreviewCommand toPreviewCommand(
+            final DeployRegisterScenarioPreviewRequest request
+    ) {
+        try {
+            return new DeployRegisterScenarioPreviewCommand(
+                    request.commonRequest().interfaceType(),
+                    toJsonObject(request.commonRequest().uiMessage(), "commonRequest.uiMessage"),
+                    request.targets().stream()
+                            .map(target -> new DeployRegisterScenarioPreviewCommand.TargetRequest(
+                                    target.eqpId(),
+                                    toJsonObject(target.uiMessageOverride(), "targets[].uiMessageOverride")
+                            ))
+                            .toList()
+            );
+        } catch (IllegalArgumentException exception) {
+            throw new UiBadRequestException(exception.getMessage());
+        }
+    }
+
+    private DeployRegisterScenarioPreviewResponse toRegisterScenarioPreviewResponse(
+            final DeployRegisterScenarioPreviewResult result
+    ) {
+        return new DeployRegisterScenarioPreviewResponse(
+                result.removedEqpIds(),
+                result.remainingEqpIds(),
+                result.unionChangeKinds().stream().map(Enum::name).sorted().toList(),
+                result.recommendedScenarioCode(),
+                result.recommendedReason(),
+                result.scenarios().stream()
+                        .map(candidate -> new DeployRegisterScenarioPreviewResponse.ScenarioCandidate(
+                                candidate.code(),
+                                candidate.name(),
+                                candidate.summary(),
+                                candidate.version(),
+                                candidate.stepCount(),
+                                candidate.coversChangeKinds().stream().map(Enum::name).sorted().toList(),
+                                candidate.recommended(),
+                                candidate.selectable(),
+                                candidate.reason()
+                        ))
+                        .toList()
+        );
+    }
+
     private DeploySummaryResponse toSummaryResponse(final DeploySummaryView summary) {
         return new DeploySummaryResponse(
                 summary.deployKey(),
                 summary.deployName(),
                 summary.eventType().name(),
                 summary.deployStatus().name(),
+                summary.pauseRequested(),
                 summary.executionPolicy().name(),
                 toIso(summary.createdAt()),
                 toIso(summary.startedAt()),
@@ -451,7 +569,12 @@ public class DeployController {
                 item.modelStatus(),
                 item.businessJarRef(),
                 item.businessJarFileName(),
-                item.appliedParamVersion()
+                item.appliedParamVersion(),
+                item.blockedByActiveDeploy(),
+                item.activeDeployKey(),
+                item.activeDeployStatus(),
+                item.activeDeployName(),
+                item.activeRequestedBy()
         );
     }
 
@@ -461,6 +584,7 @@ public class DeployController {
                 item.deployName(),
                 item.eventType().name(),
                 item.deployStatus().name(),
+                item.pauseRequested(),
                 item.executionPolicy().name(),
                 item.requestedBy(),
                 toIso(item.createdAt()),

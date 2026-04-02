@@ -80,7 +80,22 @@ final class DeployServiceCommandSupport {
         }
 
         final DeployTargetCounts counts = deployStorePort.summarizeTargets(deployKey);
-        if (counts.hasActiveTarget()) {
+        if (counts.running() > 0 || counts.rollingBack() > 0) {
+            return;
+        }
+
+        if (currentSummary.pauseRequested() && counts.pending() > 0) {
+            deployStorePort.updateDeployStatus(
+                    deployKey,
+                    DeployStatus.READY,
+                    false,
+                    normalizeOptionalText(lastErrorCode),
+                    normalizeOptionalText(lastErrorMessage)
+            );
+            return;
+        }
+
+        if (counts.pending() > 0) {
             return;
         }
 
@@ -96,6 +111,7 @@ final class DeployServiceCommandSupport {
         deployStorePort.updateDeployStatus(
                 deployKey,
                 deployStatus,
+                false,
                 normalizeOptionalText(lastErrorCode),
                 normalizeOptionalText(lastErrorMessage)
         );
@@ -364,7 +380,10 @@ final class DeployServiceCommandSupport {
                  RELOAD_BUSINESS_MODEL_RUNTIME,
                  UPDATE_MODEL_BINDING -> switch (deployEventType) {
                 case EQP_CREATE -> UiCommandEventType.EQP_CREATE;
-                case EQP_UPDATE, EQP_GATEWAY_JARFILE_UPDATE, EQP_BUSINESS_JARFILE_UPDATE -> UiCommandEventType.EQP_UPDATE;
+                case EQP_UPDATE,
+                     EQP_GATEWAY_JARFILE_UPDATE,
+                     EQP_BUSINESS_JARFILE_UPDATE,
+                     EQP_REGISTER_DEPLOY -> UiCommandEventType.EQP_UPDATE;
                 default -> UiCommandEventType.EQP_UPDATE;
             };
             case RESTORE_PREVIOUS_MODEL_BINDING,

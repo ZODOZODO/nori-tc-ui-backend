@@ -12,6 +12,7 @@ public record DeployHistoryView(
         String deployName,
         UiCommandEventType eventType,
         DeployStatus deployStatus,
+        boolean pauseRequested,
         DeployExecutionPolicy executionPolicy,
         String requestedBy,
         OffsetDateTime createdAt,

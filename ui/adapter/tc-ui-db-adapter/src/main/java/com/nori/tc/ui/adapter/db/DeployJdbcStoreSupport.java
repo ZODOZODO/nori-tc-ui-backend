@@ -3,6 +3,7 @@ package com.nori.tc.ui.adapter.db;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
+import com.nori.tc.ui.core.deploy.DeployActiveEqpConflict;
 import com.nori.tc.ui.core.deploy.DeployExecutionPolicy;
 import com.nori.tc.ui.core.deploy.DeployHistoryView;
 import com.nori.tc.ui.core.deploy.DeployPlanCommand;
@@ -20,6 +21,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 
@@ -40,7 +42,8 @@ final class DeployJdbcStoreSupport {
             "EQP_RECONNECT",
             "EQP_PARAMETER_UPDATE",
             "EQP_GATEWAY_JARFILE_UPDATE",
-            "EQP_BUSINESS_JARFILE_UPDATE"
+            "EQP_BUSINESS_JARFILE_UPDATE",
+            "EQP_REGISTER_DEPLOY"
     );
     private static final List<String> ALLOWED_EXECUTION_POLICIES = List.of(
             "BEST_EFFORT",
@@ -69,6 +72,9 @@ final class DeployJdbcStoreSupport {
         final ObjectNode desiredCommonState = objectMapper.createObjectNode();
         desiredCommonState.put("interfaceType", command.commonRequest().interfaceType());
         desiredCommonState.set("uiMessage", command.commonRequest().uiMessage().deepCopy());
+        if (command.commonRequest().resolvedScenarioCode() != null) {
+            desiredCommonState.put("resolvedScenarioCode", command.commonRequest().resolvedScenarioCode());
+        }
 
         final MapSqlParameterSource parameters = new MapSqlParameterSource()
                 .addValue("deployName", command.deployName())
@@ -215,6 +221,64 @@ final class DeployJdbcStoreSupport {
         );
     }
 
+    List<DeployActiveEqpConflict> findActiveEqpConflicts(
+            final Collection<String> eqpIds,
+            final Long excludedDeployKey
+    ) {
+        final List<String> normalizedEqpIds = eqpIds == null
+                ? List.of()
+                : eqpIds.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(value -> !value.isEmpty())
+                .distinct()
+                .toList();
+        if (normalizedEqpIds.isEmpty()) {
+            return List.of();
+        }
+
+        final MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("eqpIds", normalizedEqpIds);
+        final StringBuilder sql = new StringBuilder("""
+                        SELECT DISTINCT ON (p.eqp_id)
+                               p.eqp_id,
+                               d.deploy_key,
+                               d.deploy_status,
+                               d.deploy_name,
+                               d.created_by AS requested_by
+                          FROM tc_deploy_target_plan p
+                          JOIN tc_deploy d
+                            ON d.deploy_key = p.deploy_key
+                         WHERE p.eqp_id IN (:eqpIds)
+                           AND d.deploy_status IN ('READY', 'RUNNING')
+                        """);
+        if (excludedDeployKey != null) {
+            sql.append("""
+                           AND d.deploy_key <> :excludedDeployKey
+                        """);
+            parameters.addValue("excludedDeployKey", excludedDeployKey);
+        }
+        sql.append("""
+                         ORDER BY p.eqp_id ASC,
+                                  CASE d.deploy_status
+                                      WHEN 'RUNNING' THEN 0
+                                      ELSE 1
+                                  END,
+                                  d.deploy_key ASC
+                        """);
+
+        return jdbcTemplate.query(sql.toString(),
+                parameters,
+                (resultSet, rowNum) -> new DeployActiveEqpConflict(
+                        resultSet.getString("eqp_id"),
+                        resultSet.getLong("deploy_key"),
+                        DeployStatus.valueOf(resultSet.getString("deploy_status")),
+                        resultSet.getString("deploy_name"),
+                        resultSet.getString("requested_by")
+                )
+        );
+    }
+
     void appendTargetFilters(
             final StringBuilder sql,
             final MapSqlParameterSource parameters,
@@ -308,6 +372,7 @@ final class DeployJdbcStoreSupport {
                 resultSet.getString("deploy_name"),
                 UiCommandEventType.fromText(resultSet.getString("event_type")),
                 DeployStatus.valueOf(resultSet.getString("deploy_status")),
+                resultSet.getBoolean("pause_requested"),
                 DeployExecutionPolicy.fromText(resultSet.getString("execution_policy")),
                 resultSet.getObject("created_at", OffsetDateTime.class),
                 resultSet.getObject("started_at", OffsetDateTime.class),
@@ -325,6 +390,7 @@ final class DeployJdbcStoreSupport {
                 resultSet.getString("deploy_name"),
                 UiCommandEventType.fromText(resultSet.getString("event_type")),
                 deployStatus,
+                resultSet.getBoolean("pause_requested"),
                 DeployExecutionPolicy.fromText(resultSet.getString("execution_policy")),
                 normalizeActor(resultSet.getString("created_by")),
                 resultSet.getObject("created_at", OffsetDateTime.class),

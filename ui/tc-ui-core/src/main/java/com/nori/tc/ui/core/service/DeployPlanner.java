@@ -2,6 +2,8 @@ package com.nori.tc.ui.core.service;
 
 import com.nori.tc.ui.core.deploy.DeployPlanCommand;
 import com.nori.tc.ui.core.deploy.DeployPlanningResult;
+import com.nori.tc.ui.core.deploy.DeployRegisterScenarioPreviewCommand;
+import com.nori.tc.ui.core.deploy.DeployRegisterScenarioPreviewResult;
 import org.springframework.stereotype.Service;
 
 import java.util.Objects;
@@ -20,5 +22,11 @@ public class DeployPlanner {
 
     public DeployPlanningResult plan(final DeployPlanCommand command) {
         return deployPlanningService.plan(command);
+    }
+
+    public DeployRegisterScenarioPreviewResult previewRegisterScenarioSelection(
+            final DeployRegisterScenarioPreviewCommand command
+    ) {
+        return deployPlanningService.previewRegisterScenarioSelection(command);
     }
 }

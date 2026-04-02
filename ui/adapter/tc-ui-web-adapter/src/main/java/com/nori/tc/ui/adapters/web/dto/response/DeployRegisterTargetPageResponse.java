@@ -1,5 +1,6 @@
 package com.nori.tc.ui.adapters.web.dto.response;
 
+import com.nori.tc.ui.core.deploy.DeployStatus;
 import com.nori.tc.ui.domain.common.model.UiModelStatus;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
 
@@ -29,7 +30,12 @@ public record DeployRegisterTargetPageResponse(
             UiModelStatus modelStatus,
             Long businessJarRef,
             String businessJarFileName,
-            String appliedParamVersion
+            String appliedParamVersion,
+            boolean blockedByActiveDeploy,
+            Long activeDeployKey,
+            DeployStatus activeDeployStatus,
+            String activeDeployName,
+            String activeRequestedBy
     ) {
     }
 }

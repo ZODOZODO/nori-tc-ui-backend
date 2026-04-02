@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * 활성 API 권한 목록을 메모리에 캐시하는 컴포넌트입니다.
@@ -28,6 +29,7 @@ import java.util.Objects;
  *   <li>요청 URI에 매칭되는 API 권한이 있는 경우 → 사용자가 해당 permCode 보유 시 허용</li>
  *   <li>matchType=PREFIX → requestUri.startsWith(permission.resource)</li>
  *   <li>matchType=EXACT  → requestUri.equals(permission.resource)</li>
+ *   <li>matchType=REGEX  → requestUri.matches(permission.resource)</li>
  *   <li>httpMethod=null  → 모든 HTTP 메서드 허용</li>
  *   <li>httpMethod 지정  → 요청 메서드와 대소문자 무관 비교</li>
  * </ul>
@@ -177,6 +179,15 @@ public class UiApiPermissionCache {
         }
         if (perm.matchType() == UiPermissionMatchType.PREFIX) {
             return requestUri.startsWith(perm.resource());
+        }
+        if (perm.matchType() == UiPermissionMatchType.REGEX) {
+            try {
+                return requestUri.matches(perm.resource());
+            } catch (PatternSyntaxException ex) {
+                log.warn("잘못된 REGEX API 권한 패턴을 건너뜁니다. permCode={}, resource={}",
+                        perm.permCode(), perm.resource());
+                return false;
+            }
         }
         // EXACT 또는 기타: 완전 일치
         return requestUri.equals(perm.resource());

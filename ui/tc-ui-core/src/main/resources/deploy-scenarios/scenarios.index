@@ -8,3 +8,10 @@ eqp-send-message.yaml
 eqp-gateway-jar-update.yaml
 eqp-parameter-update.yaml
 eqp-business-jar-update.yaml
+register-model-only.yaml
+register-eqp-param-only.yaml
+register-model-eqp-param.yaml
+register-model-business-jar.yaml
+register-model-business-jar-eqp-param.yaml
+register-business-jar-only.yaml
+register-business-jar-eqp-param.yaml

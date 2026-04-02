@@ -1,6 +1,8 @@
 package com.nori.tc.ui.core.port.db;
 
 import tools.jackson.databind.JsonNode;
+import com.nori.tc.ui.core.deploy.DeployActiveEqpConflict;
+import com.nori.tc.ui.core.deploy.DeployExecutionPlan;
 import com.nori.tc.ui.core.deploy.DeployPlanCommand;
 import com.nori.tc.ui.core.deploy.DeployPlanningResult;
 import com.nori.tc.ui.core.deploy.DeploySnapshotKind;
@@ -18,6 +20,7 @@ import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.Optional;
 
 /**
@@ -30,9 +33,12 @@ public interface DeployStorePort {
     void updateDeployStatus(
             long deployKey,
             DeployStatus deployStatus,
+            boolean pauseRequested,
             String lastErrorCode,
             String lastErrorMessage
     );
+
+    void updatePauseRequested(long deployKey, boolean pauseRequested);
 
     void markTargetWaitingReply(
             long deployTargetKey,
@@ -103,6 +109,10 @@ public interface DeployStorePort {
 
     Optional<DeploySummarySnapshot> findDeploySummary(long deployKey);
 
+    Optional<DeployExecutionPlan> findDeployExecutionPlan(long deployKey);
+
+    Optional<DeployActiveEqpConflict> findActiveEqpConflict(Collection<String> eqpIds, Long excludedDeployKey);
+
     Optional<DeployPlanCommand> findRedeployCommand(long deployKey);
 
     java.util.List<String> findActiveTraceIds(long deployKey);
@@ -112,6 +122,13 @@ public interface DeployStorePort {
             OffsetDateTime finishedAt,
             String lastErrorCode,
             String lastErrorMessage
+    );
+
+    void markTargetReadyForResume(
+            long deployTargetKey,
+            Integer completedStepOrder,
+            String completedStepCode,
+            OffsetDateTime updatedAt
     );
 
     boolean deleteDeploy(long deployKey);

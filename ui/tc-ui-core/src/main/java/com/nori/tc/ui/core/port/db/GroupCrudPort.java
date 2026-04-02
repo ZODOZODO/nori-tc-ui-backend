@@ -38,6 +38,14 @@ public interface GroupCrudPort {
     Optional<UiUserGroup> findByGroupId(long groupId);
 
     /**
+     * 그룹 코드 기준 단건을 조회합니다.
+     *
+     * @param groupCode 그룹 코드
+     * @return 조회 결과, 미존재 시 빈 Optional
+     */
+    Optional<UiUserGroup> findByGroupCode(String groupCode);
+
+    /**
      * 그룹 목록을 페이지 단위로 조회합니다.
      *
      * @param pageRequest offset/limit 기반 페이지 요청

@@ -3,11 +3,14 @@ package com.nori.tc.ui.core.service;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
+import com.nori.tc.ui.core.deploy.DeployActiveEqpConflict;
 import com.nori.tc.ui.core.deploy.DeployCreateResult;
 import com.nori.tc.ui.core.deploy.DeployActionResult;
 import com.nori.tc.ui.core.deploy.DeployDeleteResult;
 import com.nori.tc.ui.core.deploy.DeployCurrentState;
 import com.nori.tc.ui.core.deploy.DeployExecutionPolicy;
+import com.nori.tc.ui.core.deploy.DeployExecutionPlan;
+import com.nori.tc.ui.core.deploy.DeployExecutionTarget;
 import com.nori.tc.ui.core.deploy.DeployHistoryView;
 import com.nori.tc.ui.core.deploy.DeployPlanCommand;
 import com.nori.tc.ui.core.deploy.DeployPlanningResult;
@@ -37,6 +40,7 @@ import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
 import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
 import com.nori.tc.ui.core.properties.UiDeployProperties;
 import com.nori.tc.ui.core.exception.UiConflictException;
+import com.nori.tc.ui.core.exception.UiErrorCode;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.domain.common.model.UiModelStatus;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
@@ -63,6 +67,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -74,6 +79,7 @@ class DeployServiceTest {
     Path tempDir;
 
     private DeployService deployService;
+    private DeployExecutor deployExecutor;
 
     @AfterEach
     void tearDown() {
@@ -83,7 +89,7 @@ class DeployServiceTest {
     }
 
     @Test
-    void createDeployCompletesSingleTargetWhenGatewayReplyPasses() throws Exception {
+    void createDeployKeepsSingleTargetReadyUntilExplicitExecution() throws Exception {
         final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
         final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
         deployService = newDeployService(
@@ -97,18 +103,21 @@ class DeployServiceTest {
         );
 
         final DeployCreateResult result = deployService.createDeploy(sendMessageCommand(), "tester");
-        assertEquals(DeployStatus.RUNNING, result.deployStatus());
-        assertEquals("DEPLOY_ACCEPTED", result.resultCode());
+        assertEquals(DeployStatus.READY, result.deployStatus());
+        assertEquals("DEPLOY_CREATED", result.resultCode());
+        assertEquals("Deploy가 생성되었습니다.", result.resultMessage().title());
+        assertEquals("Deploy 탭에서 실행해 주세요.", result.resultMessage().message());
 
-        final var summary = awaitTerminalSummary(result.deployKey());
-        assertEquals(DeployStatus.COMPLETED, summary.deployStatus());
-        assertTrue(summary.terminal());
-        assertEquals("DEPLOY_COMPLETED", summary.resultCode());
-        assertEquals(1, summary.targetSummary().completed());
+        final var summary = deployService.getDeploySummary(result.deployKey());
+        assertEquals(DeployStatus.READY, summary.deployStatus());
+        assertFalse(summary.terminal());
+        assertNull(summary.startedAt());
+        assertNull(summary.finishedAt());
+        assertEquals(1, summary.targetSummary().pending());
 
         final DeployTargetPage targetPage = deployService.getDeployTargets(result.deployKey(), 0, 20, null, null);
         assertEquals(1, targetPage.targets().size());
-        assertEquals(DeployTargetStatus.COMPLETED, targetPage.targets().getFirst().targetStatus());
+        assertEquals(DeployTargetStatus.PENDING, targetPage.targets().getFirst().targetStatus());
         assertFalse(targetPage.targets().getFirst().rollbackRequired());
     }
 
@@ -127,6 +136,7 @@ class DeployServiceTest {
         );
 
         final DeployCreateResult result = deployService.createDeploy(sendMessageCommand(), "tester");
+        executeReadyDeploy(storePort, result.deployKey(), "tester");
         final var summary = awaitTerminalSummary(result.deployKey());
 
         assertEquals(DeployStatus.FAILED, summary.deployStatus());
@@ -140,6 +150,218 @@ class DeployServiceTest {
         assertEquals(DeployStepStatus.FAILED, target.currentStepStatus());
         assertEquals("SEND_MESSAGE_FAILED", target.lastErrorCode());
         assertNotNull(target.lastErrorMessage());
+    }
+
+    @Test
+    void startDeployTransitionsReadyDeployToRunning() throws Exception {
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
+        final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
+        final List<UiCommandMessage> publishedMessages = new ArrayList<>();
+        deployService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService(tempDir.resolve("missing-scenarios")),
+                storePort,
+                new InMemoryEqpCrudPort(),
+                publishedMessages::add,
+                UiBusinessEventPublishPort.noop(),
+                traceRegistry
+        );
+
+        final DeployCreateResult created = deployService.createDeploy(sendMessageCommand(), "tester");
+
+        final DeployActionResult started = deployService.startDeploy(created.deployKey(), "tester");
+        assertEquals(DeployStatus.RUNNING, started.deployStatus());
+        assertEquals(Boolean.FALSE, started.pauseRequested());
+        assertEquals("DEPLOY_STARTED", started.resultCode());
+
+        final UiCommandMessage firstMessage = awaitPublishedMessage(publishedMessages);
+        replyPass(traceRegistry, firstMessage);
+
+        final var summary = awaitTerminalSummary(created.deployKey());
+        assertEquals(DeployStatus.COMPLETED, summary.deployStatus());
+    }
+
+    @Test
+    void holdDeployTransitionsToReadyAtSafePoint() throws Exception {
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
+        final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
+        final InMemoryEqpCrudPort eqpCrudPort = new InMemoryEqpCrudPort();
+        eqpCrudPort.put(snapshot("PHOTO_001", 1L));
+        final List<UiCommandMessage> publishedMessages = java.util.Collections.synchronizedList(new ArrayList<>());
+
+        deployService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService(tempDir.resolve("missing-scenarios")),
+                storePort,
+                eqpCrudPort,
+                UiGatewayEventPublishPort.noop(),
+                publishedMessages::add,
+                traceRegistry
+        );
+
+        final DeployCreateResult created = deployService.createDeploy(businessJarUpdateCommand("PHOTO_001"), "tester");
+        deployService.startDeploy(created.deployKey(), "tester");
+        final UiCommandMessage firstMessage = awaitPublishedMessage(publishedMessages);
+
+        final DeployActionResult holdResult = deployService.holdDeploy(created.deployKey(), "tester");
+        assertEquals(DeployStatus.RUNNING, holdResult.deployStatus());
+        assertEquals(Boolean.TRUE, holdResult.pauseRequested());
+        assertEquals("DEPLOY_HOLD_REQUESTED", holdResult.resultCode());
+
+        replyPass(traceRegistry, firstMessage);
+
+        final var readySummary = awaitReadySummary(created.deployKey());
+        assertEquals(DeployStatus.READY, readySummary.deployStatus());
+        assertFalse(readySummary.pauseRequested());
+
+        final DeployTargetSnapshot target = deployService.getDeployTargets(created.deployKey(), 0, 20, null, null)
+                .targets()
+                .getFirst();
+        assertEquals(DeployTargetStatus.PENDING, target.targetStatus());
+        assertEquals(DeployStepStatus.COMPLETED, target.currentStepStatus());
+        assertTrue(publishedMessages.size() >= 1);
+    }
+
+    @Test
+    void startDeployResumesAfterHoldAndCompletes() throws Exception {
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
+        final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
+        final InMemoryEqpCrudPort eqpCrudPort = new InMemoryEqpCrudPort();
+        eqpCrudPort.put(snapshot("PHOTO_001", 1L));
+        final List<UiCommandMessage> publishedMessages = java.util.Collections.synchronizedList(new ArrayList<>());
+
+        deployService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService(tempDir.resolve("missing-scenarios")),
+                storePort,
+                eqpCrudPort,
+                UiGatewayEventPublishPort.noop(),
+                publishedMessages::add,
+                traceRegistry
+        );
+
+        final DeployCreateResult created = deployService.createDeploy(businessJarUpdateCommand("PHOTO_001"), "tester");
+        deployService.startDeploy(created.deployKey(), "tester");
+        final UiCommandMessage firstMessage = awaitPublishedMessage(publishedMessages);
+        deployService.holdDeploy(created.deployKey(), "tester");
+        replyPass(traceRegistry, firstMessage);
+        awaitReadySummary(created.deployKey());
+
+        final int handledCount = publishedMessages.size();
+        final DeployActionResult restarted = deployService.startDeploy(created.deployKey(), "tester");
+        assertEquals(DeployStatus.RUNNING, restarted.deployStatus());
+        assertEquals(Boolean.FALSE, restarted.pauseRequested());
+
+        replyAllNewMessagesAsPass(traceRegistry, publishedMessages, handledCount, created.deployKey());
+
+        final var summary = awaitTerminalSummary(created.deployKey());
+        assertEquals(DeployStatus.COMPLETED, summary.deployStatus());
+    }
+
+    @Test
+    void holdDeployRejectsDuplicateHoldRequest() throws Exception {
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
+        final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
+        final InMemoryEqpCrudPort eqpCrudPort = new InMemoryEqpCrudPort();
+        eqpCrudPort.put(snapshot("PHOTO_001", 1L));
+        final List<UiCommandMessage> publishedMessages = java.util.Collections.synchronizedList(new ArrayList<>());
+
+        deployService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService(tempDir.resolve("missing-scenarios")),
+                storePort,
+                eqpCrudPort,
+                UiGatewayEventPublishPort.noop(),
+                publishedMessages::add,
+                traceRegistry
+        );
+
+        final DeployCreateResult created = deployService.createDeploy(businessJarUpdateCommand("PHOTO_001"), "tester");
+        deployService.startDeploy(created.deployKey(), "tester");
+        awaitPublishedMessage(publishedMessages);
+        deployService.holdDeploy(created.deployKey(), "tester");
+
+        assertThrows(UiConflictException.class, () -> deployService.holdDeploy(created.deployKey(), "tester"));
+    }
+
+    @Test
+    void createDeployRejectsWhenAnotherActiveDeployHasSameEqp() {
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
+        final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
+        deployService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService(tempDir.resolve("missing-scenarios")),
+                storePort,
+                new InMemoryEqpCrudPort(),
+                UiGatewayEventPublishPort.noop(),
+                UiBusinessEventPublishPort.noop(),
+                traceRegistry
+        );
+
+        deployService.createDeploy(sendMessageCommand(), "tester");
+
+        final UiConflictException exception =
+                assertThrows(UiConflictException.class, () -> deployService.createDeploy(sendMessageCommand(), "tester"));
+        assertEquals(UiErrorCode.DEPLOY_ACTIVE_EQP_CONFLICT, exception.errorCode());
+        assertTrue(exception.getMessage().contains("eqpId=PHOTO_001"));
+    }
+
+    @Test
+    void redeployRejectsWhenAnotherActiveDeployHasSameEqp() throws Exception {
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
+        final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
+        deployService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService(tempDir.resolve("missing-scenarios")),
+                storePort,
+                new InMemoryEqpCrudPort(),
+                passGatewayPublisher(traceRegistry),
+                UiBusinessEventPublishPort.noop(),
+                traceRegistry
+        );
+
+        final DeployCreateResult originalDeploy = deployService.createDeploy(sendMessageCommand(), "tester");
+        executeReadyDeploy(storePort, originalDeploy.deployKey(), "tester");
+        awaitTerminalSummary(originalDeploy.deployKey());
+
+        final DeployCreateResult activeDeploy = deployService.createDeploy(sendMessageCommand(), "tester");
+        assertEquals(DeployStatus.READY, activeDeploy.deployStatus());
+
+        final UiConflictException exception =
+                assertThrows(UiConflictException.class, () -> deployService.redeploy(originalDeploy.deployKey(), "tester"));
+        assertEquals(UiErrorCode.DEPLOY_ACTIVE_EQP_CONFLICT, exception.errorCode());
+        assertTrue(exception.getMessage().contains("eqpId=PHOTO_001"));
+        assertTrue(exception.getMessage().contains("activeDeployKey=" + activeDeploy.deployKey()));
+    }
+
+    @Test
+    void startDeployRejectsWhenAnotherActiveDeployHasSameEqp() {
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
+        final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
+        final DeployPlanningService planningService = planningService(tempDir.resolve("missing-scenarios"));
+        deployService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService,
+                storePort,
+                new InMemoryEqpCrudPort(),
+                UiGatewayEventPublishPort.noop(),
+                UiBusinessEventPublishPort.noop(),
+                traceRegistry
+        );
+
+        final DeployCreateResult readyDeploy = deployService.createDeploy(sendMessageCommand(), "tester");
+        final PersistedDeploy injectedDeploy = storePort.createDeploy(
+                sendMessageCommand(),
+                planningService.plan(sendMessageCommand()),
+                "injector"
+        );
+        storePort.updateDeployStatus(injectedDeploy.deployKey(), DeployStatus.RUNNING, false, null, null);
+
+        final UiConflictException exception =
+                assertThrows(UiConflictException.class, () -> deployService.startDeploy(readyDeploy.deployKey(), "tester"));
+        assertEquals(UiErrorCode.DEPLOY_ACTIVE_EQP_CONFLICT, exception.errorCode());
+        assertTrue(exception.getMessage().contains("eqpId=PHOTO_001"));
+        assertTrue(exception.getMessage().contains("activeDeployKey=" + injectedDeploy.deployKey()));
     }
 
     @Test
@@ -165,6 +387,7 @@ class DeployServiceTest {
                 businessJarUpdateCommand("PHOTO_001", "PHOTO_002"),
                 "tester"
         );
+        executeReadyDeploy(storePort, result.deployKey(), "tester");
         final var summary = awaitTerminalSummary(result.deployKey());
 
         assertEquals(DeployStatus.PARTIAL_FAILED, summary.deployStatus());
@@ -224,6 +447,7 @@ class DeployServiceTest {
                 businessJarUpdateCommand("PHOTO_002"),
                 "tester"
         );
+        executeReadyDeploy(storePort, result.deployKey(), "tester");
         final var summary = awaitTerminalSummary(result.deployKey());
 
         assertEquals(DeployStatus.FAILED, summary.deployStatus());
@@ -255,10 +479,11 @@ class DeployServiceTest {
         );
 
         final DeployCreateResult runningDeploy = deployService.createDeploy(sendMessageCommand(), "tester");
-        final DeployCreateResult completedDeploy = deployService.createDeploy(sendMessageCommand(), "tester");
+        final DeployCreateResult completedDeploy = deployService.createDeploy(businessJarUpdateCommand("PHOTO_002"), "tester");
         storePort.updateDeployStatus(
                 completedDeploy.deployKey(),
                 DeployStatus.COMPLETED,
+                false,
                 null,
                 null
         );
@@ -274,7 +499,7 @@ class DeployServiceTest {
 
         assertEquals(1, page.items().size());
         assertEquals(runningDeploy.deployKey(), page.items().getFirst().deployKey());
-        assertEquals(DeployStatus.RUNNING, page.items().getFirst().deployStatus());
+        assertEquals(DeployStatus.READY, page.items().getFirst().deployStatus());
     }
 
     @Test
@@ -284,18 +509,20 @@ class DeployServiceTest {
                 new InMemoryDeployExecutionCoordinationPort();
         final DeployTraceRegistry instanceOneTraceRegistry = new DeployTraceRegistry(sharedTracePort);
         final DeployTraceRegistry instanceTwoTraceRegistry = new DeployTraceRegistry(sharedTracePort);
+        final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
         final List<UiCommandMessage> publishedMessages = new ArrayList<>();
 
         deployService = newDeployService(
                 deployProperties(tempDir.resolve("missing-scenarios")),
                 planningService(tempDir.resolve("missing-scenarios")),
-                new InMemoryDeployStorePort(),
+                storePort,
                 new InMemoryEqpCrudPort(),
                 message -> publishedMessages.add(message),
                 UiBusinessEventPublishPort.noop(),
                 instanceOneTraceRegistry,
                 sharedCoordinationPort
         );
+        final DeployExecutor primaryDeployExecutor = deployExecutor;
         final DeployService otherInstanceService = newDeployService(
                 deployProperties(tempDir.resolve("missing-scenarios")),
                 planningService(tempDir.resolve("missing-scenarios")),
@@ -309,6 +536,7 @@ class DeployServiceTest {
 
         try {
             final DeployCreateResult result = deployService.createDeploy(sendMessageCommand(), "tester");
+            executeReadyDeployAsync(primaryDeployExecutor, storePort, result.deployKey(), "tester");
             final UiCommandMessage publishedMessage = awaitPublishedMessage(publishedMessages);
 
             otherInstanceService.handleReply(new UiCommandReply(
@@ -347,6 +575,7 @@ class DeployServiceTest {
         );
 
         final DeployCreateResult result = deployService.createDeploy(sendMessageCommand(), "tester");
+        executeReadyDeployAsync(storePort, result.deployKey(), "tester");
         final UiCommandMessage publishedMessage = awaitPublishedMessage(publishedMessages);
         assertNotNull(publishedMessage.traceId());
 
@@ -381,6 +610,7 @@ class DeployServiceTest {
         );
 
         final DeployCreateResult result = deployService.createDeploy(sendMessageCommand(), "tester");
+        executeReadyDeploy(storePort, result.deployKey(), "tester");
         awaitTerminalSummary(result.deployKey());
 
         assertThrows(UiConflictException.class, () -> deployService.cancelDeploy(result.deployKey(), "tester"));
@@ -401,15 +631,62 @@ class DeployServiceTest {
         );
 
         final DeployCreateResult originalResult = deployService.createDeploy(sendMessageCommand(), "tester");
+        executeReadyDeploy(storePort, originalResult.deployKey(), "tester");
         awaitTerminalSummary(originalResult.deployKey());
 
         final DeployCreateResult redeployResult = deployService.redeploy(originalResult.deployKey(), "tester");
         assertTrue(redeployResult.deployKey() > originalResult.deployKey());
-        assertEquals(DeployStatus.RUNNING, redeployResult.deployStatus());
+        assertEquals(DeployStatus.READY, redeployResult.deployStatus());
+        assertEquals("DEPLOY_CREATED", redeployResult.resultCode());
 
-        final var summary = awaitTerminalSummary(redeployResult.deployKey());
-        assertEquals(DeployStatus.COMPLETED, summary.deployStatus());
-        assertEquals("DEPLOY_COMPLETED", summary.resultCode());
+        final var summary = deployService.getDeploySummary(redeployResult.deployKey());
+        assertEquals(DeployStatus.READY, summary.deployStatus());
+        assertNull(summary.startedAt());
+        assertNull(summary.finishedAt());
+    }
+
+    @Test
+    void deleteDeployRemovesReadyDeployBeforeExecution() throws Exception {
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
+        final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
+        deployService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService(tempDir.resolve("missing-scenarios")),
+                storePort,
+                new InMemoryEqpCrudPort(),
+                passGatewayPublisher(traceRegistry),
+                UiBusinessEventPublishPort.noop(),
+                traceRegistry
+        );
+
+        final DeployCreateResult result = deployService.createDeploy(sendMessageCommand(), "tester");
+
+        final DeployDeleteResult deleteResult = deployService.deleteDeploy(result.deployKey(), "tester");
+        assertTrue(deleteResult.deleted());
+
+        assertThrows(UiNotFoundException.class, () -> deployService.getDeploySummary(result.deployKey()));
+    }
+
+    @Test
+    void deleteDeployRejectsRunningDeploy() throws Exception {
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
+        final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
+        final List<UiCommandMessage> publishedMessages = new ArrayList<>();
+        deployService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService(tempDir.resolve("missing-scenarios")),
+                storePort,
+                new InMemoryEqpCrudPort(),
+                publishedMessages::add,
+                UiBusinessEventPublishPort.noop(),
+                traceRegistry
+        );
+
+        final DeployCreateResult created = deployService.createDeploy(sendMessageCommand(), "tester");
+        deployService.startDeploy(created.deployKey(), "tester");
+
+        assertThrows(UiConflictException.class, () -> deployService.deleteDeploy(created.deployKey(), "tester"));
+        assertEquals(DeployStatus.RUNNING, deployService.getDeploySummary(created.deployKey()).deployStatus());
     }
 
     @Test
@@ -427,6 +704,7 @@ class DeployServiceTest {
         );
 
         final DeployCreateResult result = deployService.createDeploy(sendMessageCommand(), "tester");
+        executeReadyDeploy(storePort, result.deployKey(), "tester");
         awaitTerminalSummary(result.deployKey());
 
         final DeployDeleteResult deleteResult = deployService.deleteDeploy(result.deployKey(), "tester");
@@ -487,6 +765,7 @@ class DeployServiceTest {
                         coordinationPort,
                         deployProperties
                 );
+        this.deployExecutor = deployExecutor;
         return new DeployService(
                 deployProperties,
                 deployPlanner,
@@ -497,6 +776,46 @@ class DeployServiceTest {
         );
     }
 
+    private void executeReadyDeploy(
+            final InMemoryDeployStorePort storePort,
+            final long deployKey,
+            final String actor
+    ) {
+        final InMemoryDeployStorePort.DeployExecutionSeed seed = storePort.executionSeed(deployKey);
+        storePort.updateDeployStatus(deployKey, DeployStatus.RUNNING, false, null, null);
+        seed.executableTargets().forEach(target -> deployExecutor.executeTarget(
+                deployKey,
+                seed.eventType(),
+                target,
+                actor
+        ));
+    }
+
+    private void executeReadyDeployAsync(
+            final DeployExecutor executor,
+            final InMemoryDeployStorePort storePort,
+            final long deployKey,
+            final String actor
+    ) {
+        final InMemoryDeployStorePort.DeployExecutionSeed seed = storePort.executionSeed(deployKey);
+        storePort.updateDeployStatus(deployKey, DeployStatus.RUNNING, false, null, null);
+        for (DeployExecutionTarget target : seed.executableTargets()) {
+            final Thread executionThread = new Thread(
+                    () -> executor.executeTarget(deployKey, seed.eventType(), target, actor),
+                    "deploy-test-" + deployKey + "-" + target.target().deployTargetKey()
+            );
+            executionThread.start();
+        }
+    }
+
+    private void executeReadyDeployAsync(
+            final InMemoryDeployStorePort storePort,
+            final long deployKey,
+            final String actor
+    ) {
+        executeReadyDeployAsync(deployExecutor, storePort, deployKey, actor);
+    }
+
     private UiCommandMessage awaitPublishedMessage(final List<UiCommandMessage> publishedMessages) throws Exception {
         for (int attempt = 0; attempt < 50; attempt++) {
             if (!publishedMessages.isEmpty()) {
@@ -505,6 +824,46 @@ class DeployServiceTest {
             Thread.sleep(20L);
         }
         throw new AssertionError("deploy command publish 대기 중 timeout이 발생했습니다.");
+    }
+
+    private void replyAllNewMessagesAsPass(
+            final DeployTraceRegistry traceRegistry,
+            final List<UiCommandMessage> publishedMessages,
+            final int initialHandledCount,
+            final long deployKey
+    ) throws Exception {
+        int handledCount = initialHandledCount;
+        for (int idleAttempt = 0; idleAttempt < 50; idleAttempt++) {
+            while (publishedMessages.size() > handledCount) {
+                replyPass(traceRegistry, publishedMessages.get(handledCount));
+                handledCount++;
+                idleAttempt = 0;
+            }
+            final var summary = deployService.getDeploySummary(deployKey);
+            if (summary.terminal()) {
+                return;
+            }
+            Thread.sleep(50L);
+        }
+        throw new AssertionError("resume 이후 추가 publish completion 대기 중 timeout이 발생했습니다.");
+    }
+
+    private void replyPass(
+            final DeployTraceRegistry traceRegistry,
+            final UiCommandMessage message
+    ) {
+        final String targetApp = message.uiMessage().path("_deploy").path("targetApp").asText();
+        final String source = "BUSINESS".equals(targetApp) ? "TC-BUSINESS-APP" : "TC-GATEWAY-APP";
+        traceRegistry.handle(new UiCommandReply(
+                message.traceId(),
+                source,
+                message.eventType().name() + "_REP",
+                message.eqpId(),
+                message.interfaceType(),
+                UiTaskStatus.PASS,
+                null,
+                null
+        ));
     }
 
     private DeployPlanningService planningService(final Path scenarioDirectory) {
@@ -639,7 +998,7 @@ class DeployServiceTest {
                 "PHOTO Send Message",
                 UiCommandEventType.EQP_SEND_MESSAGE,
                 DeployExecutionPolicy.BEST_EFFORT,
-                new DeployPlanCommand.CommonRequest("SOCKET", sendMessageUiMessage()),
+                new DeployPlanCommand.CommonRequest("SOCKET", sendMessageUiMessage(), null),
                 List.of(new DeployPlanCommand.TargetRequest("PHOTO_001", objectMapper.createObjectNode()))
         );
     }
@@ -665,7 +1024,7 @@ class DeployServiceTest {
                 "PHOTO Business Jar Update",
                 UiCommandEventType.EQP_BUSINESS_JARFILE_UPDATE,
                 DeployExecutionPolicy.BEST_EFFORT,
-                new DeployPlanCommand.CommonRequest("SOCKET", root),
+                new DeployPlanCommand.CommonRequest("SOCKET", root, null),
                 List.copyOf(targets)
         );
     }
@@ -753,6 +1112,17 @@ class DeployServiceTest {
             Thread.sleep(50L);
         }
         throw new AssertionError("terminal deploy summary를 기다리는 중 timeout이 발생했습니다. deployKey=" + deployKey);
+    }
+
+    private com.nori.tc.ui.core.deploy.DeploySummaryView awaitReadySummary(final long deployKey) throws Exception {
+        for (int attempt = 0; attempt < 50; attempt++) {
+            final var summary = deployService.getDeploySummary(deployKey);
+            if (summary.deployStatus() == DeployStatus.READY && !summary.pauseRequested()) {
+                return summary;
+            }
+            Thread.sleep(50L);
+        }
+        throw new AssertionError("READY deploy summary를 기다리는 중 timeout이 발생했습니다. deployKey=" + deployKey);
     }
 
     private static int incrementEventCount(
@@ -883,6 +1253,8 @@ class DeployServiceTest {
                         false,
                         null,
                         null,
+                        null,
+                        targetPlan.noChange() ? now : null,
                         now
                 ));
                 targetOrder++;
@@ -900,10 +1272,12 @@ class DeployServiceTest {
                     optionalText(command.commonRequest().uiMessage(), "modelInfo", "modelName"),
                     optionalText(command.commonRequest().uiMessage(), "modelInfo", "modelVersion"),
                     optionalText(command.commonRequest().uiMessage(), "businessJar", "jarFileName"),
+                    false,
                     null,
                     null,
                     null,
                     null,
+                    persistedTargets,
                     targetStates
             ));
 
@@ -914,11 +1288,13 @@ class DeployServiceTest {
         public synchronized void updateDeployStatus(
                 final long deployKey,
                 final DeployStatus deployStatus,
+                final boolean pauseRequested,
                 final String lastErrorCode,
                 final String lastErrorMessage
         ) {
             final DeployRecord deploy = requireDeploy(deployKey);
             deploy.deployStatus = deployStatus;
+            deploy.pauseRequested = pauseRequested;
             if (deployStatus == DeployStatus.RUNNING && deploy.startedAt == null) {
                 deploy.startedAt = OffsetDateTime.now(ZoneOffset.UTC);
             }
@@ -931,6 +1307,11 @@ class DeployServiceTest {
             }
             deploy.lastErrorCode = lastErrorCode == null ? deploy.lastErrorCode : lastErrorCode;
             deploy.lastErrorMessage = lastErrorMessage == null ? deploy.lastErrorMessage : lastErrorMessage;
+        }
+
+        @Override
+        public synchronized void updatePauseRequested(final long deployKey, final boolean pauseRequested) {
+            requireDeploy(deployKey).pauseRequested = pauseRequested;
         }
 
         @Override
@@ -949,6 +1330,8 @@ class DeployServiceTest {
             state.currentStepCode = stepCode;
             state.currentStepStatus = DeployStepStatus.WAITING_REPLY;
             state.currentTraceId = traceId;
+            state.startedAt = state.startedAt == null ? stepStartedAt : state.startedAt;
+            state.finishedAt = null;
             state.updatedAt = stepStartedAt;
         }
 
@@ -963,6 +1346,7 @@ class DeployServiceTest {
             state.rollbackRequired = false;
             state.lastErrorCode = null;
             state.lastErrorMessage = null;
+            state.finishedAt = finishedAt;
             state.updatedAt = finishedAt;
         }
 
@@ -987,6 +1371,8 @@ class DeployServiceTest {
             state.rollbackRequired = true;
             state.lastErrorCode = lastErrorCode;
             state.lastErrorMessage = lastErrorMessage;
+            state.startedAt = state.startedAt == null ? stepStartedAt : state.startedAt;
+            state.finishedAt = null;
             state.updatedAt = stepStartedAt;
         }
 
@@ -1006,6 +1392,7 @@ class DeployServiceTest {
             state.rollbackRequired = false;
             state.lastErrorCode = lastErrorCode;
             state.lastErrorMessage = lastErrorMessage;
+            state.finishedAt = finishedAt;
             state.updatedAt = finishedAt;
         }
 
@@ -1029,6 +1416,7 @@ class DeployServiceTest {
             state.rollbackRequired = rollbackRequired;
             state.lastErrorCode = lastErrorCode;
             state.lastErrorMessage = lastErrorMessage;
+            state.finishedAt = finishedAt;
             state.updatedAt = finishedAt;
         }
 
@@ -1050,6 +1438,7 @@ class DeployServiceTest {
             state.rollbackRequired = true;
             state.lastErrorCode = lastErrorCode;
             state.lastErrorMessage = lastErrorMessage;
+            state.finishedAt = finishedAt;
             state.updatedAt = finishedAt;
         }
 
@@ -1095,19 +1484,95 @@ class DeployServiceTest {
             if (deploy == null) {
                 return Optional.empty();
             }
+            final OffsetDateTime startedAt = deploy.targets.stream()
+                    .map(target -> target.startedAt)
+                    .filter(Objects::nonNull)
+                    .min(OffsetDateTime::compareTo)
+                    .orElse(null);
+            final OffsetDateTime finishedAt = isTerminal(deploy.deployStatus)
+                    ? deploy.targets.stream()
+                    .map(target -> target.finishedAt)
+                    .filter(Objects::nonNull)
+                    .max(OffsetDateTime::compareTo)
+                    .orElse(null)
+                    : null;
             return Optional.of(new DeploySummarySnapshot(
                     deployKey,
                     deploy.deployName,
                     deploy.eventType,
                     deploy.deployStatus,
+                    deploy.pauseRequested,
                     deploy.executionPolicy,
                     deploy.createdAt,
-                    deploy.startedAt,
-                    deploy.finishedAt,
+                    startedAt,
+                    finishedAt,
                     summarizeTargets(deployKey),
                     deploy.lastErrorCode,
                     deploy.lastErrorMessage
             ));
+        }
+
+        @Override
+        public synchronized Optional<DeployExecutionPlan> findDeployExecutionPlan(final long deployKey) {
+            final DeployRecord deploy = deploys.get(deployKey);
+            if (deploy == null) {
+                return Optional.empty();
+            }
+            final List<DeployExecutionTarget> targets = deploy.persistedTargets.stream()
+                    .map(target -> {
+                        final TargetStateRecord state = requireTarget(target.deployTargetKey());
+                        return new DeployExecutionTarget(
+                                target,
+                                state.targetStatus,
+                                state.currentStepOrder,
+                                state.currentStepCode,
+                                state.currentStepStatus
+                        );
+                    })
+                    .toList();
+            return Optional.of(new DeployExecutionPlan(deployKey, deploy.eventType, targets));
+        }
+
+        @Override
+        public synchronized Optional<DeployActiveEqpConflict> findActiveEqpConflict(
+                final java.util.Collection<String> eqpIds,
+                final Long excludedDeployKey
+        ) {
+            if (eqpIds == null) {
+                return Optional.empty();
+            }
+            return eqpIds.stream()
+                    .filter(Objects::nonNull)
+                    .map(String::trim)
+                    .filter(eqpId -> !eqpId.isEmpty())
+                    .filter(eqpId -> deploys.entrySet().stream()
+                            .filter(entry -> !Objects.equals(entry.getKey(), excludedDeployKey))
+                            .filter(entry -> entry.getValue().deployStatus == DeployStatus.READY
+                                    || entry.getValue().deployStatus == DeployStatus.RUNNING)
+                            .flatMap(entry -> entry.getValue().persistedTargets.stream()
+                                    .map(target -> new DeployActiveEqpConflict(
+                                            target.planDraft().eqpId(),
+                                            entry.getKey(),
+                                            entry.getValue().deployStatus,
+                                            entry.getValue().deployName,
+                                            entry.getValue().requestedBy
+                                    )))
+                            .anyMatch(conflict -> conflict.eqpId().equals(eqpId)))
+                    .findFirst()
+                    .flatMap(eqpId -> deploys.entrySet().stream()
+                            .filter(entry -> !Objects.equals(entry.getKey(), excludedDeployKey))
+                            .filter(entry -> entry.getValue().deployStatus == DeployStatus.READY
+                                    || entry.getValue().deployStatus == DeployStatus.RUNNING)
+                            .flatMap(entry -> entry.getValue().persistedTargets.stream()
+                                    .filter(target -> target.planDraft().eqpId().equals(eqpId))
+                                    .map(target -> new DeployActiveEqpConflict(
+                                            target.planDraft().eqpId(),
+                                            entry.getKey(),
+                                            entry.getValue().deployStatus,
+                                            entry.getValue().deployName,
+                                            entry.getValue().requestedBy
+                                    )))
+                            .findFirst());
         }
 
         @Override
@@ -1145,9 +1610,27 @@ class DeployServiceTest {
                     target.currentTraceId = null;
                     target.lastErrorCode = lastErrorCode;
                     target.lastErrorMessage = lastErrorMessage;
+                    target.finishedAt = finishedAt;
                     target.updatedAt = finishedAt;
                 }
             }
+        }
+
+        @Override
+        public synchronized void markTargetReadyForResume(
+                final long deployTargetKey,
+                final Integer completedStepOrder,
+                final String completedStepCode,
+                final OffsetDateTime updatedAt
+        ) {
+            final TargetStateRecord state = requireTarget(deployTargetKey);
+            state.targetStatus = DeployTargetStatus.PENDING;
+            state.currentStepOrder = completedStepOrder;
+            state.currentStepCode = completedStepCode;
+            state.currentStepStatus = completedStepOrder == null ? null : DeployStepStatus.COMPLETED;
+            state.currentTraceId = null;
+            state.finishedAt = null;
+            state.updatedAt = updatedAt;
         }
 
         @Override
@@ -1218,11 +1701,12 @@ class DeployServiceTest {
                                 deploy.deployName,
                                 deploy.eventType,
                                 deploy.deployStatus,
+                                deploy.pauseRequested,
                                 deploy.executionPolicy,
                                 deploy.requestedBy,
                                 deploy.createdAt,
-                                deploy.startedAt,
-                                deploy.finishedAt,
+                                startedAt(deploy),
+                                finishedAt(deploy),
                                 deploy.deployStatus == DeployStatus.COMPLETED
                                         || deploy.deployStatus == DeployStatus.PARTIAL_FAILED
                                         || deploy.deployStatus == DeployStatus.FAILED
@@ -1348,6 +1832,50 @@ class DeployServiceTest {
                     .toList();
         }
 
+        private DeployExecutionSeed executionSeed(final long deployKey) {
+            final DeployRecord deploy = requireDeploy(deployKey);
+            final List<DeployExecutionTarget> executableTargets = deploy.persistedTargets.stream()
+                    .filter(target -> !target.planDraft().noChange())
+                    .map(target -> {
+                        final TargetStateRecord state = requireTarget(target.deployTargetKey());
+                        return new DeployExecutionTarget(
+                                target,
+                                state.targetStatus,
+                                state.currentStepOrder,
+                                state.currentStepCode,
+                                state.currentStepStatus
+                        );
+                    })
+                    .toList();
+            return new DeployExecutionSeed(deploy.eventType, executableTargets);
+        }
+
+        private OffsetDateTime startedAt(final DeployRecord deploy) {
+            return deploy.targets.stream()
+                    .map(target -> target.startedAt)
+                    .filter(Objects::nonNull)
+                    .min(OffsetDateTime::compareTo)
+                    .orElse(null);
+        }
+
+        private OffsetDateTime finishedAt(final DeployRecord deploy) {
+            if (!isTerminal(deploy.deployStatus)) {
+                return null;
+            }
+            return deploy.targets.stream()
+                    .map(target -> target.finishedAt)
+                    .filter(Objects::nonNull)
+                    .max(OffsetDateTime::compareTo)
+                    .orElse(null);
+        }
+
+        private boolean isTerminal(final DeployStatus deployStatus) {
+            return deployStatus == DeployStatus.COMPLETED
+                    || deployStatus == DeployStatus.PARTIAL_FAILED
+                    || deployStatus == DeployStatus.FAILED
+                    || deployStatus == DeployStatus.CANCELED;
+        }
+
         private static String optionalText(
                 final JsonNode root,
                 final String firstField,
@@ -1379,8 +1907,10 @@ class DeployServiceTest {
             private final String selectedModelName;
             private final String selectedModelVersion;
             private final String selectedBusinessJarName;
+            private final List<PersistedDeployTarget> persistedTargets;
             private final List<TargetStateRecord> targets;
             private DeployStatus deployStatus;
+            private boolean pauseRequested;
             private OffsetDateTime startedAt;
             private OffsetDateTime finishedAt;
             private String lastErrorCode;
@@ -1398,10 +1928,12 @@ class DeployServiceTest {
                     final String selectedModelName,
                     final String selectedModelVersion,
                     final String selectedBusinessJarName,
+                    final boolean pauseRequested,
                     final OffsetDateTime startedAt,
                     final OffsetDateTime finishedAt,
                     final String lastErrorCode,
                     final String lastErrorMessage,
+                    final List<PersistedDeployTarget> persistedTargets,
                     final List<TargetStateRecord> targets
             ) {
                 this.originalCommand = originalCommand;
@@ -1415,10 +1947,12 @@ class DeployServiceTest {
                 this.selectedModelName = selectedModelName;
                 this.selectedModelVersion = selectedModelVersion;
                 this.selectedBusinessJarName = selectedBusinessJarName;
+                this.pauseRequested = pauseRequested;
                 this.startedAt = startedAt;
                 this.finishedAt = finishedAt;
                 this.lastErrorCode = lastErrorCode;
                 this.lastErrorMessage = lastErrorMessage;
+                this.persistedTargets = persistedTargets;
                 this.targets = targets;
             }
         }
@@ -1434,6 +1968,8 @@ class DeployServiceTest {
             private boolean rollbackRequired;
             private String lastErrorCode;
             private String lastErrorMessage;
+            private OffsetDateTime startedAt;
+            private OffsetDateTime finishedAt;
             private OffsetDateTime updatedAt;
 
             private TargetStateRecord(
@@ -1447,6 +1983,8 @@ class DeployServiceTest {
                     final boolean rollbackRequired,
                     final String lastErrorCode,
                     final String lastErrorMessage,
+                    final OffsetDateTime startedAt,
+                    final OffsetDateTime finishedAt,
                     final OffsetDateTime updatedAt
             ) {
                 this.deployTargetKey = deployTargetKey;
@@ -1459,8 +1997,16 @@ class DeployServiceTest {
                 this.rollbackRequired = rollbackRequired;
                 this.lastErrorCode = lastErrorCode;
                 this.lastErrorMessage = lastErrorMessage;
+                this.startedAt = startedAt;
+                this.finishedAt = finishedAt;
                 this.updatedAt = updatedAt;
             }
+        }
+
+        private record DeployExecutionSeed(
+                UiCommandEventType eventType,
+                List<DeployExecutionTarget> executableTargets
+        ) {
         }
     }
 }

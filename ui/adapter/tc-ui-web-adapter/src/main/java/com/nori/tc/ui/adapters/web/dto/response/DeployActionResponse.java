@@ -6,6 +6,7 @@ package com.nori.tc.ui.adapters.web.dto.response;
 public record DeployActionResponse(
         long deployKey,
         String deployStatus,
+        Boolean pauseRequested,
         Boolean deleted,
         String resultCode,
         DeployResultMessageResponse resultMessage

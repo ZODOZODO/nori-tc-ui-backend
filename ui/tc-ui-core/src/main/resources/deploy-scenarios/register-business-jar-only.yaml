@@ -1,0 +1,53 @@
+version: 1
+
+scenario:
+  code: REGISTER_BUSINESS_JAR_ONLY
+  name: Business Jar 변경
+  summary: Business Jar 변경만 반영한다.
+
+appliesTo:
+  eventTypes:
+    - EQP_REGISTER_DEPLOY
+  deltaAll:
+    - BUSINESS_JAR_CHANGED
+
+steps:
+  - order: 10
+    code: RELOAD_BUSINESS_PLUGIN
+    name: Business plugin 재적재
+    targetApp: BUSINESS
+    description: business jar 변경이 있는 설비의 plugin/runtime 을 재준비한다.
+    when:
+      deltaAny:
+        - BUSINESS_JAR_CHANGED
+    run:
+      action: RELOAD_BUSINESS_PLUGIN
+      timeoutMs: 60000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: AUTO_COMPENSATABLE
+      action: RESTORE_PREVIOUS_BUSINESS_PLUGIN
+
+  - order: 20
+    code: UPDATE_MODEL_BINDING
+    name: Business model binding 전환
+    targetApp: BUSINESS
+    description: 설비를 현재 model runtime identity 로 재바인딩한다.
+    when:
+      deltaAny:
+        - BUSINESS_JAR_CHANGED
+    run:
+      action: UPDATE_MODEL_BINDING
+      timeoutMs: 10000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: AUTO_COMPENSATABLE
+      action: RESTORE_PREVIOUS_MODEL_BINDING

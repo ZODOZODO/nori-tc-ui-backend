@@ -1,7 +1,11 @@
 package com.nori.tc.ui.core.service;
 
 import tools.jackson.databind.JsonNode;
+import com.nori.tc.ui.core.deploy.DeployExecutionTarget;
 import com.nori.tc.ui.core.deploy.DeployResolvedStepPlan;
+import com.nori.tc.ui.core.deploy.DeploySnapshotKind;
+import com.nori.tc.ui.core.deploy.DeploySnapshotScope;
+import com.nori.tc.ui.core.deploy.DeployStatus;
 import com.nori.tc.ui.core.deploy.DeployStepStatus;
 import com.nori.tc.ui.core.deploy.PersistedDeployTarget;
 import com.nori.tc.ui.core.model.UiCommandEventType;
@@ -59,11 +63,12 @@ public class DeployExecutor {
     public void executeTarget(
             final long deployKey,
             final UiCommandEventType deployEventType,
-            final PersistedDeployTarget target,
+            final DeployExecutionTarget executionTarget,
             final String actor
     ) {
+        final var target = executionTarget.target();
         final String eqpId = target.planDraft().eqpId();
-        final String executionKey = buildExecutionKey(deployKey, target.deployTargetKey());
+        final String executionKey = buildExecutionKey(deployKey, executionTarget);
         final long leaseTtlMs = resolveLeaseTtlMs(target);
         final long executionTtlMs = Math.max(1L, deployProperties.summaryCacheTtlSeconds() * 1_000L);
 
@@ -84,7 +89,7 @@ public class DeployExecutor {
                 commandAssembler.refreshDeployStatus(deployKey, null, null);
                 return;
             }
-            doExecuteTarget(deployKey, deployEventType, target, actor);
+            doExecuteTarget(deployKey, deployEventType, executionTarget, actor);
         } finally {
             try {
                 commandAssembler.refreshDeployStatus(deployKey, null, null);
@@ -97,16 +102,28 @@ public class DeployExecutor {
     private void doExecuteTarget(
             final long deployKey,
             final UiCommandEventType deployEventType,
-            final PersistedDeployTarget target,
+            final DeployExecutionTarget executionTarget,
             final String actor
     ) {
+        final var target = executionTarget.target();
         DeployResolvedStepPlan currentStep = null;
-        final List<DeployResolvedStepPlan> completedSteps = new ArrayList<>();
-        final JsonNode targetPreState = commandAssembler.captureTargetPreState(target).orElse(null);
+        final List<DeployResolvedStepPlan> completedSteps = completedSteps(executionTarget);
+        final JsonNode targetPreState = resolveTargetPreState(executionTarget);
+        final int startIndex = resolveStartIndex(executionTarget, target.planDraft().resolvedSteps());
 
         try {
-            for (DeployResolvedStepPlan step : target.planDraft().resolvedSteps()) {
+            if (shouldPause(deployKey)) {
+                checkpointTarget(target, completedSteps);
+                return;
+            }
+
+            for (int stepIndex = startIndex; stepIndex < target.planDraft().resolvedSteps().size(); stepIndex++) {
+                final DeployResolvedStepPlan step = target.planDraft().resolvedSteps().get(stepIndex);
                 if (isDeployCanceled(deployKey)) {
+                    return;
+                }
+                if (shouldPause(deployKey)) {
+                    checkpointTarget(target, completedSteps);
                     return;
                 }
                 currentStep = step;
@@ -228,6 +245,11 @@ public class DeployExecutor {
                     return;
                 }
                 completedSteps.add(step);
+
+                if (shouldPause(deployKey)) {
+                    checkpointTarget(target, completedSteps);
+                    return;
+                }
             }
 
             deployStorePort.markTargetCompleted(
@@ -251,7 +273,7 @@ public class DeployExecutor {
 
     private void handleTargetFailure(
             final long deployKey,
-            final PersistedDeployTarget target,
+            final com.nori.tc.ui.core.deploy.PersistedDeployTarget target,
             final List<DeployResolvedStepPlan> completedSteps,
             final DeployResolvedStepPlan failedStep,
             final String errorCode,
@@ -308,7 +330,7 @@ public class DeployExecutor {
         return false;
     }
 
-    private long resolveLeaseTtlMs(final PersistedDeployTarget target) {
+    private long resolveLeaseTtlMs(final com.nori.tc.ui.core.deploy.PersistedDeployTarget target) {
         long totalTimeoutMs = 0L;
         for (DeployResolvedStepPlan step : target.planDraft().resolvedSteps()) {
             totalTimeoutMs += Math.max(0L, step.timeoutMs());
@@ -317,13 +339,76 @@ public class DeployExecutor {
                 totalTimeoutMs + Math.max(0L, deployProperties.targetLockExtraTtlMs()));
     }
 
-    private String buildExecutionKey(final long deployKey, final long deployTargetKey) {
-        return "DEPLOY-EXEC:" + deployKey + ":" + deployTargetKey;
+    private String buildExecutionKey(
+            final long deployKey,
+            final DeployExecutionTarget executionTarget
+    ) {
+        final int checkpoint = executionTarget.currentStepOrder() == null ? 0 : executionTarget.currentStepOrder();
+        return "DEPLOY-EXEC:" + deployKey + ":" + executionTarget.target().deployTargetKey() + ":" + checkpoint;
     }
 
     private boolean isDeployCanceled(final long deployKey) {
         return deployStorePort.findDeploySummary(deployKey)
-                .map(summary -> summary.deployStatus() == com.nori.tc.ui.core.deploy.DeployStatus.CANCELED)
+                .map(summary -> summary.deployStatus() == DeployStatus.CANCELED)
                 .orElse(false);
+    }
+
+    private boolean shouldPause(final long deployKey) {
+        return deployStorePort.findDeploySummary(deployKey)
+                .map(summary -> summary.deployStatus() == DeployStatus.RUNNING && summary.pauseRequested())
+                .orElse(false);
+    }
+
+    private int resolveStartIndex(
+            final DeployExecutionTarget executionTarget,
+            final List<DeployResolvedStepPlan> steps
+    ) {
+        if (executionTarget.currentStepOrder() == null || executionTarget.currentStepStatus() != DeployStepStatus.COMPLETED) {
+            return 0;
+        }
+        for (int index = 0; index < steps.size(); index++) {
+            if (steps.get(index).order() > executionTarget.currentStepOrder()) {
+                return index;
+            }
+        }
+        return steps.size();
+    }
+
+    private List<DeployResolvedStepPlan> completedSteps(final DeployExecutionTarget executionTarget) {
+        if (executionTarget.currentStepOrder() == null || executionTarget.currentStepStatus() != DeployStepStatus.COMPLETED) {
+            return new ArrayList<>();
+        }
+        return executionTarget.target().planDraft().resolvedSteps().stream()
+                .filter(step -> step.order() <= executionTarget.currentStepOrder())
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+    }
+
+    private JsonNode resolveTargetPreState(final DeployExecutionTarget executionTarget) {
+        if (executionTarget.currentStepOrder() != null) {
+            return deployStorePort.findLatestTargetSnapshot(
+                            executionTarget.target().deployTargetKey(),
+                            DeploySnapshotScope.TARGET_PRE_STATE,
+                            null,
+                            DeploySnapshotKind.TARGET_FULL_STATE
+                    )
+                    .map(com.nori.tc.ui.core.deploy.DeployStoredSnapshot::snapshotData)
+                    .orElse(null);
+        }
+        return commandAssembler.captureTargetPreState(executionTarget.target()).orElse(null);
+    }
+
+    private void checkpointTarget(
+            final com.nori.tc.ui.core.deploy.PersistedDeployTarget target,
+            final List<DeployResolvedStepPlan> completedSteps
+    ) {
+        final DeployResolvedStepPlan lastCompletedStep = completedSteps.isEmpty()
+                ? null
+                : completedSteps.getLast();
+        deployStorePort.markTargetReadyForResume(
+                target.deployTargetKey(),
+                lastCompletedStep == null ? null : lastCompletedStep.order(),
+                lastCompletedStep == null ? null : lastCompletedStep.code(),
+                OffsetDateTime.now(ZoneOffset.UTC)
+        );
     }
 }

@@ -17,6 +17,11 @@ public record DeployRegisterTargetView(
         UiModelStatus modelStatus,
         Long businessJarRef,
         String businessJarFileName,
-        String appliedParamVersion
+        String appliedParamVersion,
+        boolean blockedByActiveDeploy,
+        Long activeDeployKey,
+        DeployStatus activeDeployStatus,
+        String activeDeployName,
+        String activeRequestedBy
 ) {
 }

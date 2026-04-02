@@ -41,7 +41,9 @@ public record DeployCreateRequest(
             @NotBlank(message = "commonRequest.interfaceType은 필수입니다.")
             String interfaceType,
 
-            Map<String, Object> uiMessage
+            Map<String, Object> uiMessage,
+
+            String resolvedScenarioCode
     ) {
     }
 

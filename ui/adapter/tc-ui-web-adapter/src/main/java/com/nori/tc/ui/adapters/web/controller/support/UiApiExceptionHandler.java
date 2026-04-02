@@ -3,6 +3,7 @@ package com.nori.tc.ui.adapters.web.controller.support;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
+import com.nori.tc.ui.core.exception.UiErrorCode;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -54,7 +55,7 @@ public class UiApiExceptionHandler {
         log.warn("요청 입력 오류. method={}, uri={}, message={}",
                 resolveMethod(request), resolveRequestUri(request), exception.getMessage());
         return ResponseEntity.badRequest()
-                .body(ApiResponse.error("INVALID_REQUEST", exception.getMessage()));
+                .body(ApiResponse.error(UiErrorCode.INVALID_REQUEST, exception.getMessage()));
     }
 
     /**
@@ -72,7 +73,7 @@ public class UiApiExceptionHandler {
         log.warn("요청 충돌. method={}, uri={}, message={}",
                 resolveMethod(request), resolveRequestUri(request), exception.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ApiResponse.error("CONFLICT", exception.getMessage()));
+                .body(ApiResponse.error(exception.errorCode(), exception.getMessage()));
     }
 
     /**
@@ -90,7 +91,7 @@ public class UiApiExceptionHandler {
         log.warn("요청 대상 없음. method={}, uri={}, message={}",
                 resolveMethod(request), resolveRequestUri(request), exception.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(ApiResponse.error("NOT_FOUND", exception.getMessage()));
+                .body(ApiResponse.error(UiErrorCode.NOT_FOUND, exception.getMessage()));
     }
 
     /**
@@ -113,7 +114,7 @@ public class UiApiExceptionHandler {
         log.warn("요청 본문 검증 실패. method={}, uri={}, message={}",
                 resolveMethod(request), resolveRequestUri(request), message);
         return ResponseEntity.badRequest()
-                .body(ApiResponse.error("INVALID_REQUEST", message));
+                .body(ApiResponse.error(UiErrorCode.INVALID_REQUEST, message));
     }
 
     /**
@@ -136,7 +137,7 @@ public class UiApiExceptionHandler {
         log.warn("요청 파라미터 검증 실패. method={}, uri={}, message={}",
                 resolveMethod(request), resolveRequestUri(request), message);
         return ResponseEntity.badRequest()
-                .body(ApiResponse.error("INVALID_REQUEST", message));
+                .body(ApiResponse.error(UiErrorCode.INVALID_REQUEST, message));
     }
 
     /**

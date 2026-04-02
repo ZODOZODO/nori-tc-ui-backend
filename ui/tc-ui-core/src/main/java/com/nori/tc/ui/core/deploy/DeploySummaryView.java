@@ -13,6 +13,7 @@ public record DeploySummaryView(
         String deployName,
         UiCommandEventType eventType,
         DeployStatus deployStatus,
+        boolean pauseRequested,
         DeployExecutionPolicy executionPolicy,
         OffsetDateTime createdAt,
         OffsetDateTime startedAt,
