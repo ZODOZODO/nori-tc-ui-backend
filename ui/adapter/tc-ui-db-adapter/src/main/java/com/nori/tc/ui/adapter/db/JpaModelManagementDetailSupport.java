@@ -4,6 +4,7 @@ import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.model.store.TcModelDcopItemStore;
 import com.nori.tc.db.core.model.store.TcModelEventIdStore;
 import com.nori.tc.db.core.model.store.TcModelMdfStore;
+import com.nori.tc.db.core.model.store.TcModelMesMessageStore;
 import com.nori.tc.db.core.model.store.TcModelParamStore;
 import com.nori.tc.db.core.model.store.TcModelReportIdStore;
 import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
@@ -13,6 +14,7 @@ import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelDcopItem;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelEventId;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMdf;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelMesMessage;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelParam;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelReportId;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelSecsMessage;
@@ -22,6 +24,7 @@ import com.nori.tc.db.core.model.upsert.UpsertTcModelWorkflow;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
 import com.nori.tc.db.domain.model.TcModelEventId;
 import com.nori.tc.db.domain.model.TcModelMdf;
+import com.nori.tc.db.domain.model.TcModelMesMessage;
 import com.nori.tc.db.domain.model.TcModelParam;
 import com.nori.tc.db.domain.model.TcModelReportId;
 import com.nori.tc.db.domain.model.TcModelSecsMessage;
@@ -49,6 +52,7 @@ final class JpaModelManagementDetailSupport {
     private final TcModelParamStore modelParamStore;
     private final TcModelSecsMessageStore modelSecsMessageStore;
     private final TcModelSocketMessageStore modelSocketMessageStore;
+    private final TcModelMesMessageStore modelMesMessageStore;
     private final TcModelVariableIdStore modelVariableIdStore;
     private final TcModelReportIdStore modelReportIdStore;
     private final TcModelEventIdStore modelEventIdStore;
@@ -60,6 +64,7 @@ final class JpaModelManagementDetailSupport {
             final TcModelParamStore modelParamStore,
             final TcModelSecsMessageStore modelSecsMessageStore,
             final TcModelSocketMessageStore modelSocketMessageStore,
+            final TcModelMesMessageStore modelMesMessageStore,
             final TcModelVariableIdStore modelVariableIdStore,
             final TcModelReportIdStore modelReportIdStore,
             final TcModelEventIdStore modelEventIdStore,
@@ -70,6 +75,7 @@ final class JpaModelManagementDetailSupport {
         this.modelParamStore = Objects.requireNonNull(modelParamStore, "modelParamStore is null");
         this.modelSecsMessageStore = Objects.requireNonNull(modelSecsMessageStore, "modelSecsMessageStore is null");
         this.modelSocketMessageStore = Objects.requireNonNull(modelSocketMessageStore, "modelSocketMessageStore is null");
+        this.modelMesMessageStore = Objects.requireNonNull(modelMesMessageStore, "modelMesMessageStore is null");
         this.modelVariableIdStore = Objects.requireNonNull(modelVariableIdStore, "modelVariableIdStore is null");
         this.modelReportIdStore = Objects.requireNonNull(modelReportIdStore, "modelReportIdStore is null");
         this.modelEventIdStore = Objects.requireNonNull(modelEventIdStore, "modelEventIdStore is null");
@@ -105,6 +111,13 @@ final class JpaModelManagementDetailSupport {
                 message.description(),
                 message.dataIndex(),
                 null
+        )));
+        snapshot.mesMessages().forEach(message -> modelMesMessageStore.upsert(new UpsertTcModelMesMessage(
+                null,
+                targetModelVersionKey,
+                message.mesMsgName(),
+                message.description(),
+                message.dataIndex()
         )));
         snapshot.variableIds().forEach(variableId -> modelVariableIdStore.upsert(new UpsertTcModelVariableId(
                 targetModelVersionKey,
@@ -179,6 +192,12 @@ final class JpaModelManagementDetailSupport {
                         parentSnapshot.socketMessages().stream().map(this::toSocketMessageRow).toList()
                 ),
                 buildDiffSection(
+                        "mes-message",
+                        JpaModelManagementSupport.SOCKET_MESSAGE_COLUMNS,
+                        branchSnapshot.mesMessages().stream().map(this::toMesMessageRow).toList(),
+                        parentSnapshot.mesMessages().stream().map(this::toMesMessageRow).toList()
+                ),
+                buildDiffSection(
                         "variableides",
                         JpaModelManagementSupport.VARIABLE_ID_COLUMNS,
                         branchSnapshot.variableIds().stream().map(this::toVariableIdRow).toList(),
@@ -222,6 +241,7 @@ final class JpaModelManagementDetailSupport {
                 loadAllByModelVersionKey(modelVersionKey, modelParamStore::findAllByModelVersionKey),
                 loadAllByModelVersionKey(modelVersionKey, modelSecsMessageStore::findAllByModelVersionKey),
                 loadAllByModelVersionKey(modelVersionKey, modelSocketMessageStore::findAllByModelVersionKey),
+                loadAllByModelVersionKey(modelVersionKey, modelMesMessageStore::findAllByModelVersionKey),
                 loadAllByModelVersionKey(modelVersionKey, modelVariableIdStore::findAllByModelVersionKey),
                 loadAllByModelVersionKey(modelVersionKey, modelReportIdStore::findAllByModelVersionKey),
                 loadAllByModelVersionKey(modelVersionKey, modelEventIdStore::findAllByModelVersionKey),
@@ -327,6 +347,17 @@ final class JpaModelManagementDetailSupport {
                 normalizeOptionalText(message.socketMsgName()),
                 List.of(
                         safe(message.socketMsgName()),
+                        safe(message.description()),
+                        safe(message.dataIndex())
+                )
+        );
+    }
+
+    private JpaModelManagementSupport.DiffRow toMesMessageRow(final TcModelMesMessage message) {
+        return new JpaModelManagementSupport.DiffRow(
+                normalizeOptionalText(message.mesMsgName()),
+                List.of(
+                        safe(message.mesMsgName()),
                         safe(message.description()),
                         safe(message.dataIndex())
                 )

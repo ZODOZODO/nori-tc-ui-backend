@@ -8,24 +8,30 @@ import com.nori.tc.db.core.eqp.store.TcEqpPortStatusStore;
 import com.nori.tc.db.core.eqp.store.TcEqpSocketStore;
 import com.nori.tc.db.core.eqp.store.TcEqpStateStore;
 import com.nori.tc.db.core.eqp.store.TcEqpStore;
+import com.nori.tc.db.core.model.store.TcModelParamStore;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqp;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpHsms;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpLog;
+import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpPortStatus;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpSocket;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpState;
 import com.nori.tc.db.core.jar.store.TcJarBusinessStore;
 import com.nori.tc.db.core.jar.store.TcJarGatewayStore;
+import com.nori.tc.db.core.work.store.TcWorkStore;
 import com.nori.tc.db.domain.common.eqp.ControlState;
 import com.nori.tc.db.domain.common.eqp.EqpState;
 import com.nori.tc.db.domain.common.eqp.LogLevel;
 import com.nori.tc.db.domain.common.model.ProtocolType;
 import com.nori.tc.db.domain.eqp.TcEqp;
+import com.nori.tc.db.domain.eqp.TcEqpParam;
 import com.nori.tc.db.domain.jar.TcJarBusiness;
 import com.nori.tc.db.domain.jar.TcJarGateway;
+import com.nori.tc.db.domain.model.TcModelParam;
 import com.nori.tc.ui.adapter.db.mapper.UiDomainEnumMapper;
 import com.nori.tc.ui.adapter.db.mapper.UiEqpDbMapper;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
+import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,9 +43,12 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -149,6 +158,154 @@ class JpaEqpCrudPortTest {
         assertEquals(ControlState.DOWN, stateCaptor.getValue().controlState());
         assertEquals(EqpState.DOWN, stateCaptor.getValue().eqpState());
         assertEquals("EQP_CREATED", stateCaptor.getValue().reasonCode());
+
+        final ArgumentCaptor<UpsertTcEqpPortStatus> portStatusCaptor = ArgumentCaptor.forClass(UpsertTcEqpPortStatus.class);
+        verify(fixture.eqpPortStatusStore, org.mockito.Mockito.times(4)).upsert(portStatusCaptor.capture());
+        assertEquals(List.of("1", "2", "3", "4"), portStatusCaptor.getAllValues().stream().map(UpsertTcEqpPortStatus::portId).toList());
+        assertEquals(List.of("down", "down", "down", "down"), portStatusCaptor.getAllValues().stream().map(UpsertTcEqpPortStatus::portState).toList());
+    }
+
+    @Test
+    @DisplayName("EQP 생성은 eqp parameter PORTCOUNT 값을 우선해 초기 포트를 생성합니다")
+    void createEqpUsesEqpParameterPortCountFirst() {
+        final Fixture fixture = new Fixture();
+        final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
+                "tester",
+                "EQP-PORTCOUNT-EQP",
+                UiProtocolType.SECS,
+                "ACTIVE",
+                true,
+                3,
+                "10.10.0.1",
+                5000,
+                101L,
+                "v1",
+                null,
+                null,
+                null,
+                new EqpManagementCommand.HsmsSettings(null, null, null, null, null, null, null, null, null),
+                null
+        );
+        final TcEqp storedEqp = eqp(
+                12L,
+                command.eqpId(),
+                UiDomainEnumMapper.toDbProtocolType(command.interfaceType()),
+                "ACTIVE",
+                command.isDev(),
+                command.routePartition(),
+                command.eqpIp(),
+                command.eqpPort(),
+                command.modelVersionKey(),
+                "tester",
+                "v1"
+        );
+
+        when(fixture.eqpStore.upsert(any())).thenReturn(storedEqp);
+        when(fixture.dbSupport.loadSnapshotByEqpId(command.eqpId())).thenReturn(Optional.of(snapshot(storedEqp)));
+        when(fixture.eqpParamStore.findAllByEqpKeyAndVersion(12L, "v1")).thenReturn(List.of(
+                eqpParam(12L, "v1", "PORTCOUNT", "3")
+        ));
+
+        fixture.port.create(command);
+
+        final ArgumentCaptor<UpsertTcEqpPortStatus> portStatusCaptor = ArgumentCaptor.forClass(UpsertTcEqpPortStatus.class);
+        verify(fixture.eqpPortStatusStore, org.mockito.Mockito.times(3)).upsert(portStatusCaptor.capture());
+        assertEquals(List.of("1", "2", "3"), portStatusCaptor.getAllValues().stream().map(UpsertTcEqpPortStatus::portId).toList());
+        assertEquals(List.of("down", "down", "down"), portStatusCaptor.getAllValues().stream().map(UpsertTcEqpPortStatus::portState).toList());
+    }
+
+    @Test
+    @DisplayName("EQP 생성은 eqp parameter가 없으면 model parameter PORTCOUNT 값을 사용합니다")
+    void createEqpFallsBackToModelParameterPortCount() {
+        final Fixture fixture = new Fixture();
+        final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
+                "tester",
+                "EQP-PORTCOUNT-MODEL",
+                UiProtocolType.SECS,
+                "ACTIVE",
+                true,
+                3,
+                "10.10.0.1",
+                5000,
+                101L,
+                "v1",
+                null,
+                null,
+                null,
+                new EqpManagementCommand.HsmsSettings(null, null, null, null, null, null, null, null, null),
+                null
+        );
+        final TcEqp storedEqp = eqp(
+                13L,
+                command.eqpId(),
+                UiDomainEnumMapper.toDbProtocolType(command.interfaceType()),
+                "ACTIVE",
+                command.isDev(),
+                command.routePartition(),
+                command.eqpIp(),
+                command.eqpPort(),
+                command.modelVersionKey(),
+                "tester",
+                "v1"
+        );
+
+        when(fixture.eqpStore.upsert(any())).thenReturn(storedEqp);
+        when(fixture.dbSupport.loadSnapshotByEqpId(command.eqpId())).thenReturn(Optional.of(snapshot(storedEqp)));
+        when(fixture.eqpParamStore.findAllByEqpKeyAndVersion(13L, "v1")).thenReturn(List.of());
+        when(fixture.modelParamStore.findAllByModelVersionKey(eq(101L), any())).thenReturn(List.of(
+                modelParam(101L, "PORTCOUNT", "2")
+        ));
+
+        fixture.port.create(command);
+
+        final ArgumentCaptor<UpsertTcEqpPortStatus> portStatusCaptor = ArgumentCaptor.forClass(UpsertTcEqpPortStatus.class);
+        verify(fixture.eqpPortStatusStore, org.mockito.Mockito.times(2)).upsert(portStatusCaptor.capture());
+        assertEquals(List.of("1", "2"), portStatusCaptor.getAllValues().stream().map(UpsertTcEqpPortStatus::portId).toList());
+    }
+
+    @Test
+    @DisplayName("EQP 생성은 eqp/model parameter 모두 없으면 포트 4개를 기본 생성합니다")
+    void createEqpUsesDefaultPortCountWhenParametersMissing() {
+        final Fixture fixture = new Fixture();
+        final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
+                "tester",
+                "EQP-PORTCOUNT-DEFAULT",
+                UiProtocolType.SECS,
+                "ACTIVE",
+                true,
+                3,
+                "10.10.0.1",
+                5000,
+                101L,
+                null,
+                null,
+                null,
+                null,
+                new EqpManagementCommand.HsmsSettings(null, null, null, null, null, null, null, null, null),
+                null
+        );
+        final TcEqp storedEqp = eqp(
+                14L,
+                command.eqpId(),
+                UiDomainEnumMapper.toDbProtocolType(command.interfaceType()),
+                "ACTIVE",
+                command.isDev(),
+                command.routePartition(),
+                command.eqpIp(),
+                command.eqpPort(),
+                command.modelVersionKey(),
+                "tester"
+        );
+
+        when(fixture.eqpStore.upsert(any())).thenReturn(storedEqp);
+        when(fixture.dbSupport.loadSnapshotByEqpId(command.eqpId())).thenReturn(Optional.of(snapshot(storedEqp)));
+        when(fixture.modelParamStore.findAllByModelVersionKey(eq(101L), any())).thenReturn(List.of());
+
+        fixture.port.create(command);
+
+        final ArgumentCaptor<UpsertTcEqpPortStatus> portStatusCaptor = ArgumentCaptor.forClass(UpsertTcEqpPortStatus.class);
+        verify(fixture.eqpPortStatusStore, org.mockito.Mockito.times(4)).upsert(portStatusCaptor.capture());
+        assertEquals(List.of("1", "2", "3", "4"), portStatusCaptor.getAllValues().stream().map(UpsertTcEqpPortStatus::portId).toList());
     }
 
     @Test
@@ -372,6 +529,119 @@ class JpaEqpCrudPortTest {
         assertEquals(fixedTimestamp, command.updatedAt());
     }
 
+    @Test
+    @DisplayName("EQP 삭제는 tc_work를 먼저 정리한 뒤 tc_eqp를 삭제합니다")
+    void deleteEqpRemovesWorksBeforeEqpDelete() {
+        final Fixture fixture = new Fixture();
+        final String eqpId = "EQP-DELETE-001";
+        final EqpManagementSnapshot snapshot = snapshot(eqp(
+                51L,
+                eqpId,
+                ProtocolType.SOCKET,
+                "PASSIVE",
+                false,
+                2,
+                "127.0.0.1",
+                6000,
+                301L,
+                "tester"
+        ));
+
+        when(fixture.dbSupport.loadSnapshotByEqpId(eqpId)).thenReturn(Optional.of(snapshot));
+
+        fixture.port.delete(eqpId);
+
+        final var inOrder = inOrder(fixture.workStore, fixture.eqpStore);
+        inOrder.verify(fixture.workStore).deleteAllByEqpKey(51L);
+        inOrder.verify(fixture.eqpStore).deleteByEqpId(eq(eqpId));
+    }
+
+    @Test
+    @DisplayName("SOCKET EQP 생성은 listener-group routePartition 충돌 시 저장 전에 차단합니다")
+    void createSocketEqpRejectsPassiveListenerConflictBeforePersist() {
+        final Fixture fixture = new Fixture();
+        final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
+                "tester",
+                "CVD_DEMO_01",
+                UiProtocolType.SOCKET,
+                "PASSIVE",
+                false,
+                2,
+                "127.0.0.1",
+                6100,
+                201L,
+                null,
+                null,
+                null,
+                null,
+                null,
+                new EqpManagementCommand.SocketSettings("LINE_DELIMITED", null, null, null, null, null, null, null)
+        );
+
+        when(fixture.dbSupport.findPassiveListenerGroupRoutePartitionConflict(
+                eq(UiProtocolType.SOCKET),
+                eq((String) null),
+                eq(command.eqpIp()),
+                eq(command.eqpPort()),
+                eq(command.routePartition()),
+                eq("LINE_DELIMITED")
+        )).thenReturn(Optional.of("DEMO_SOCKET01"));
+
+        assertThrows(UiBadRequestException.class, () -> fixture.port.create(command));
+
+        verify(fixture.eqpStore, never()).upsert(any());
+        verify(fixture.eqpSocketStore, never()).upsert(any());
+    }
+
+    @Test
+    @DisplayName("SECS EQP 수정은 listener-group routePartition 충돌 시 저장 전에 차단합니다")
+    void updateSecsEqpRejectsPassiveListenerConflictBeforePersist() {
+        final Fixture fixture = new Fixture();
+        final String eqpId = "EQP-SECS-CONFLICT-001";
+        final EqpManagementCommand.Update command = new EqpManagementCommand.Update(
+                "tester",
+                "PASSIVE",
+                true,
+                7,
+                "10.10.0.5",
+                5000,
+                301L,
+                null,
+                null,
+                null,
+                null,
+                new EqpManagementCommand.HsmsSettings(0, 45, 10, 5, 10, 5, true, 60, 10_485_760L),
+                null
+        );
+        final EqpManagementSnapshot existingSnapshot = snapshot(eqp(
+                61L,
+                eqpId,
+                ProtocolType.SECS,
+                "ACTIVE",
+                false,
+                1,
+                "10.10.0.1",
+                5000,
+                101L,
+                "SYSTEM"
+        ));
+
+        when(fixture.dbSupport.loadSnapshotByEqpId(eqpId)).thenReturn(Optional.of(existingSnapshot));
+        when(fixture.dbSupport.findPassiveListenerGroupRoutePartitionConflict(
+                eq(UiProtocolType.SECS),
+                eq(eqpId),
+                eq(command.eqpIp()),
+                eq(command.eqpPort()),
+                eq(command.routePartition()),
+                eq((String) null)
+        )).thenReturn(Optional.of("PEER-SECS-001"));
+
+        assertThrows(UiBadRequestException.class, () -> fixture.port.update(eqpId, command));
+
+        verify(fixture.eqpStore, never()).upsert(any());
+        verify(fixture.eqpHsmsStore, never()).upsert(any());
+    }
+
     /**
      * 테스트 대상 포트와 mock 의존성을 함께 묶습니다.
      */
@@ -386,8 +656,10 @@ class JpaEqpCrudPortTest {
         private final TcEqpPortStatusStore eqpPortStatusStore = mock(TcEqpPortStatusStore.class);
         private final TcEqpParamStore eqpParamStore = mock(TcEqpParamStore.class);
         private final TcEqpParamVersionStore eqpParamVersionStore = mock(TcEqpParamVersionStore.class);
+        private final TcModelParamStore modelParamStore = mock(TcModelParamStore.class);
         private final TcJarGatewayStore jarGatewayStore = mock(TcJarGatewayStore.class);
         private final TcJarBusinessStore jarBusinessStore = mock(TcJarBusinessStore.class);
+        private final TcWorkStore workStore = mock(TcWorkStore.class);
         private final JpaEqpCrudPort port = new JpaEqpCrudPort(
                 dbSupport,
                 eqpStore,
@@ -398,8 +670,10 @@ class JpaEqpCrudPortTest {
                 eqpPortStatusStore,
                 eqpParamStore,
                 eqpParamVersionStore,
+                modelParamStore,
                 jarGatewayStore,
-                jarBusinessStore
+                jarBusinessStore,
+                workStore
         );
     }
 
@@ -513,6 +787,39 @@ class JpaEqpCrudPortTest {
                 List.of(),
                 null,
                 null
+        );
+    }
+
+    private static TcEqpParam eqpParam(
+            final long eqpKey,
+            final String version,
+            final String paramName,
+            final String paramValue
+    ) {
+        return new TcEqpParam(
+                1L,
+                eqpKey,
+                paramName,
+                version,
+                paramValue,
+                null,
+                "tester",
+                OffsetDateTime.parse("2026-03-11T10:15:30+09:00")
+        );
+    }
+
+    private static TcModelParam modelParam(
+            final long modelVersionKey,
+            final String paramName,
+            final String paramValue
+    ) {
+        return new TcModelParam(
+                1L,
+                modelVersionKey,
+                paramName,
+                paramValue,
+                null,
+                OffsetDateTime.parse("2026-03-11T10:15:30+09:00")
         );
     }
 }

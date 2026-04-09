@@ -28,6 +28,7 @@ import com.nori.tc.db.domain.model.TcModel;
 import com.nori.tc.ui.adapter.db.mapper.UiEqpDbMapper;
 import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import com.nori.tc.ui.domain.eqp.UiEqp;
 import com.nori.tc.ui.domain.eqp.UiEqpParam;
 import com.nori.tc.ui.domain.eqp.UiEqpParamVersion;
@@ -42,6 +43,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Locale;
 
 /**
  * EQP 관리 DB 어댑터 공통 조회/스캔 헬퍼입니다.
@@ -162,6 +164,77 @@ class EqpManagementDbSupport {
         return scanAllPages(modelStore::findAll).stream()
                 .map(UiModelDbMapper::toDomain)
                 .toList();
+    }
+
+    Optional<String> findPassiveListenerGroupRoutePartitionConflict(
+            final UiProtocolType interfaceType,
+            final String currentEqpId,
+            final String eqpIp,
+            final int eqpPort,
+            final int routePartition,
+            final String socketProtocolType
+    ) {
+        if (interfaceType == null || !isPassiveRoutePartitionValidationTarget(interfaceType, eqpIp, eqpPort)) {
+            return Optional.empty();
+        }
+
+        final String normalizedCurrentEqpId = normalizeText(currentEqpId);
+        final String normalizedEqpIp = normalizeText(eqpIp);
+        final String normalizedSocketProtocolType = normalizeText(socketProtocolType);
+
+        return scanAllPages(eqpStore::findAll).stream()
+                .filter(peer -> peer != null)
+                .map(UiEqpDbMapper::toDomain)
+                .filter(peer -> !Objects.equals(normalizeText(peer.eqpId()), normalizedCurrentEqpId))
+                .filter(peer -> peer.commInterface() == interfaceType)
+                .filter(peer -> sameText(peer.commMode(), "PASSIVE"))
+                .filter(peer -> sameText(peer.eqpIp(), normalizedEqpIp))
+                .filter(peer -> peer.eqpPort() == eqpPort)
+                .filter(peer -> !Objects.equals(peer.routePartition(), routePartition))
+                .filter(peer -> samePassiveListenerGroup(interfaceType, peer.eqpKey(), normalizedSocketProtocolType))
+                .map(UiEqp::eqpId)
+                .findFirst();
+    }
+
+    private boolean samePassiveListenerGroup(
+            final UiProtocolType interfaceType,
+            final Long peerEqpKey,
+            final String normalizedSocketProtocolType
+    ) {
+        if (peerEqpKey == null) {
+            return false;
+        }
+
+        if (interfaceType == UiProtocolType.SECS) {
+            return true;
+        }
+
+        final Optional<TcEqpSocket> peerSocket = eqpSocketStore.findByEqpKey(peerEqpKey);
+        if (peerSocket.isEmpty()) {
+            // 기존 반쪽 데이터가 남아 있으면 동일 listener-group의 정상 저장이 불가능하므로 선검증 단계에서 차단합니다.
+            return true;
+        }
+
+        return normalizeText(peerSocket.get().socketProtocolType()).equals(normalizedSocketProtocolType);
+    }
+
+    private boolean isPassiveRoutePartitionValidationTarget(
+            final UiProtocolType interfaceType,
+            final String eqpIp,
+            final int eqpPort
+    ) {
+        return interfaceType != null
+                && eqpIp != null
+                && !eqpIp.isBlank()
+                && eqpPort > 0;
+    }
+
+    private boolean sameText(final String left, final String right) {
+        return normalizeText(left).equals(normalizeText(right));
+    }
+
+    private String normalizeText(final String value) {
+        return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
     }
 
     List<TcEqpSocketProtocolType> loadAllSocketProtocolTypes() {

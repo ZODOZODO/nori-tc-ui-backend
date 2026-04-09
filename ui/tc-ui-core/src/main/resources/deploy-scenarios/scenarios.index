@@ -6,7 +6,6 @@ eqp-end.yaml
 eqp-reconnect.yaml
 eqp-send-message.yaml
 eqp-gateway-jar-update.yaml
-eqp-parameter-update.yaml
 eqp-business-jar-update.yaml
 register-model-only.yaml
 register-eqp-param-only.yaml

@@ -14,6 +14,7 @@ import org.springframework.data.redis.connection.RedisPassword;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.data.redis.serializer.RedisSerializer;
@@ -153,6 +154,26 @@ public class UiRedisConfiguration {
     ) {
         final RedisTemplate<String, Object> template = buildTemplate(factory, valueSerializer);
         log.info("businessRedisTemplate 초기화 완료. serializer=RedisSerializer.json()");
+        return template;
+    }
+
+    /**
+     * DeployTrace 전용 Business StringRedisTemplate 빈입니다.
+     *
+     * <p>DeployTrace는 명시적 JSON 문자열 계약으로 저장하므로,
+     * 공용 Object serializer를 거치지 않도록 별도 템플릿을 분리합니다.</p>
+     *
+     * @param factory business 연결 팩토리
+     * @return business StringRedisTemplate
+     */
+    @Bean(name = "businessStringRedisTemplate")
+    public StringRedisTemplate businessStringRedisTemplate(
+            @Qualifier("businessLettuceConnectionFactory") final LettuceConnectionFactory factory
+    ) {
+        final StringRedisTemplate template = new StringRedisTemplate();
+        template.setConnectionFactory(factory);
+        template.afterPropertiesSet();
+        log.info("businessStringRedisTemplate 초기화 완료. serializer=StringRedisSerializer");
         return template;
     }
 

@@ -14,12 +14,15 @@ import com.nori.tc.ui.core.deploy.DeploySummarySnapshot;
 import com.nori.tc.ui.core.deploy.DeployTargetCounts;
 import com.nori.tc.ui.core.deploy.DeployTargetStatus;
 import com.nori.tc.ui.core.deploy.PersistedDeployTarget;
+import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.model.UiCommandMessage;
 import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.port.db.DeployStorePort;
 import com.nori.tc.ui.core.port.db.EqpCrudPort;
+import com.nori.tc.ui.core.port.db.EqpQueryPort;
+import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
 import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
 import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
 import org.springframework.stereotype.Service;
@@ -33,6 +36,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.StreamSupport;
 
 /**
  * DeployService의 메시지/payload/스냅샷/요약 보조 책임을 분리합니다.
@@ -51,10 +55,14 @@ final class DeployServiceCommandSupport {
     private final UiBusinessEventPublishPort businessEventPublishPort;
     private final ObjectMapper objectMapper;
     private final DeployServiceSnapshotSupport snapshotSupport;
+    private final ModelParamPayloadSupport modelParamPayloadSupport;
+    private final EqpParamPayloadSupport eqpParamPayloadSupport;
 
     DeployServiceCommandSupport(
             final DeployStorePort deployStorePort,
             final EqpCrudPort eqpCrudPort,
+            final EqpQueryPort eqpQueryPort,
+            final ModelDetailQueryPort modelDetailQueryPort,
             final UiGatewayEventPublishPort gatewayEventPublishPort,
             final UiBusinessEventPublishPort businessEventPublishPort,
             final ObjectMapper objectMapper
@@ -63,8 +71,17 @@ final class DeployServiceCommandSupport {
         this.gatewayEventPublishPort = Objects.requireNonNull(gatewayEventPublishPort, "gatewayEventPublishPort is null");
         this.businessEventPublishPort = Objects.requireNonNull(businessEventPublishPort, "businessEventPublishPort is null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is null");
+        this.modelParamPayloadSupport = new ModelParamPayloadSupport(
+                Objects.requireNonNull(modelDetailQueryPort, "modelDetailQueryPort is null"),
+                objectMapper
+        );
+        this.eqpParamPayloadSupport = new EqpParamPayloadSupport(
+                Objects.requireNonNull(eqpQueryPort, "eqpQueryPort is null"),
+                objectMapper
+        );
         this.snapshotSupport = new DeployServiceSnapshotSupport(
                 Objects.requireNonNull(eqpCrudPort, "eqpCrudPort is null"),
+                modelDetailQueryPort,
                 objectMapper
         );
     }
@@ -129,6 +146,7 @@ final class DeployServiceCommandSupport {
         final JsonNode stepUiMessage = buildStepUiMessage(
                 deployKey,
                 target.deployTargetKey(),
+                target.planDraft().eqpId(),
                 step,
                 traceId,
                 actor,
@@ -401,10 +419,17 @@ final class DeployServiceCommandSupport {
             case RELOAD_GATEWAY_PLUGIN -> UiCommandEventType.EQP_GATEWAY_JARFILE_UPDATE;
             case RELOAD_BUSINESS_PLUGIN -> UiCommandEventType.EQP_BUSINESS_JARFILE_UPDATE;
             case DELETE_GATEWAY_MEMORY, DELETE_BUSINESS_BINDING -> UiCommandEventType.EQP_DELETE;
-            case UPSERT_GATEWAY_CONTEXT,
-                 REBUILD_GATEWAY_RUNTIME,
-                 RELOAD_BUSINESS_MODEL_RUNTIME,
+            case RELOAD_BUSINESS_MODEL_RUNTIME,
                  UPDATE_MODEL_BINDING -> switch (deployEventType) {
+                case EQP_CREATE -> UiCommandEventType.EQP_CREATE;
+                case EQP_UPDATE,
+                     EQP_GATEWAY_JARFILE_UPDATE,
+                     EQP_BUSINESS_JARFILE_UPDATE,
+                     EQP_REGISTER_DEPLOY -> UiCommandEventType.EQP_MODEL_UPDATE;
+                default -> UiCommandEventType.EQP_MODEL_UPDATE;
+            };
+            case UPSERT_GATEWAY_CONTEXT,
+                 REBUILD_GATEWAY_RUNTIME -> switch (deployEventType) {
                 case EQP_CREATE -> UiCommandEventType.EQP_CREATE;
                 case EQP_UPDATE,
                      EQP_GATEWAY_JARFILE_UPDATE,
@@ -427,13 +452,14 @@ final class DeployServiceCommandSupport {
     JsonNode buildDirectStepUiMessage(
             final String executionId,
             final UiCommandEventType eventType,
+            final String eqpId,
             final DeployResolvedStepPlan step,
             final String traceId,
             final String actor,
             final JsonNode mergedUiMessage
     ) {
         final ObjectNode root = objectMapper.createObjectNode();
-        copyCommonDeployPayload(root, mergedUiMessage, step.action());
+        copyCommonDeployPayload(root, mergedUiMessage, step.action(), eqpId);
 
         final ObjectNode orchestration = root.putObject("_direct");
         orchestration.put("executionId", executionId);
@@ -450,13 +476,14 @@ final class DeployServiceCommandSupport {
     private JsonNode buildStepUiMessage(
             final long deployKey,
             final long deployTargetKey,
+            final String eqpId,
             final DeployResolvedStepPlan step,
             final String traceId,
             final String actor,
             final JsonNode mergedUiMessage
     ) {
         final ObjectNode root = objectMapper.createObjectNode();
-        copyCommonDeployPayload(root, mergedUiMessage, step.action());
+        copyCommonDeployPayload(root, mergedUiMessage, step.action(), eqpId);
 
         final ObjectNode orchestration = root.putObject("_deploy");
         orchestration.put("deployKey", deployKey);
@@ -472,14 +499,21 @@ final class DeployServiceCommandSupport {
     private void copyCommonDeployPayload(
             final ObjectNode destination,
             final JsonNode mergedUiMessage,
-            final DeployScenarioAction action
+            final DeployScenarioAction action,
+            final String eqpId
     ) {
         switch (action) {
             case UPSERT_GATEWAY_CONTEXT -> copyFields(destination, mergedUiMessage, "gatewayProfile");
             case RELOAD_BUSINESS_PLUGIN -> copyFields(destination, mergedUiMessage, "modelInfo", "businessJar");
-            case RELOAD_BUSINESS_MODEL_RUNTIME -> copyFields(destination, mergedUiMessage, "modelInfo");
-            case UPDATE_MODEL_BINDING -> copyFields(destination, mergedUiMessage, "modelInfo", "businessJar");
-            case UPDATE_EQP_PARAM -> copyFields(destination, mergedUiMessage, "eqpParams");
+            case RELOAD_BUSINESS_MODEL_RUNTIME -> {
+                copyFields(destination, mergedUiMessage, "modelInfo");
+                enrichModelParamsPayload(destination, mergedUiMessage);
+            }
+            case UPDATE_MODEL_BINDING -> {
+                copyFields(destination, mergedUiMessage, "modelInfo", "businessJar");
+                enrichModelParamsPayload(destination, mergedUiMessage);
+            }
+            case UPDATE_EQP_PARAM -> enrichEqpParamsPayload(destination, mergedUiMessage, eqpId);
             case RELOAD_GATEWAY_PLUGIN -> copyFields(destination, mergedUiMessage, "gatewayJar");
             case REBUILD_GATEWAY_RUNTIME -> copyFields(destination, mergedUiMessage, "gatewayProfile", "gatewayJar");
             case RECONNECT_GATEWAY -> copyFields(destination, mergedUiMessage, "gatewayProfile");
@@ -502,6 +536,46 @@ final class DeployServiceCommandSupport {
         }
     }
 
+    private void enrichModelParamsPayload(final ObjectNode destination, final JsonNode mergedUiMessage) {
+        final Long modelVersionKey = longValue(
+                mergedUiMessage == null ? null : mergedUiMessage.path("modelInfo"),
+                "modelVersionKey"
+        );
+        if (modelVersionKey == null || modelVersionKey <= 0L) {
+            return;
+        }
+        destination.set(
+                "modelParams",
+                modelParamPayloadSupport.ensureModelParamsPayload(
+                        mergedUiMessage == null ? null : mergedUiMessage.get("modelParams"),
+                        modelVersionKey
+                )
+        );
+    }
+
+    private void enrichEqpParamsPayload(
+            final ObjectNode destination,
+            final JsonNode mergedUiMessage,
+            final String eqpId
+    ) {
+        final String version = textValue(
+                mergedUiMessage == null ? null : mergedUiMessage.path("eqpParams"),
+                "version"
+        );
+        if (eqpId == null || eqpId.isBlank() || version == null || version.isBlank()) {
+            copyFields(destination, mergedUiMessage, "eqpParams");
+            return;
+        }
+        destination.set(
+                "eqpParams",
+                eqpParamPayloadSupport.ensureEqpParamsPayload(
+                        mergedUiMessage == null ? null : mergedUiMessage.get("eqpParams"),
+                        eqpId,
+                        version
+                )
+        );
+    }
+
     UiEquipmentProfileSnapshot buildDirectEquipmentProfile(
             final UiCommandEventType messageEventType,
             final String eqpId,
@@ -509,7 +583,9 @@ final class DeployServiceCommandSupport {
             final Long eqpKey,
             final JsonNode stepUiMessage
     ) {
-        if (messageEventType != UiCommandEventType.EQP_CREATE && messageEventType != UiCommandEventType.EQP_UPDATE) {
+        if (messageEventType != UiCommandEventType.EQP_CREATE
+                && messageEventType != UiCommandEventType.EQP_UPDATE
+                && messageEventType != UiCommandEventType.EQP_MODEL_UPDATE) {
             return Optional.<UiEquipmentProfileSnapshot>empty().orElse(null);
         }
         final JsonNode gatewayProfile = stepUiMessage.get("gatewayProfile");
@@ -526,6 +602,8 @@ final class DeployServiceCommandSupport {
                 textValue(gatewayProfile, "eqpIp"),
                 intValue(gatewayProfile, "eqpPort"),
                 null,
+                longValue(stepUiMessage.path("gatewayJar"), "jarRef"),
+                longValue(stepUiMessage.path("businessJar"), "jarRef"),
                 textValue(gatewayProfile, "connectionMode"),
                 null,
                 true,
@@ -539,27 +617,189 @@ final class DeployServiceCommandSupport {
         );
     }
 
+    UiEquipmentProfileSnapshot buildDirectEquipmentProfile(
+            final UiCommandEventType messageEventType,
+            final EqpManagementSnapshot executionSnapshot,
+            final JsonNode stepUiMessage
+    ) {
+        if (messageEventType != UiCommandEventType.EQP_CREATE
+                && messageEventType != UiCommandEventType.EQP_UPDATE
+                && messageEventType != UiCommandEventType.EQP_MODEL_UPDATE) {
+            return null;
+        }
+        if (executionSnapshot == null) {
+            return null;
+        }
+
+        final OffsetDateTime updatedAt = executionSnapshot.eqp().updatedAt() == null
+                ? OffsetDateTime.now(ZoneOffset.UTC)
+                : executionSnapshot.eqp().updatedAt().withOffsetSameInstant(ZoneOffset.UTC);
+        final JsonNode gatewayProfile = stepUiMessage == null ? null : stepUiMessage.get("gatewayProfile");
+        final JsonNode eqpParamsNode = stepUiMessage == null ? null : stepUiMessage.path("eqpParams");
+        final Long resolvedModelVersionKey = longValue(stepUiMessage == null ? null : stepUiMessage.path("modelInfo"), "modelVersionKey") != null
+                ? longValue(stepUiMessage.path("modelInfo"), "modelVersionKey")
+                : executionSnapshot.eqp().modelVersionKey();
+        final String resolvedConnectionMode = textValue(gatewayProfile, "connectionMode") != null
+                ? textValue(gatewayProfile, "connectionMode")
+                : executionSnapshot.eqp().commMode();
+        final String resolvedEqpIp = textValue(gatewayProfile, "eqpIp") != null
+                ? textValue(gatewayProfile, "eqpIp")
+                : executionSnapshot.eqp().eqpIp();
+        final Integer resolvedEqpPort = intValue(gatewayProfile, "eqpPort") != null
+                ? intValue(gatewayProfile, "eqpPort")
+                : executionSnapshot.eqp().eqpPort();
+        final String resolvedSocketType = textValue(gatewayProfile, "socketType") != null
+                ? textValue(gatewayProfile, "socketType")
+                : executionSnapshot.socket() == null ? null : executionSnapshot.socket().socketProtocolType();
+        final Integer resolvedHsmsDeviceId = intValue(gatewayProfile, "hsmsDeviceId") != null
+                ? intValue(gatewayProfile, "hsmsDeviceId")
+                : executionSnapshot.hsms() == null ? null : executionSnapshot.hsms().deviceId();
+        final List<UiEquipmentProfileSnapshot.ParamSnapshot> params = resolveEquipmentProfileParams(
+                executionSnapshot,
+                eqpParamsNode
+        );
+
+        final UiEquipmentProfileSnapshot.HsmsSettingsSnapshot hsmsSettings =
+                executionSnapshot.hsms() == null ? null : new UiEquipmentProfileSnapshot.HsmsSettingsSnapshot(
+                        resolvedHsmsDeviceId,
+                        resolvedConnectionMode,
+                        executionSnapshot.hsms().t3Timeout(),
+                        executionSnapshot.hsms().t5Timeout(),
+                        executionSnapshot.hsms().t6Timeout(),
+                        executionSnapshot.hsms().t7Timeout(),
+                        executionSnapshot.hsms().t8Timeout(),
+                        executionSnapshot.hsms().linkTestEnabled(),
+                        executionSnapshot.hsms().linkTestInterval(),
+                        executionSnapshot.hsms().maxMsgBytes()
+                );
+        final UiEquipmentProfileSnapshot.SocketSettingsSnapshot socketSettings =
+                executionSnapshot.socket() == null ? null : new UiEquipmentProfileSnapshot.SocketSettingsSnapshot(
+                        resolvedSocketType,
+                        resolvedConnectionMode,
+                        executionSnapshot.socket().charset(),
+                        executionSnapshot.socket().heartbeatEnabled(),
+                        executionSnapshot.socket().heartbeatInterval(),
+                        executionSnapshot.socket().readTimeout(),
+                        executionSnapshot.socket().writeTimeout(),
+                        executionSnapshot.socket().maxFrameSizeBytes(),
+                        executionSnapshot.socket().keepAliveEnabled()
+                );
+        final UiEquipmentProfileSnapshot.CurrentStateSnapshot currentStateSnapshot =
+                executionSnapshot.runtimeState() == null ? null : new UiEquipmentProfileSnapshot.CurrentStateSnapshot(
+                        executionSnapshot.runtimeState().controlState() == null ? null : executionSnapshot.runtimeState().controlState().name(),
+                        executionSnapshot.runtimeState().eqpState() == null ? null : executionSnapshot.runtimeState().eqpState().name(),
+                        executionSnapshot.runtimeState().sinceAt() == null ? null : executionSnapshot.runtimeState().sinceAt().toString(),
+                        executionSnapshot.runtimeState().reasonCode(),
+                        executionSnapshot.runtimeState().reasonDetail(),
+                        executionSnapshot.runtimeState().updatedAt() == null ? null : executionSnapshot.runtimeState().updatedAt().toString()
+                );
+        final List<UiEquipmentProfileSnapshot.PortStatusSnapshot> portStatuses = executionSnapshot.portStatuses().stream()
+                .map(port -> new UiEquipmentProfileSnapshot.PortStatusSnapshot(
+                        port.portId(),
+                        port.portType() == null ? null : port.portType().name(),
+                        port.portState(),
+                        port.carrierId(),
+                        port.carrierType() == null ? null : port.carrierType().name(),
+                        port.carrierState() == null ? null : port.carrierState().name(),
+                        port.updatedAt() == null ? null : port.updatedAt().toString()
+                ))
+                .toList();
+        final UiEquipmentProfileSnapshot.LogPolicySnapshot logPolicy =
+                executionSnapshot.logPolicy() == null ? null : new UiEquipmentProfileSnapshot.LogPolicySnapshot(
+                        executionSnapshot.logPolicy().logLevel() == null ? null : executionSnapshot.logPolicy().logLevel().name(),
+                        executionSnapshot.logPolicy().logRetentionDays(),
+                        executionSnapshot.logPolicy().logPath(),
+                        executionSnapshot.logPolicy().updatedAt() == null ? null : executionSnapshot.logPolicy().updatedAt().toString()
+                );
+        final Long gatewayJarRefFromStep = longValue(stepUiMessage.path("gatewayJar"), "jarRef");
+        final Long businessJarRefFromStep = longValue(stepUiMessage.path("businessJar"), "jarRef");
+        return new UiEquipmentProfileSnapshot(
+                executionSnapshot.eqp().eqpKey(),
+                executionSnapshot.eqp().eqpId(),
+                executionSnapshot.eqp().commInterface().name(),
+                resolvedSocketType,
+                resolvedHsmsDeviceId,
+                resolvedEqpIp,
+                resolvedEqpPort,
+                resolvedModelVersionKey,
+                gatewayJarRefFromStep != null ? gatewayJarRefFromStep : executionSnapshot.eqp().gatewayJarKey(),
+                businessJarRefFromStep != null ? businessJarRefFromStep : executionSnapshot.eqp().businessJarKey(),
+                resolvedConnectionMode,
+                executionSnapshot.eqp().routePartition(),
+                executionSnapshot.eqp().enabled(),
+                hsmsSettings,
+                socketSettings,
+                currentStateSnapshot,
+                portStatuses,
+                logPolicy,
+                params,
+                updatedAt.toString()
+        );
+    }
+
     private UiEquipmentProfileSnapshot buildEquipmentProfile(
             final UiCommandEventType messageEventType,
             final PersistedDeployTarget target,
             final JsonNode stepUiMessage
     ) {
-        if (messageEventType != UiCommandEventType.EQP_CREATE && messageEventType != UiCommandEventType.EQP_UPDATE) {
+        if (messageEventType != UiCommandEventType.EQP_CREATE
+                && messageEventType != UiCommandEventType.EQP_UPDATE
+                && messageEventType != UiCommandEventType.EQP_MODEL_UPDATE) {
             return Optional.<UiEquipmentProfileSnapshot>empty().orElse(null);
         }
-        final JsonNode gatewayProfile = stepUiMessage.get("gatewayProfile");
-        if (gatewayProfile == null || !gatewayProfile.isObject()) {
-            return Optional.<UiEquipmentProfileSnapshot>empty().orElse(null);
+        final JsonNode mergedUiMessage = target.planDraft().desiredState() == null
+                ? null
+                : target.planDraft().desiredState().mergedUiMessage();
+        final JsonNode equipmentProfileNode = mergedUiMessage == null ? null : mergedUiMessage.get("equipmentProfile");
+        if (equipmentProfileNode == null || !equipmentProfileNode.isObject()) {
+            throw new UiBadRequestException(
+                    "deploy equipmentProfile payload가 필요합니다. eqpId=" + target.planDraft().eqpId()
+                            + ", eventType=" + messageEventType.name()
+            );
+        }
+        return parseEquipmentProfile(equipmentProfileNode);
+    }
+
+    private List<UiEquipmentProfileSnapshot.ParamSnapshot> resolveEquipmentProfileParams(
+            final EqpManagementSnapshot executionSnapshot,
+            final JsonNode eqpParamsNode
+    ) {
+        if (eqpParamsNode == null || eqpParamsNode.isMissingNode() || eqpParamsNode.isNull()) {
+            return executionSnapshot.params().stream()
+                    .map(param -> new UiEquipmentProfileSnapshot.ParamSnapshot(
+                            param.eqpParamKey(),
+                            param.paramName(),
+                            param.paramVersion(),
+                            param.paramValue(),
+                            param.updatedAt() == null ? null : param.updatedAt().toString()
+                    ))
+                    .toList();
         }
 
-        final Long eqpKey = target.planDraft().currentState() == null ? null : target.planDraft().currentState().eqpKey();
-        return buildDirectEquipmentProfile(
-                messageEventType,
-                target.planDraft().eqpId(),
-                target.planDraft().interfaceType(),
-                eqpKey,
-                stepUiMessage
-        );
+        final JsonNode itemsNode = eqpParamsNode.path("items");
+        if (!itemsNode.isArray()) {
+            return executionSnapshot.params().stream()
+                    .map(param -> new UiEquipmentProfileSnapshot.ParamSnapshot(
+                            param.eqpParamKey(),
+                            param.paramName(),
+                            param.paramVersion(),
+                            param.paramValue(),
+                            param.updatedAt() == null ? null : param.updatedAt().toString()
+                    ))
+                    .toList();
+        }
+
+        final String version = textValue(eqpParamsNode, "version");
+        return StreamSupport.stream(itemsNode.spliterator(), false)
+                .map(item -> new UiEquipmentProfileSnapshot.ParamSnapshot(
+                        null,
+                        textValue(item, "name"),
+                        version,
+                        item.path("value").asText(""),
+                        null
+                ))
+                .filter(param -> param.paramName() != null && !param.paramName().isBlank())
+                .toList();
     }
 
     private JsonNode ensureDeployMetadata(
@@ -645,6 +885,27 @@ final class DeployServiceCommandSupport {
             return Optional.of(objectMapper.treeToValue(equipmentProfileNode, UiEquipmentProfileSnapshot.class));
         } catch (Exception exception) {
             throw new UiBadRequestException("보상 equipmentProfile 역직렬화에 실패했습니다.");
+        }
+    }
+
+    private static Long longValue(final JsonNode node, final String fieldName) {
+        if (node == null || node.isNull() || fieldName == null) {
+            return null;
+        }
+        final JsonNode field = node.path(fieldName);
+        if (field.isNumber()) {
+            final long value = field.asLong();
+            return value > 0L ? value : null;
+        }
+        final String text = textValue(node, fieldName);
+        if (text == null) {
+            return null;
+        }
+        try {
+            final long parsed = Long.parseLong(text);
+            return parsed > 0L ? parsed : null;
+        } catch (NumberFormatException exception) {
+            return null;
         }
     }
 

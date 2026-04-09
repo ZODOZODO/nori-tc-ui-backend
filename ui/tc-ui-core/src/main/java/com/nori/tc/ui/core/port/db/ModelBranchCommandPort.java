@@ -61,13 +61,11 @@ public interface ModelBranchCommandPort {
      * branch EDIT version checkin 명령입니다.
      *
      * @param editModelVersionKey 체크인할 EDIT version key
-     * @param newVersion 새로 생성할 branch version
      * @param description 새 버전에 기록할 설명
      * @param currentUser 현재 로그인 사용자 ID
      */
     record CheckinBranchEditVersionCommand(
             long editModelVersionKey,
-            String newVersion,
             String description,
             String currentUser
     ) {

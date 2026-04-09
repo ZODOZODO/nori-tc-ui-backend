@@ -8,6 +8,7 @@ package com.nori.tc.ui.core.model;
 public enum UiCommandEventType {
     EQP_CREATE,
     EQP_UPDATE,
+    EQP_MODEL_UPDATE,
     EQP_DELETE,
     EQP_START,
     EQP_END,

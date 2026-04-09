@@ -121,6 +121,7 @@ public class UiSecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/actuator/health", "/api/actuator/health/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/internal/demo/**").permitAll()
                         // CORS preflight 요청은 브라우저가 자동 호출하므로 인증 없이 허용합니다.
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         // 그 외 모든 요청: 인증 필수 + DB 기반 URL 인가

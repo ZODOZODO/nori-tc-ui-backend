@@ -10,6 +10,7 @@ import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.port.db.EqpCrudPort;
+import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
 import com.nori.tc.ui.domain.eqp.UiEqpParam;
 
 import java.security.MessageDigest;
@@ -29,13 +30,19 @@ final class DeployServiceSnapshotSupport {
 
     private final EqpCrudPort eqpCrudPort;
     private final ObjectMapper objectMapper;
+    private final ModelParamPayloadSupport modelParamPayloadSupport;
 
     DeployServiceSnapshotSupport(
             final EqpCrudPort eqpCrudPort,
+            final ModelDetailQueryPort modelDetailQueryPort,
             final ObjectMapper objectMapper
     ) {
         this.eqpCrudPort = Objects.requireNonNull(eqpCrudPort, "eqpCrudPort is null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is null");
+        this.modelParamPayloadSupport = new ModelParamPayloadSupport(
+                Objects.requireNonNull(modelDetailQueryPort, "modelDetailQueryPort is null"),
+                objectMapper
+        );
     }
 
     JsonNode buildTargetPreStateSnapshot(final PersistedDeployTarget target) {
@@ -43,12 +50,16 @@ final class DeployServiceSnapshotSupport {
             return buildTargetPreStateMarker(target.planDraft().eqpId(), target.planDraft().interfaceType(), false);
         }
 
-        final Optional<EqpManagementSnapshot> snapshot = eqpCrudPort.findSnapshotByEqpId(target.planDraft().eqpId());
+        final Optional<EqpManagementSnapshot> snapshot = findExecutionSnapshot(target.planDraft().eqpId());
         if (snapshot.isPresent()) {
             return sanitizeTargetPreState(snapshot.get());
         }
 
         return buildFallbackTargetPreState(target);
+    }
+
+    Optional<EqpManagementSnapshot> findExecutionSnapshot(final String eqpId) {
+        return eqpCrudPort.findSnapshotByEqpId(eqpId);
     }
 
     JsonNode buildCompensationSnapshot(
@@ -76,16 +87,16 @@ final class DeployServiceSnapshotSupport {
                     ? buildBusinessJarCompensationSnapshot(targetPreState, step.timeoutMs())
                     : buildSkipCompensationSnapshot("NO_PREVIOUS_BUSINESS_PLUGIN");
             case RESTORE_PREVIOUS_BUSINESS_RUNTIME -> eqpExists
-                    ? buildBusinessUpdateCompensationSnapshot(targetPreState, step.timeoutMs(), false, false)
+                    ? buildBusinessUpdateCompensationSnapshot(targetPreState, step.timeoutMs(), false)
                     : buildSkipCompensationSnapshot("NO_PREVIOUS_BUSINESS_RUNTIME");
             case RESTORE_PREVIOUS_MODEL_BINDING -> eqpExists
-                    ? buildBusinessUpdateCompensationSnapshot(targetPreState, step.timeoutMs(), true, false)
+                    ? buildBusinessUpdateCompensationSnapshot(targetPreState, step.timeoutMs(), true)
                     : buildDeleteCompensationSnapshot(UiCommandEventType.EQP_DELETE, target.planDraft().interfaceType(), step.timeoutMs());
             case RESTORE_PREVIOUS_EQP_PARAM -> eqpExists
                     ? buildEqpParamCompensationSnapshot(targetPreState, step.timeoutMs())
                     : buildSkipCompensationSnapshot("NO_PREVIOUS_EQP_PARAM");
             case RESTORE_PREVIOUS_BUSINESS_BINDING -> eqpExists
-                    ? buildBusinessUpdateCompensationSnapshot(targetPreState, step.timeoutMs(), true, true)
+                    ? buildBusinessCreateCompensationSnapshot(targetPreState, step.timeoutMs())
                     : buildDeleteCompensationSnapshot(UiCommandEventType.EQP_DELETE, target.planDraft().interfaceType(), step.timeoutMs());
             default -> buildSkipCompensationSnapshot("UNSUPPORTED_ROLLBACK_ACTION");
         };
@@ -112,6 +123,7 @@ final class DeployServiceSnapshotSupport {
 
         root.set("gatewayProfile", buildGatewayProfile(snapshot));
         root.set("equipmentProfile", objectMapper.valueToTree(buildGatewayEquipmentProfile(snapshot)));
+        root.set("modelParams", modelParamPayloadSupport.ensureModelParamsPayload(null, snapshot.eqp().modelVersionKey()));
         root.set("eqpParams", buildEqpParamSnapshot(snapshot.eqp().appliedParamVersion(), snapshot.params()));
 
         if (snapshot.gatewayJar() != null) {
@@ -138,6 +150,7 @@ final class DeployServiceSnapshotSupport {
 
         final ObjectNode modelInfo = root.putObject("modelInfo");
         modelInfo.put("modelVersionKey", currentState.modelVersionKey());
+        root.set("modelParams", modelParamPayloadSupport.ensureModelParamsPayload(null, currentState.modelVersionKey()));
 
         final ObjectNode gatewayProfile = root.putObject("gatewayProfile");
         gatewayProfile.put("connectionMode", currentState.connectionMode());
@@ -164,6 +177,8 @@ final class DeployServiceSnapshotSupport {
                 currentState.eqpIp(),
                 currentState.eqpPort(),
                 null,
+                currentState.gatewayJarRef(),
+                currentState.businessJarRef(),
                 currentState.connectionMode(),
                 null,
                 true,
@@ -213,22 +228,33 @@ final class DeployServiceSnapshotSupport {
     private JsonNode buildBusinessUpdateCompensationSnapshot(
             final JsonNode targetPreState,
             final long timeoutMs,
-            final boolean includeBusinessJar,
-            final boolean includeEqpParams
+            final boolean includeBusinessJar
     ) {
         final ObjectNode uiMessage = objectMapper.createObjectNode();
-        DeployServiceCommandSupport.copyFields(uiMessage, targetPreState, "modelInfo");
+        DeployServiceCommandSupport.copyFields(uiMessage, targetPreState, "modelInfo", "modelParams");
         if (includeBusinessJar) {
             DeployServiceCommandSupport.copyFields(uiMessage, targetPreState, "businessJar");
         }
-        if (includeEqpParams) {
-            DeployServiceCommandSupport.copyFields(uiMessage, targetPreState, "eqpParams");
-        }
         return buildCommandSnapshot(
-                UiCommandEventType.EQP_UPDATE,
+                UiCommandEventType.EQP_MODEL_UPDATE,
                 DeployServiceCommandSupport.textValue(targetPreState, "interfaceType"),
                 uiMessage,
-                null,
+                targetPreState.get("equipmentProfile"),
+                timeoutMs
+        );
+    }
+
+    private JsonNode buildBusinessCreateCompensationSnapshot(
+            final JsonNode targetPreState,
+            final long timeoutMs
+    ) {
+        final ObjectNode uiMessage = objectMapper.createObjectNode();
+        DeployServiceCommandSupport.copyFields(uiMessage, targetPreState, "modelInfo", "modelParams", "businessJar");
+        return buildCommandSnapshot(
+                UiCommandEventType.EQP_CREATE,
+                DeployServiceCommandSupport.textValue(targetPreState, "interfaceType"),
+                uiMessage,
+                targetPreState.get("equipmentProfile"),
                 timeoutMs
         );
     }
@@ -371,6 +397,8 @@ final class DeployServiceSnapshotSupport {
                 snapshot.eqp().eqpIp(),
                 snapshot.eqp().eqpPort(),
                 snapshot.model() == null ? null : snapshot.model().modelKey(),
+                snapshot.eqp().gatewayJarKey(),
+                snapshot.eqp().businessJarKey(),
                 snapshot.eqp().commMode(),
                 snapshot.eqp().routePartition(),
                 snapshot.eqp().enabled(),

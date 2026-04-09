@@ -28,20 +28,3 @@ steps:
       enabled: true
       mode: AUTO_COMPENSATABLE
       action: RESTORE_PREVIOUS_BUSINESS_PLUGIN
-
-  - order: 20
-    code: UPDATE_MODEL_BINDING
-    name: Business model binding 전환
-    targetApp: BUSINESS
-    description: 새 pluginFingerprint에 해당하는 runtime으로 설비 binding을 이동한다.
-    run:
-      action: UPDATE_MODEL_BINDING
-      timeoutMs: 10000
-      replyRequired: true
-      retry:
-        maxAttempts: 1
-        backoffMs: 0
-    rollback:
-      enabled: true
-      mode: AUTO_COMPENSATABLE
-      action: RESTORE_PREVIOUS_MODEL_BINDING

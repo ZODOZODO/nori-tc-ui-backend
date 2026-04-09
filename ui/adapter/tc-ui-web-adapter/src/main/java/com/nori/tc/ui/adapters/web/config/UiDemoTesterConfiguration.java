@@ -11,7 +11,7 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 
 @Configuration
-@EnableConfigurationProperties(UiDemoTesterProperties.class)
+@EnableConfigurationProperties({UiDemoTesterProperties.class, UiInternalApiProperties.class})
 public class UiDemoTesterConfiguration {
 
     @Bean

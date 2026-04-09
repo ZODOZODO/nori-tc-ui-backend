@@ -5,6 +5,7 @@ import tools.jackson.databind.node.ObjectNode;
 import tools.jackson.databind.ObjectMapper;
 import com.nori.tc.ui.core.deploy.DeployActiveEqpConflict;
 import com.nori.tc.ui.core.deploy.DeployCurrentState;
+import com.nori.tc.ui.core.deploy.DeployDeltaKind;
 import com.nori.tc.ui.core.deploy.DeployDesiredState;
 import com.nori.tc.ui.core.deploy.DeployExecutionPlan;
 import com.nori.tc.ui.core.deploy.DeployExecutionTarget;
@@ -41,9 +42,11 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * deploy orchestration 상태를 PostgreSQL에 저장/조회하는 JDBC 어댑터입니다.
@@ -468,7 +471,7 @@ public class DeployJdbcStorePort implements DeployStorePort {
                          WHERE deploy_target_key = :deployTargetKey
                            AND snapshot_scope = :snapshotScope
                            AND snapshot_kind = :snapshotKind
-                           AND ((:stepCode IS NULL AND step_code IS NULL) OR step_code = :stepCode)
+                           AND step_code IS NOT DISTINCT FROM CAST(:stepCode AS VARCHAR)
                          ORDER BY deploy_target_snapshot_key DESC
                          LIMIT 1
                         """,
@@ -500,6 +503,7 @@ public class DeployJdbcStorePort implements DeployStorePort {
                         SELECT deploy_key,
                                deploy_name,
                                event_type,
+                               desired_common_state_json,
                                deploy_status,
                                pause_requested,
                                execution_policy,
@@ -653,7 +657,7 @@ public class DeployJdbcStorePort implements DeployStorePort {
                             new DeployPlanCommand.CommonRequest(
                                     interfaceType,
                                     uiMessage.deepCopy(),
-                                    support.normalizeOptionalText(commonState.path("resolvedScenarioCode").asText(null))
+                                    support.normalizeOptionalText(commonState.path("resolvedScenarioCode").asString(null))
                             );
                     final List<DeployPlanCommand.TargetRequest> targets = loadRedeployTargets(
                             deployKey,
@@ -1053,7 +1057,7 @@ public class DeployJdbcStorePort implements DeployStorePort {
                 resultSet.getString("interface_type"),
                 mapExecutionCurrentState(resultSet),
                 support.objectMapper().convertValue(desiredStateJson, DeployDesiredState.class),
-                java.util.Set.of(),
+                mapDeltaKinds(deltaJson),
                 support.normalizeOptionalText(resultSet.getString("resolved_scenario_code")),
                 nullableInteger(resultSet, "resolved_scenario_version"),
                 mapResolvedSteps(resolvedStepPlanJson),
@@ -1073,6 +1077,34 @@ public class DeployJdbcStorePort implements DeployStorePort {
                 support.normalizeOptionalText(resultSet.getString("current_step_code")),
                 nullableStepStatus(resultSet, "current_step_status")
         );
+    }
+
+    private Set<DeployDeltaKind> mapDeltaKinds(final JsonNode deltaJson) {
+        if (deltaJson == null || deltaJson.isNull() || deltaJson.isMissingNode()) {
+            return Set.of();
+        }
+
+        final JsonNode deltaKindsNode = deltaJson.path("deltaKinds");
+        if (!deltaKindsNode.isArray()) {
+            return Set.of();
+        }
+
+        final Set<DeployDeltaKind> deltaKinds = new LinkedHashSet<>();
+        for (JsonNode deltaKindNode : deltaKindsNode) {
+            if (deltaKindNode == null || deltaKindNode.isNull()) {
+                continue;
+            }
+            final String rawValue = support.normalizeOptionalText(deltaKindNode.asText());
+            if (rawValue == null) {
+                continue;
+            }
+            try {
+                deltaKinds.add(DeployDeltaKind.valueOf(rawValue));
+            } catch (IllegalArgumentException ignored) {
+                // 알 수 없는 delta 값은 실행 복구를 막지 않도록 무시합니다.
+            }
+        }
+        return Set.copyOf(deltaKinds);
     }
 
     private DeployCurrentState mapExecutionCurrentState(final java.sql.ResultSet resultSet) throws java.sql.SQLException {
@@ -1100,7 +1132,8 @@ public class DeployJdbcStorePort implements DeployStorePort {
                 nullableLong(resultSet, "current_gateway_jar_key"),
                 nullableLong(resultSet, "current_business_jar_key"),
                 support.normalizeOptionalText(resultSet.getString("current_socket_type")),
-                nullableInteger(resultSet, "current_hsms_device_id")
+                nullableInteger(resultSet, "current_hsms_device_id"),
+                null
         );
     }
 
@@ -1117,19 +1150,19 @@ public class DeployJdbcStorePort implements DeployStorePort {
                     retryNode.path("backoffMs").asLong(0L)
             )
                     : DeployScenarioRetryPolicy.noRetry();
-            final String rollbackAction = support.normalizeOptionalText(stepNode.path("rollbackAction").asText(null));
+            final String rollbackAction = support.normalizeOptionalText(stepNode.path("rollbackAction").asString(null));
             steps.add(new DeployResolvedStepPlan(
                     stepNode.path("order").asInt(),
-                    stepNode.path("code").asText(),
-                    stepNode.path("name").asText(),
-                    DeployTargetApp.valueOf(stepNode.path("targetApp").asText()),
-                    stepNode.path("description").asText(null),
-                    DeployScenarioAction.valueOf(stepNode.path("action").asText()),
+                    stepNode.path("code").asString(),
+                    stepNode.path("name").asString(),
+                    DeployTargetApp.valueOf(stepNode.path("targetApp").asString()),
+                    stepNode.path("description").asString(null),
+                    DeployScenarioAction.valueOf(stepNode.path("action").asString()),
                     stepNode.path("timeoutMs").asLong(),
                     stepNode.path("replyRequired").asBoolean(false),
                     retryPolicy,
                     stepNode.path("rollbackEnabled").asBoolean(false),
-                    DeployRollbackMode.valueOf(stepNode.path("rollbackMode").asText("NOT_REQUIRED")),
+                    DeployRollbackMode.valueOf(stepNode.path("rollbackMode").asString("NOT_REQUIRED")),
                     rollbackAction == null ? null : DeployScenarioAction.valueOf(rollbackAction)
             ));
         }

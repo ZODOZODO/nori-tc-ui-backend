@@ -15,6 +15,7 @@ import com.nori.tc.ui.domain.useradmin.UiManagedUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Objects;
@@ -195,6 +196,7 @@ public class JpaUserCrudPort implements UserCrudPort {
      * @param userPk 삭제 대상 사용자 PK
      */
     @Override
+    @Transactional
     public void deleteByUserPk(final long userPk) {
         if (userPk <= 0) {
             log.warn("사용자 삭제 요청 거부 - userPk는 1 이상이어야 합니다. userPk={}", userPk);

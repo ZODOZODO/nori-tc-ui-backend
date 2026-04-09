@@ -121,7 +121,6 @@ public class ModelBranchController {
         final UiModel checkedIn = modelBranchCommandPort.checkinBranchEditVersion(
                 new ModelBranchCommandPort.CheckinBranchEditVersionCommand(
                         modelVersionKey,
-                        request.newVersion(),
                         request.description(),
                         currentUser
                 )

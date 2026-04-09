@@ -35,6 +35,7 @@ final class DeployJdbcStoreSupport {
     private static final List<String> ALLOWED_EVENT_TYPES = List.of(
             "EQP_CREATE",
             "EQP_UPDATE",
+            "EQP_MODEL_UPDATE",
             "EQP_DELETE",
             "EQP_START",
             "EQP_END",
@@ -367,10 +368,12 @@ final class DeployJdbcStoreSupport {
             final ResultSet resultSet,
             final DeployTargetCounts targetCounts
     ) throws SQLException {
+        final JsonNode commonState = parseJson(resultSet.getString("desired_common_state_json"));
         return new DeploySummarySnapshot(
                 resultSet.getLong("deploy_key"),
                 resultSet.getString("deploy_name"),
                 UiCommandEventType.fromText(resultSet.getString("event_type")),
+                normalizeOptionalText(commonState.path("resolvedScenarioCode").asText(null)),
                 DeployStatus.valueOf(resultSet.getString("deploy_status")),
                 resultSet.getBoolean("pause_requested"),
                 DeployExecutionPolicy.fromText(resultSet.getString("execution_policy")),

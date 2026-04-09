@@ -7,6 +7,8 @@ public record DeploySummaryResponse(
         long deployKey,
         String deployName,
         String eventType,
+        String resolvedScenarioCode,
+        StateOverviewResponse asIsState,
         String deployStatus,
         boolean pauseRequested,
         String executionPolicy,
@@ -34,6 +36,18 @@ public record DeploySummaryResponse(
             int rolledBack,
             int compensationFailed,
             int canceled
+    ) {
+    }
+
+    /**
+     * AS-IS / TO-BE 상태 요약 응답입니다.
+     */
+    public record StateOverviewResponse(
+            String interfaceType,
+            String modelName,
+            String modelVersion,
+            String businessJarName,
+            String eqpParamVersion
     ) {
     }
 }

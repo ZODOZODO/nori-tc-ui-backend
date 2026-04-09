@@ -75,6 +75,22 @@ class ModelDetailPreviewSupportTest {
     }
 
     @Test
+    @DisplayName("action_data_index preview는 mdfTemplateName이 없어도 첫 번째 field spec을 요약합니다")
+    void summarizeActionDataIndexWithoutMdfTemplateName() {
+        final String actionDataIndex = """
+                {
+                  "fields": {
+                    "EQPID": { "from": "data", "path": "eqpId" }
+                  }
+                }
+                """;
+
+        final String preview = ModelDetailPreviewSupport.summarizeActionDataIndex(actionDataIndex);
+
+        assertEquals("EQPID {from=data, path=eqpId}", preview);
+    }
+
+    @Test
     @DisplayName("JSON 파싱이 불가능하면 첫 번째 텍스트 라인을 그대로 사용합니다")
     void summarizeFallsBackToFirstMeaningfulLine() {
         final String raw = """

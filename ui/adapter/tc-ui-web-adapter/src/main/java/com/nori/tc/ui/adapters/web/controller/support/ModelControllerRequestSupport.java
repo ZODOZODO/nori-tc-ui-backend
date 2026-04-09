@@ -173,15 +173,16 @@ public final class ModelControllerRequestSupport {
             return explicitName;
         }
 
+        final String fileBasedName = extractBaseName(originalFilename);
+        if (fileBasedName != null) {
+            return fileBasedName;
+        }
+
         final String normalizedExistingName = normalizeOptionalText(existingMdfName);
         if (normalizedExistingName != null) {
             return normalizedExistingName;
         }
 
-        final String fileBasedName = extractBaseName(originalFilename);
-        if (fileBasedName != null) {
-            return fileBasedName;
-        }
         return DEFAULT_MDF_NAME;
     }
 

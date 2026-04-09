@@ -8,6 +8,7 @@ import com.nori.tc.ui.core.deploy.DeployStatus;
 import com.nori.tc.ui.core.deploy.DeployTargetCounts;
 import com.nori.tc.ui.core.deploy.DeployTargetStatus;
 import com.nori.tc.ui.core.deploy.PersistedDeployTarget;
+import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import org.springframework.stereotype.Service;
@@ -155,12 +156,13 @@ public class DeployCommandAssembler {
     public JsonNode buildDirectStepUiMessage(
             final String executionId,
             final UiCommandEventType eventType,
+            final String eqpId,
             final DeployResolvedStepPlan step,
             final String traceId,
             final String actor,
             final JsonNode mergedUiMessage
     ) {
-        return commandSupport.buildDirectStepUiMessage(executionId, eventType, step, traceId, actor, mergedUiMessage);
+        return commandSupport.buildDirectStepUiMessage(executionId, eventType, eqpId, step, traceId, actor, mergedUiMessage);
     }
 
     public UiEquipmentProfileSnapshot buildDirectEquipmentProfile(
@@ -171,6 +173,14 @@ public class DeployCommandAssembler {
             final JsonNode stepUiMessage
     ) {
         return commandSupport.buildDirectEquipmentProfile(messageEventType, eqpId, interfaceType, eqpKey, stepUiMessage);
+    }
+
+    public UiEquipmentProfileSnapshot buildDirectEquipmentProfile(
+            final UiCommandEventType messageEventType,
+            final EqpManagementSnapshot executionSnapshot,
+            final JsonNode stepUiMessage
+    ) {
+        return commandSupport.buildDirectEquipmentProfile(messageEventType, executionSnapshot, stepUiMessage);
     }
 
     public UiCommandEventType parseCompensationEventType(final String eventTypeText) {

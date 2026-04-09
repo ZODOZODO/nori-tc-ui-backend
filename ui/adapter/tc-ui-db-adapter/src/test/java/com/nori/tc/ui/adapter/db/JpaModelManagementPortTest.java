@@ -5,6 +5,7 @@ import com.nori.tc.db.core.eqp.store.TcEqpStore;
 import com.nori.tc.db.core.model.store.TcModelDcopItemStore;
 import com.nori.tc.db.core.model.store.TcModelEventIdStore;
 import com.nori.tc.db.core.model.store.TcModelMdfStore;
+import com.nori.tc.db.core.model.store.TcModelMesMessageStore;
 import com.nori.tc.db.core.model.store.TcModelParamStore;
 import com.nori.tc.db.core.model.store.TcModelReportIdStore;
 import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
@@ -13,6 +14,7 @@ import com.nori.tc.db.core.model.store.TcModelStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
 import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModel;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelMdf;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelParam;
 import com.nori.tc.db.domain.common.model.ModelStatus;
 import com.nori.tc.db.domain.common.model.ProtocolType;
@@ -22,6 +24,7 @@ import com.nori.tc.db.domain.model.TcModel;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
 import com.nori.tc.db.domain.model.TcModelEventId;
 import com.nori.tc.db.domain.model.TcModelMdf;
+import com.nori.tc.db.domain.model.TcModelMesMessage;
 import com.nori.tc.db.domain.model.TcModelParam;
 import com.nori.tc.db.domain.model.TcModelReportId;
 import com.nori.tc.db.domain.model.TcModelSecsMessage;
@@ -38,6 +41,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -75,6 +79,15 @@ class JpaModelManagementPortTest {
         final Fixture fixture = new Fixture();
         final TcModel created = model(1001L, 501L, "ROOT-SECS", null, INITIAL_ROOT_VERSION, ProtocolType.SECS, ModelStatus.OPERATE);
         when(fixture.modelStore.upsert(any())).thenReturn(created);
+        when(fixture.modelMdfStore.upsert(any())).thenReturn(
+                new TcModelMdf(
+                        1L,
+                        created.modelVersionKey(),
+                        "MDF",
+                        "<mdf/>".getBytes(StandardCharsets.UTF_8),
+                        OffsetDateTime.parse("2026-03-11T10:15:30+09:00")
+                )
+        );
 
         final UiModel result = fixture.port.createRootModel(new ModelRootCommandPort.CreateRootModelCommand(
                 "ROOT-SECS",
@@ -84,7 +97,9 @@ class JpaModelManagementPortTest {
         ));
 
         final ArgumentCaptor<UpsertTcModel> captor = ArgumentCaptor.forClass(UpsertTcModel.class);
+        final ArgumentCaptor<UpsertTcModelMdf> mdfCaptor = ArgumentCaptor.forClass(UpsertTcModelMdf.class);
         verify(fixture.modelStore).upsert(captor.capture());
+        verify(fixture.modelMdfStore).upsert(mdfCaptor.capture());
 
         assertEquals(UiModelDbMapper.toDomain(created), result);
         assertNull(captor.getValue().parentModel());
@@ -92,6 +107,9 @@ class JpaModelManagementPortTest {
         assertEquals(ModelStatus.OPERATE, captor.getValue().status());
         assertEquals("tester", captor.getValue().createdBy());
         assertEquals("tester", captor.getValue().updatedBy());
+        assertEquals(created.modelVersionKey(), mdfCaptor.getValue().modelVersionKey());
+        assertEquals("MDF", mdfCaptor.getValue().mdfName());
+        assertTrue(new String(mdfCaptor.getValue().mdfFile(), StandardCharsets.UTF_8).contains("DEFAULT_MES_MESSAGE"));
     }
 
     @Test
@@ -149,6 +167,7 @@ class JpaModelManagementPortTest {
         fixture.paramsByVersion.put(parentLatest.modelVersionKey(), List.of(param(parentLatest.modelVersionKey(), "SITE", "DEV")));
         fixture.secsMessagesByVersion.put(parentLatest.modelVersionKey(), List.of(secs(parentLatest.modelVersionKey(), "S1F1")));
         fixture.socketMessagesByVersion.put(parentLatest.modelVersionKey(), List.of(socket(parentLatest.modelVersionKey(), "CMD=PING")));
+        fixture.mesMessagesByVersion.put(parentLatest.modelVersionKey(), List.of(mes(parentLatest.modelVersionKey(), "MES_REQ")));
         fixture.variableIdsByVersion.put(parentLatest.modelVersionKey(), List.of(variable(parentLatest.modelVersionKey(), "VID_TEMP")));
         fixture.reportIdsByVersion.put(parentLatest.modelVersionKey(), List.of(report(parentLatest.modelVersionKey(), "RPT_01")));
         fixture.eventIdsByVersion.put(parentLatest.modelVersionKey(), List.of(event(parentLatest.modelVersionKey(), "EVT_01")));
@@ -176,6 +195,7 @@ class JpaModelManagementPortTest {
         verify(fixture.modelParamStore, times(1)).upsert(any());
         verify(fixture.modelSecsMessageStore, times(1)).upsert(any());
         verify(fixture.modelSocketMessageStore, times(1)).upsert(any());
+        verify(fixture.modelMesMessageStore, times(1)).upsert(any());
         verify(fixture.modelVariableIdStore, times(1)).upsert(any());
         verify(fixture.modelReportIdStore, times(1)).upsert(any());
         verify(fixture.modelEventIdStore, times(1)).upsert(any());
@@ -259,6 +279,63 @@ class JpaModelManagementPortTest {
         verify(fixture.modelStore).upsert(captor.capture());
 
         assertEquals(INITIAL_BRANCH_VERSION, captor.getValue().modelVersion());
+    }
+
+    @Test
+    @DisplayName("branch checkin은 사용자 입력 없이 같은 branch의 다음 일자형 버전을 자동 생성합니다")
+    void checkinBranchEditVersionGeneratesNextDailyVersionAutomatically() {
+        final Fixture fixture = new Fixture();
+        final TcModel branchOld = model(
+                3201L,
+                7201L,
+                "ROOT_feature_tester",
+                "ROOT",
+                dailyVersion(FIXED_VERSION_DATE, 0),
+                ProtocolType.SECS,
+                ModelStatus.DEVELOP
+        );
+        final TcModel branchEdit = model(
+                3202L,
+                7201L,
+                "ROOT_feature_tester",
+                "ROOT",
+                "EDIT",
+                ProtocolType.SECS,
+                ModelStatus.DEVELOP
+        );
+        final TcModel checkedIn = model(
+                3203L,
+                7201L,
+                "ROOT_feature_tester",
+                "ROOT",
+                dailyVersion(FIXED_VERSION_DATE, 1),
+                ProtocolType.SECS,
+                ModelStatus.DEVELOP
+        );
+
+        fixture.allModels.add(branchOld);
+        fixture.allModels.add(branchEdit);
+        fixture.paramsByVersion.put(branchEdit.modelVersionKey(), List.of(param(branchEdit.modelVersionKey(), "SITE", "DEV")));
+        fixture.mesMessagesByVersion.put(branchEdit.modelVersionKey(), List.of(mes(branchEdit.modelVersionKey(), "MES_REQ")));
+        when(fixture.modelStore.upsert(any())).thenReturn(checkedIn);
+
+        final UiModel result = fixture.port.checkinBranchEditVersion(
+                new ModelBranchCommandPort.CheckinBranchEditVersionCommand(
+                        branchEdit.modelVersionKey(),
+                        "checked in",
+                        "SYSTEM"
+                )
+        );
+
+        final ArgumentCaptor<UpsertTcModel> captor = ArgumentCaptor.forClass(UpsertTcModel.class);
+        verify(fixture.modelStore).upsert(captor.capture());
+        verify(fixture.modelParamStore, times(1)).upsert(any());
+        verify(fixture.modelMesMessageStore, times(1)).upsert(any());
+        verify(fixture.modelStore).deleteByModelVersionKey(branchEdit.modelVersionKey());
+
+        assertEquals(UiModelDbMapper.toDomain(checkedIn), result);
+        assertEquals(dailyVersion(FIXED_VERSION_DATE, 1), captor.getValue().modelVersion());
+        assertEquals("checked in", captor.getValue().description());
     }
 
     @Test
@@ -492,6 +569,10 @@ class JpaModelManagementPortTest {
         return new TcModelSocketMessage(1L, modelVersionKey, name, "desc", "1", OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
     }
 
+    private static TcModelMesMessage mes(final long modelVersionKey, final String name) {
+        return new TcModelMesMessage(1L, modelVersionKey, name, "desc", "1", OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
+    }
+
     private static TcModelVariableId variable(final long modelVersionKey, final String variableId) {
         return new TcModelVariableId(1L, modelVersionKey, variableId, VariableIdType.SVID, "desc", OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
     }
@@ -553,6 +634,7 @@ class JpaModelManagementPortTest {
         private final TcModelParamStore modelParamStore = mock(TcModelParamStore.class);
         private final TcModelSecsMessageStore modelSecsMessageStore = mock(TcModelSecsMessageStore.class);
         private final TcModelSocketMessageStore modelSocketMessageStore = mock(TcModelSocketMessageStore.class);
+        private final TcModelMesMessageStore modelMesMessageStore = mock(TcModelMesMessageStore.class);
         private final TcModelVariableIdStore modelVariableIdStore = mock(TcModelVariableIdStore.class);
         private final TcModelReportIdStore modelReportIdStore = mock(TcModelReportIdStore.class);
         private final TcModelEventIdStore modelEventIdStore = mock(TcModelEventIdStore.class);
@@ -565,6 +647,7 @@ class JpaModelManagementPortTest {
         private final Map<Long, List<TcModelParam>> paramsByVersion = new HashMap<>();
         private final Map<Long, List<TcModelSecsMessage>> secsMessagesByVersion = new HashMap<>();
         private final Map<Long, List<TcModelSocketMessage>> socketMessagesByVersion = new HashMap<>();
+        private final Map<Long, List<TcModelMesMessage>> mesMessagesByVersion = new HashMap<>();
         private final Map<Long, List<TcModelVariableId>> variableIdsByVersion = new HashMap<>();
         private final Map<Long, List<TcModelReportId>> reportIdsByVersion = new HashMap<>();
         private final Map<Long, List<TcModelEventId>> eventIdsByVersion = new HashMap<>();
@@ -578,6 +661,7 @@ class JpaModelManagementPortTest {
                 modelParamStore,
                 modelSecsMessageStore,
                 modelSocketMessageStore,
+                modelMesMessageStore,
                 modelVariableIdStore,
                 modelReportIdStore,
                 modelEventIdStore,
@@ -604,6 +688,9 @@ class JpaModelManagementPortTest {
             );
             when(modelSocketMessageStore.findAllByModelVersionKey(anyLong(), any())).thenAnswer(invocation ->
                     paginate(socketMessagesByVersion.getOrDefault(invocation.getArgument(0), List.of()), invocation.getArgument(1))
+            );
+            when(modelMesMessageStore.findAllByModelVersionKey(anyLong(), any())).thenAnswer(invocation ->
+                    paginate(mesMessagesByVersion.getOrDefault(invocation.getArgument(0), List.of()), invocation.getArgument(1))
             );
             when(modelVariableIdStore.findAllByModelVersionKey(anyLong(), any())).thenAnswer(invocation ->
                     paginate(variableIdsByVersion.getOrDefault(invocation.getArgument(0), List.of()), invocation.getArgument(1))

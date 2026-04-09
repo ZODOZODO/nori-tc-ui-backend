@@ -31,11 +31,14 @@ import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.model.UiCommandMessage;
 import com.nori.tc.ui.core.model.UiCommandReply;
+import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
 import com.nori.tc.ui.core.port.db.DeployScenarioCatalogMetaPort;
 import com.nori.tc.ui.core.port.db.DeployStorePort;
 import com.nori.tc.ui.core.port.db.EqpCrudPort;
+import com.nori.tc.ui.core.port.db.EqpQueryPort;
+import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
 import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
 import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
 import com.nori.tc.ui.core.properties.UiDeployProperties;
@@ -48,6 +51,7 @@ import com.nori.tc.ui.domain.eqp.UiEqp;
 import com.nori.tc.ui.domain.eqp.UiEqpParam;
 import com.nori.tc.ui.domain.jar.UiBusinessJar;
 import com.nori.tc.ui.domain.model.UiModel;
+import com.nori.tc.ui.domain.model.UiModelParam;
 import com.nori.tc.ui.domain.task.UiTaskStatus;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -186,7 +190,7 @@ class DeployServiceTest {
         final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
         final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
         final InMemoryEqpCrudPort eqpCrudPort = new InMemoryEqpCrudPort();
-        eqpCrudPort.put(snapshot("PHOTO_001", 1L));
+        eqpCrudPort.put(snapshot("PHOTO_001", 1L, "EQP_PARAM_OLD", "EQP_PARAM_V1"));
         final List<UiCommandMessage> publishedMessages = java.util.Collections.synchronizedList(new ArrayList<>());
 
         deployService = newDeployService(
@@ -199,7 +203,7 @@ class DeployServiceTest {
                 traceRegistry
         );
 
-        final DeployCreateResult created = deployService.createDeploy(businessJarUpdateCommand("PHOTO_001"), "tester");
+        final DeployCreateResult created = deployService.createDeploy(modelBusinessJarEqpParamRegisterCommand("PHOTO_001"), "tester");
         deployService.startDeploy(created.deployKey(), "tester");
         final UiCommandMessage firstMessage = awaitPublishedMessage(publishedMessages);
 
@@ -240,7 +244,7 @@ class DeployServiceTest {
                 traceRegistry
         );
 
-        final DeployCreateResult created = deployService.createDeploy(businessJarUpdateCommand("PHOTO_001"), "tester");
+        final DeployCreateResult created = deployService.createDeploy(modelBusinessJarEqpParamRegisterCommand("PHOTO_001"), "tester");
         deployService.startDeploy(created.deployKey(), "tester");
         final UiCommandMessage firstMessage = awaitPublishedMessage(publishedMessages);
         deployService.holdDeploy(created.deployKey(), "tester");
@@ -256,6 +260,49 @@ class DeployServiceTest {
 
         final var summary = awaitTerminalSummary(created.deployKey());
         assertEquals(DeployStatus.COMPLETED, summary.deployStatus());
+    }
+
+    @Test
+    void eqpParamDeployPublishesResolvedItemsPayload() throws Exception {
+        final InMemoryEqpCrudPort eqpCrudPort = new InMemoryEqpCrudPort();
+        eqpCrudPort.put(snapshot("PHOTO_001", 1L, "EQP_PARAM_OLD", "EQP_PARAM_V1"));
+
+        final DeployServiceCommandSupport commandSupport = new DeployServiceCommandSupport(
+                org.mockito.Mockito.mock(DeployStorePort.class),
+                eqpCrudPort,
+                eqpQueryPort(eqpCrudPort),
+                modelDetailQueryPort(),
+                UiGatewayEventPublishPort.noop(),
+                UiBusinessEventPublishPort.noop(),
+                objectMapper
+        );
+
+        final JsonNode eqpParamMessage = commandSupport.buildDirectStepUiMessage(
+                "EXEC-01",
+                UiCommandEventType.EQP_REGISTER_DEPLOY,
+                "PHOTO_001",
+                new com.nori.tc.ui.core.deploy.DeployResolvedStepPlan(
+                        1,
+                        "UPDATE_EQP_PARAM",
+                        "EQP Param Update",
+                        com.nori.tc.ui.core.deploy.DeployTargetApp.BUSINESS,
+                        "eqp param payload 보강 확인",
+                        com.nori.tc.ui.core.deploy.DeployScenarioAction.UPDATE_EQP_PARAM,
+                        1000L,
+                        true,
+                        new com.nori.tc.ui.core.deploy.DeployScenarioRetryPolicy(1, 0L),
+                        false,
+                        com.nori.tc.ui.core.deploy.DeployRollbackMode.MANUAL_ONLY,
+                        null
+                ),
+                "TRACE-01",
+                "tester",
+                eqpParamUpdateCommand("PHOTO_001").commonRequest().uiMessage()
+        );
+
+        assertEquals("EQP_PARAM_V1", eqpParamMessage.path("eqpParams").path("version").asText());
+        assertEquals("PPID", eqpParamMessage.path("eqpParams").path("items").get(0).path("name").asText());
+        assertEquals("P1001", eqpParamMessage.path("eqpParams").path("items").get(0).path("value").asText());
     }
 
     @Test
@@ -384,7 +431,7 @@ class DeployServiceTest {
         );
 
         final DeployCreateResult result = deployService.createDeploy(
-                businessJarUpdateCommand("PHOTO_001", "PHOTO_002"),
+                modelBusinessJarEqpParamRegisterCommand("PHOTO_001", "PHOTO_002"),
                 "tester"
         );
         executeReadyDeploy(storePort, result.deployKey(), "tester");
@@ -406,7 +453,7 @@ class DeployServiceTest {
 
         assertEquals(DeployTargetStatus.COMPLETED, first.targetStatus());
         assertEquals(DeployTargetStatus.ROLLED_BACK, second.targetStatus());
-        assertEquals("MODEL_BINDING_FAILED", second.lastErrorCode());
+        assertEquals("EQP_PARAM_UPDATE_FAILED", second.lastErrorCode());
 
         final List<DeployStoredSnapshot> stepSnapshots = storePort.findSnapshots(second.deployTargetKey(), DeploySnapshotScope.STEP_PRE_STATE);
         assertFalse(stepSnapshots.isEmpty());
@@ -422,7 +469,7 @@ class DeployServiceTest {
         assertNotNull(targetPreState.path("businessJar").path("expectedSha256").asString(null));
         assertTrue(publishedMessages.stream()
                 .anyMatch(message -> message.eqpId().equals("PHOTO_002")
-                        && message.eventType() == UiCommandEventType.EQP_BUSINESS_JARFILE_UPDATE
+                        && message.eventType() == UiCommandEventType.EQP_MODEL_UPDATE
                         && "legacy-business.jar".equals(message.uiMessage().path("businessJar").path("jarFileName").asString(null))));
     }
 
@@ -444,7 +491,7 @@ class DeployServiceTest {
         );
 
         final DeployCreateResult result = deployService.createDeploy(
-                businessJarUpdateCommand("PHOTO_002"),
+                modelBusinessJarEqpParamRegisterCommand("PHOTO_002"),
                 "tester"
         );
         executeReadyDeploy(storePort, result.deployKey(), "tester");
@@ -713,6 +760,132 @@ class DeployServiceTest {
         assertThrows(UiNotFoundException.class, () -> deployService.getDeploySummary(result.deployKey()));
     }
 
+    @Test
+    void registerModelDeployUpdatesEqpModelVersionAfterBusinessReplyPass() throws Exception {
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
+        final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
+        final InMemoryEqpCrudPort eqpCrudPort = new InMemoryEqpCrudPort();
+        final List<UiCommandMessage> publishedMessages = new ArrayList<>();
+        eqpCrudPort.put(snapshot("PHOTO_001", 1L));
+
+        deployService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService(tempDir.resolve("missing-scenarios")),
+                storePort,
+                eqpCrudPort,
+                UiGatewayEventPublishPort.noop(),
+                publishedMessages::add,
+                traceRegistry
+        );
+
+        final DeployCreateResult created = deployService.createDeploy(modelUpdateCommand("PHOTO_001"), "tester");
+        deployService.startDeploy(created.deployKey(), "tester");
+
+        final UiCommandMessage message = awaitPublishedMessage(publishedMessages);
+        assertEquals(UiCommandEventType.EQP_MODEL_UPDATE, message.eventType());
+
+        replyPass(traceRegistry, message);
+
+        final var summary = awaitTerminalSummary(created.deployKey());
+        assertEquals(DeployStatus.COMPLETED, summary.deployStatus());
+        assertEquals(1002L, eqpCrudPort.findSnapshotByEqpId("PHOTO_001").orElseThrow().eqp().modelVersionKey());
+    }
+
+    @Test
+    void businessJarDeployUpdatesEqpBusinessJarAfterBusinessReplyPass() throws Exception {
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
+        final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
+        final InMemoryEqpCrudPort eqpCrudPort = new InMemoryEqpCrudPort();
+        final List<UiCommandMessage> publishedMessages = new ArrayList<>();
+        eqpCrudPort.put(snapshot("PHOTO_001", 1L));
+
+        deployService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService(tempDir.resolve("missing-scenarios")),
+                storePort,
+                eqpCrudPort,
+                UiGatewayEventPublishPort.noop(),
+                publishedMessages::add,
+                traceRegistry
+        );
+
+        final DeployCreateResult created = deployService.createDeploy(businessJarUpdateCommand("PHOTO_001"), "tester");
+        deployService.startDeploy(created.deployKey(), "tester");
+
+        final UiCommandMessage message = awaitPublishedMessage(publishedMessages);
+        assertEquals(UiCommandEventType.EQP_BUSINESS_JARFILE_UPDATE, message.eventType());
+
+        replyPass(traceRegistry, message);
+
+        final var summary = awaitTerminalSummary(created.deployKey());
+        assertEquals(DeployStatus.COMPLETED, summary.deployStatus());
+        assertEquals(9002L, eqpCrudPort.findSnapshotByEqpId("PHOTO_001").orElseThrow().eqp().businessJarKey());
+    }
+
+    @Test
+    void eqpParamRegisterDeployUpdatesAppliedParamVersionAfterBusinessReplyPass() throws Exception {
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
+        final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
+        final InMemoryEqpCrudPort eqpCrudPort = new InMemoryEqpCrudPort();
+        final List<UiCommandMessage> publishedMessages = new ArrayList<>();
+        eqpCrudPort.put(snapshot("PHOTO_001", 1L, "EQP_PARAM_OLD", "EQP_PARAM_V2"));
+
+        deployService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService(tempDir.resolve("missing-scenarios")),
+                storePort,
+                eqpCrudPort,
+                UiGatewayEventPublishPort.noop(),
+                publishedMessages::add,
+                traceRegistry
+        );
+
+        final DeployCreateResult created = deployService.createDeploy(eqpParamUpdateCommandWithVersion("EQP_PARAM_V2", "PHOTO_001"), "tester");
+        deployService.startDeploy(created.deployKey(), "tester");
+
+        final UiCommandMessage message = awaitPublishedMessage(publishedMessages);
+        assertEquals(UiCommandEventType.EQP_PARAMETER_UPDATE, message.eventType());
+
+        replyPass(traceRegistry, message);
+
+        final var summary = awaitTerminalSummary(created.deployKey());
+        assertEquals(DeployStatus.COMPLETED, summary.deployStatus());
+        assertEquals("EQP_PARAM_V2", eqpCrudPort.findSnapshotByEqpId("PHOTO_001").orElseThrow().eqp().appliedParamVersion());
+    }
+
+    @Test
+    void modelBusinessJarDeployUpdatesEqpModelAndBusinessJarAfterBusinessReplyPass() throws Exception {
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
+        final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort();
+        final InMemoryEqpCrudPort eqpCrudPort = new InMemoryEqpCrudPort();
+        final List<UiCommandMessage> publishedMessages = new ArrayList<>();
+        eqpCrudPort.put(snapshot("PHOTO_001", 1L));
+
+        deployService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService(tempDir.resolve("missing-scenarios")),
+                storePort,
+                eqpCrudPort,
+                UiGatewayEventPublishPort.noop(),
+                publishedMessages::add,
+                traceRegistry
+        );
+
+        final DeployCreateResult created = deployService.createDeploy(modelBusinessJarRegisterCommand("PHOTO_001"), "tester");
+        deployService.startDeploy(created.deployKey(), "tester");
+
+        final UiCommandMessage message = awaitPublishedMessage(publishedMessages);
+        assertEquals(UiCommandEventType.EQP_MODEL_UPDATE, message.eventType());
+
+        replyPass(traceRegistry, message);
+
+        final var summary = awaitTerminalSummary(created.deployKey());
+        assertEquals(DeployStatus.COMPLETED, summary.deployStatus());
+        final var snapshot = eqpCrudPort.findSnapshotByEqpId("PHOTO_001").orElseThrow().eqp();
+        assertEquals(1002L, snapshot.modelVersionKey());
+        assertEquals(9002L, snapshot.businessJarKey());
+    }
+
     private DeployService newDeployService(
             final UiDeployProperties deployProperties,
             final DeployPlanningService planningService,
@@ -747,6 +920,8 @@ class DeployServiceTest {
         final DeployServiceCommandSupport commandSupport = new DeployServiceCommandSupport(
                 storePort,
                 eqpCrudPort,
+                eqpQueryPort(eqpCrudPort),
+                modelDetailQueryPort(),
                 gatewayEventPublishPort,
                 businessEventPublishPort,
                 objectMapper
@@ -756,12 +931,15 @@ class DeployServiceTest {
         final DeployCommandAssembler commandAssembler = new DeployCommandAssembler(commandSupport);
         final DeployRollbackCoordinator rollbackCoordinator =
                 new DeployRollbackCoordinator(storePort, commandAssembler, deployTraceRecorder);
+        final DeployEqpFinalizationService deployEqpFinalizationService =
+                new DeployEqpFinalizationService(new EqpPersistenceService(eqpCrudPort));
         final DeployExecutor deployExecutor =
                 new DeployExecutor(
                         storePort,
                         commandAssembler,
                         deployTraceRecorder,
                         rollbackCoordinator,
+                        deployEqpFinalizationService,
                         coordinationPort,
                         deployProperties
                 );
@@ -770,10 +948,116 @@ class DeployServiceTest {
                 deployProperties,
                 deployPlanner,
                 storePort,
+                eqpCrudPort,
                 deployTraceRecorder,
                 commandAssembler,
                 deployExecutor
         );
+    }
+
+    private ModelDetailQueryPort modelDetailQueryPort() {
+        return new ModelDetailQueryPort() {
+            @Override
+            public List<UiModelParam> findParamsByModelVersionKey(final long modelVersionKey) {
+                return List.of(new UiModelParam(
+                        modelVersionKey,
+                        modelVersionKey,
+                        "M_TEMP",
+                        "VALUE-" + modelVersionKey,
+                        null,
+                        OffsetDateTime.now(ZoneOffset.UTC)
+                ));
+            }
+
+            @Override
+            public List<com.nori.tc.ui.domain.model.UiModelSecsMessage> findSecsMessagesByModelVersionKey(final long modelVersionKey) {
+                return List.of();
+            }
+
+            @Override
+            public List<com.nori.tc.ui.domain.model.UiModelSocketMessage> findSocketMessagesByModelVersionKey(final long modelVersionKey) {
+                return List.of();
+            }
+
+            @Override
+            public List<com.nori.tc.ui.domain.model.UiModelMesMessage> findMesMessagesByModelVersionKey(final long modelVersionKey) {
+                return List.of();
+            }
+
+            @Override
+            public List<com.nori.tc.ui.domain.model.UiModelVariableId> findVariableIdsByModelVersionKey(final long modelVersionKey) {
+                return List.of();
+            }
+
+            @Override
+            public List<com.nori.tc.ui.domain.model.UiModelReportId> findReportIdsByModelVersionKey(final long modelVersionKey) {
+                return List.of();
+            }
+
+            @Override
+            public List<com.nori.tc.ui.domain.model.UiModelEventId> findEventIdsByModelVersionKey(final long modelVersionKey) {
+                return List.of();
+            }
+
+            @Override
+            public List<com.nori.tc.ui.domain.model.UiModelWorkflow> findWorkflowsByModelVersionKey(final long modelVersionKey) {
+                return List.of();
+            }
+
+            @Override
+            public Optional<com.nori.tc.ui.domain.model.UiModelMdf> findMdfByModelVersionKey(final long modelVersionKey) {
+                return Optional.empty();
+            }
+
+            @Override
+            public List<com.nori.tc.ui.domain.model.UiModelDcopItem> findDcopItemsByModelVersionKey(final long modelVersionKey) {
+                return List.of();
+            }
+        };
+    }
+
+    private EqpQueryPort eqpQueryPort(final InMemoryEqpCrudPort eqpCrudPort) {
+        return new EqpQueryPort() {
+            @Override
+            public PagedResponse<UiEqp> findAll(final UiPageRequest pageRequest) {
+                return PagedResponse.empty(0, 1);
+            }
+
+            @Override
+            public Optional<UiEqp> findByEqpId(final String eqpId) {
+                return eqpCrudPort.findSnapshotByEqpId(eqpId).map(EqpManagementSnapshot::eqp);
+            }
+
+            @Override
+            public List<String> findParamVersionsByEqpId(final String eqpId) {
+                return eqpCrudPort.findSnapshotByEqpId(eqpId)
+                        .stream()
+                        .flatMap(snapshot -> snapshot.params().stream())
+                        .map(UiEqpParam::paramVersion)
+                        .filter(version -> version != null && !version.isBlank())
+                        .distinct()
+                        .toList();
+            }
+
+            @Override
+            public List<UiEqpParam> findParamsByEqpIdAndVersion(final String eqpId, final String version) {
+                return eqpCrudPort.findSnapshotByEqpId(eqpId)
+                        .stream()
+                        .flatMap(snapshot -> snapshot.params().stream())
+                        .filter(param -> Objects.equals(param.paramVersion(), version))
+                        .toList();
+            }
+
+            @Override
+            public Optional<EqpCheckoutStateView> findCheckoutStateByEqpId(final String eqpId) {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<EqpRuntimeStateView> findRuntimeStateByEqpId(final String eqpId) {
+                return Optional.empty();
+            }
+        };
     }
 
     private void executeReadyDeploy(
@@ -852,7 +1136,7 @@ class DeployServiceTest {
             final DeployTraceRegistry traceRegistry,
             final UiCommandMessage message
     ) {
-        final String targetApp = message.uiMessage().path("_deploy").path("targetApp").asText();
+        final String targetApp = message.uiMessage().path("_deploy").path("targetApp").asString();
         final String source = "BUSINESS".equals(targetApp) ? "TC-BUSINESS-APP" : "TC-GATEWAY-APP";
         traceRegistry.handle(new UiCommandReply(
                 message.traceId(),
@@ -888,10 +1172,36 @@ class DeployServiceTest {
                         3001L,
                         4001L,
                         "TEST01",
-                        null
+                        null,
+                        equipmentProfile(eqpId)
                 )),
                 catalogService,
                 objectMapper
+        );
+    }
+
+    private UiEquipmentProfileSnapshot equipmentProfile(final String eqpId) {
+        return new UiEquipmentProfileSnapshot(
+                1L,
+                eqpId,
+                "SOCKET",
+                "TEST01",
+                null,
+                "10.10.10.1",
+                6000,
+                9001L,
+                3001L,
+                4001L,
+                "ACTIVE",
+                1,
+                true,
+                null,
+                null,
+                null,
+                List.of(),
+                null,
+                List.of(),
+                OffsetDateTime.now(ZoneOffset.UTC).toString()
         );
     }
 
@@ -934,10 +1244,10 @@ class DeployServiceTest {
             final UiTaskStatus status;
             final String errorCode;
             final String errorMessage;
-            if ("PHOTO_002".equals(message.eqpId()) && message.eventType() == UiCommandEventType.EQP_UPDATE && count == 1) {
+            if ("PHOTO_002".equals(message.eqpId()) && message.eventType() == UiCommandEventType.EQP_PARAMETER_UPDATE && count == 1) {
                 status = UiTaskStatus.FAIL;
-                errorCode = "MODEL_BINDING_FAILED";
-                errorMessage = "model binding 전환에 실패했습니다.";
+                errorCode = "EQP_PARAM_UPDATE_FAILED";
+                errorMessage = "eqp parameter 반영에 실패했습니다.";
             } else {
                 status = UiTaskStatus.PASS;
                 errorCode = null;
@@ -966,11 +1276,11 @@ class DeployServiceTest {
             final UiTaskStatus status;
             final String errorCode;
             final String errorMessage;
-            if (message.eventType() == UiCommandEventType.EQP_UPDATE && count == 1) {
+            if (message.eventType() == UiCommandEventType.EQP_PARAMETER_UPDATE && count == 1) {
                 status = UiTaskStatus.FAIL;
-                errorCode = "MODEL_BINDING_FAILED";
-                errorMessage = "model binding 전환에 실패했습니다.";
-            } else if (message.eventType() == UiCommandEventType.EQP_BUSINESS_JARFILE_UPDATE && count >= 2) {
+                errorCode = "EQP_PARAM_UPDATE_FAILED";
+                errorMessage = "eqp parameter 반영에 실패했습니다.";
+            } else if (message.eventType() == UiCommandEventType.EQP_MODEL_UPDATE && count >= 2) {
                 status = UiTaskStatus.FAIL;
                 errorCode = "PLUGIN_ROLLBACK_FAILED";
                 errorMessage = "plugin rollback 에 실패했습니다.";
@@ -1029,6 +1339,102 @@ class DeployServiceTest {
         );
     }
 
+    private DeployPlanCommand eqpParamUpdateCommand(final String... eqpIds) {
+        return eqpParamUpdateCommandWithVersion("EQP_PARAM_V1", eqpIds);
+    }
+
+    private DeployPlanCommand eqpParamUpdateCommandWithVersion(final String version, final String... eqpIds) {
+        final ObjectNode root = objectMapper.createObjectNode();
+        root.putObject("eqpParams").put("version", version);
+
+        final List<DeployPlanCommand.TargetRequest> targets = new ArrayList<>();
+        for (String eqpId : eqpIds) {
+            targets.add(new DeployPlanCommand.TargetRequest(eqpId, objectMapper.createObjectNode()));
+        }
+
+        return new DeployPlanCommand(
+                "PHOTO EQP Param Update",
+                UiCommandEventType.EQP_REGISTER_DEPLOY,
+                DeployExecutionPolicy.BEST_EFFORT,
+                new DeployPlanCommand.CommonRequest("SOCKET", root, "REGISTER_EQP_PARAM_ONLY"),
+                List.copyOf(targets)
+        );
+    }
+
+    private DeployPlanCommand modelUpdateCommand(final String... eqpIds) {
+        final ObjectNode root = objectMapper.createObjectNode();
+        final ObjectNode modelInfo = root.putObject("modelInfo");
+        modelInfo.put("modelVersionKey", 1002L);
+        modelInfo.put("modelKey", 501L);
+        modelInfo.put("modelVersion", "v2");
+
+        final List<DeployPlanCommand.TargetRequest> targets = new ArrayList<>();
+        for (String eqpId : eqpIds) {
+            targets.add(new DeployPlanCommand.TargetRequest(eqpId, objectMapper.createObjectNode()));
+        }
+
+        return new DeployPlanCommand(
+                "PHOTO Model Update",
+                UiCommandEventType.EQP_REGISTER_DEPLOY,
+                DeployExecutionPolicy.BEST_EFFORT,
+                new DeployPlanCommand.CommonRequest("SOCKET", root, "REGISTER_MODEL_ONLY"),
+                List.copyOf(targets)
+        );
+    }
+
+    private DeployPlanCommand modelBusinessJarRegisterCommand(final String... eqpIds) {
+        final ObjectNode root = objectMapper.createObjectNode();
+        final ObjectNode modelInfo = root.putObject("modelInfo");
+        modelInfo.put("modelVersionKey", 1002L);
+        modelInfo.put("modelKey", 501L);
+        modelInfo.put("modelVersion", "v2");
+        final ObjectNode businessJar = root.putObject("businessJar");
+        businessJar.put("jarRef", 9002L);
+        businessJar.put("jarFileName", "next-business.jar");
+        businessJar.put("expectedSha256", "next-sha");
+        businessJar.put("sourceType", "DB");
+
+        final List<DeployPlanCommand.TargetRequest> targets = new ArrayList<>();
+        for (String eqpId : eqpIds) {
+            targets.add(new DeployPlanCommand.TargetRequest(eqpId, objectMapper.createObjectNode()));
+        }
+
+        return new DeployPlanCommand(
+                "PHOTO Model Business Jar Update",
+                UiCommandEventType.EQP_REGISTER_DEPLOY,
+                DeployExecutionPolicy.BEST_EFFORT,
+                new DeployPlanCommand.CommonRequest("SOCKET", root, "REGISTER_MODEL_BUSINESS_JAR"),
+                List.copyOf(targets)
+        );
+    }
+
+    private DeployPlanCommand modelBusinessJarEqpParamRegisterCommand(final String... eqpIds) {
+        final ObjectNode root = objectMapper.createObjectNode();
+        final ObjectNode modelInfo = root.putObject("modelInfo");
+        modelInfo.put("modelVersionKey", 1002L);
+        modelInfo.put("modelKey", 501L);
+        modelInfo.put("modelVersion", "v2");
+        final ObjectNode businessJar = root.putObject("businessJar");
+        businessJar.put("jarRef", 9002L);
+        businessJar.put("jarFileName", "next-business.jar");
+        businessJar.put("expectedSha256", "next-sha");
+        businessJar.put("sourceType", "DB");
+        root.putObject("eqpParams").put("version", "EQP_PARAM_V2");
+
+        final List<DeployPlanCommand.TargetRequest> targets = new ArrayList<>();
+        for (String eqpId : eqpIds) {
+            targets.add(new DeployPlanCommand.TargetRequest(eqpId, objectMapper.createObjectNode()));
+        }
+
+        return new DeployPlanCommand(
+                "PHOTO Model Business Jar Eqp Param Update",
+                UiCommandEventType.EQP_REGISTER_DEPLOY,
+                DeployExecutionPolicy.BEST_EFFORT,
+                new DeployPlanCommand.CommonRequest("SOCKET", root, "REGISTER_MODEL_BUSINESS_JAR_EQP_PARAM"),
+                List.copyOf(targets)
+        );
+    }
+
     private ObjectNode sendMessageUiMessage() {
         final ObjectNode root = objectMapper.createObjectNode();
         root.put("messageName", "EQP_CONDITION_CHECK");
@@ -1037,6 +1443,15 @@ class DeployServiceTest {
     }
 
     private EqpManagementSnapshot snapshot(final String eqpId, final long eqpKey) {
+        return snapshot(eqpId, eqpKey, "EQP_PARAM_V1", "EQP_PARAM_V1");
+    }
+
+    private EqpManagementSnapshot snapshot(
+            final String eqpId,
+            final long eqpKey,
+            final String appliedParamVersion,
+            final String payloadParamVersion
+    ) {
         final OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         return new EqpManagementSnapshot(
                 new UiEqp(
@@ -1049,7 +1464,7 @@ class DeployServiceTest {
                         "10.10.10." + eqpKey,
                         6000,
                         1001L,
-                        "EQP_PARAM_V1",
+                        appliedParamVersion,
                         null,
                         null,
                         true,
@@ -1083,7 +1498,7 @@ class DeployServiceTest {
                         1L,
                         eqpKey,
                         "PPID",
-                        "EQP_PARAM_V1",
+                        payloadParamVersion,
                         "P1001",
                         null,
                         "SYSTEM",
@@ -1196,7 +1611,46 @@ class DeployServiceTest {
                 final String eqpId,
                 final com.nori.tc.ui.core.eqp.EqpManagementCommand.Update command
         ) {
-            throw new UnsupportedOperationException("not used in test");
+            final EqpManagementSnapshot existing = snapshots.get(eqpId);
+            if (existing == null) {
+                throw new UiNotFoundException("설비를 찾을 수 없습니다. eqpId=" + eqpId);
+            }
+
+            final OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+            final EqpManagementSnapshot updated = new EqpManagementSnapshot(
+                    new UiEqp(
+                            existing.eqp().eqpKey(),
+                            existing.eqp().eqpId(),
+                            existing.eqp().commInterface(),
+                            command.commMode(),
+                            command.isDev(),
+                            command.routePartition(),
+                            command.eqpIp(),
+                            command.eqpPort(),
+                            command.modelVersionKey(),
+                            command.appliedParamVersion(),
+                            command.gatewayJarRef(),
+                            command.businessJarRef(),
+                            existing.eqp().enabled(),
+                            existing.eqp().createdAt(),
+                            now,
+                            existing.eqp().createdBy(),
+                            command.actor()
+                    ),
+                    existing.model(),
+                    existing.hsms(),
+                    existing.socket(),
+                    existing.logPolicy(),
+                    existing.runtimeState(),
+                    existing.connectionState(),
+                    existing.portStatuses(),
+                    existing.params(),
+                    existing.paramVersionMetas(),
+                    existing.gatewayJar(),
+                    existing.businessJar()
+            );
+            snapshots.put(eqpId, updated);
+            return updated;
         }
 
         @Override
@@ -1500,6 +1954,7 @@ class DeployServiceTest {
                     deployKey,
                     deploy.deployName,
                     deploy.eventType,
+                    null,
                     deploy.deployStatus,
                     deploy.pauseRequested,
                     deploy.executionPolicy,

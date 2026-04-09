@@ -34,15 +34,20 @@ final class ModelDetailWorkflowJsonSerializer {
     }
 
     static String summarizeActionDataIndex(final ModelDetailWorkflowJsonParser.ParsedActionDataIndex parsed) {
+        final String normalizedTemplateName = parsed.mdfTemplateName();
+        final String prefix = normalizedTemplateName == null || normalizedTemplateName.isBlank()
+                ? ""
+                : "mdfTemplateName=" + normalizedTemplateName + " / ";
+
         if (parsed.fields().isEmpty()) {
-            return "mdfTemplateName=" + parsed.mdfTemplateName() + " / fields=0";
+            return prefix.isEmpty() ? "fields=0" : prefix + "fields=0";
         }
 
         final Map.Entry<String, ModelDetailWorkflowJsonParser.ActionFieldSpec> firstField =
                 parsed.fields().entrySet().iterator().next();
         final StringBuilder summary = new StringBuilder();
-        summary.append("mdfTemplateName=").append(parsed.mdfTemplateName());
-        summary.append(" / ").append(firstField.getKey()).append(" {from=").append(firstField.getValue().from());
+        summary.append(prefix);
+        summary.append(firstField.getKey()).append(" {from=").append(firstField.getValue().from());
         summary.append(", path=").append(firstField.getValue().path());
         if (!firstField.getValue().transforms().isEmpty()) {
             summary.append(", transforms=[").append(String.join(", ", firstField.getValue().transforms())).append(']');

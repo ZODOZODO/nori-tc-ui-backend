@@ -8,6 +8,8 @@ import com.nori.tc.db.core.eqp.store.TcEqpPortStatusStore;
 import com.nori.tc.db.core.eqp.store.TcEqpSocketStore;
 import com.nori.tc.db.core.eqp.store.TcEqpStateStore;
 import com.nori.tc.db.core.eqp.store.TcEqpStore;
+import com.nori.tc.db.core.model.store.TcModelParamStore;
+import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqp;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpHsms;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpLog;
@@ -18,9 +20,12 @@ import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpSocket;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpState;
 import com.nori.tc.db.core.jar.store.TcJarBusinessStore;
 import com.nori.tc.db.core.jar.store.TcJarGatewayStore;
+import com.nori.tc.db.core.work.store.TcWorkStore;
 import com.nori.tc.db.domain.common.eqp.ControlState;
 import com.nori.tc.db.domain.common.eqp.EqpState;
 import com.nori.tc.db.domain.eqp.TcEqp;
+import com.nori.tc.db.domain.eqp.TcEqpParam;
+import com.nori.tc.db.domain.model.TcModelParam;
 import com.nori.tc.ui.adapter.db.mapper.UiDomainEnumMapper;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
@@ -33,6 +38,7 @@ import com.nori.tc.ui.domain.eqp.UiEqpLogPolicy;
 import com.nori.tc.ui.domain.eqp.UiEqpParam;
 import com.nori.tc.ui.domain.eqp.UiEqpParamVersion;
 import com.nori.tc.ui.domain.eqp.UiEqpPortStatus;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
@@ -46,6 +52,11 @@ import java.util.Optional;
 @Repository
 public class JpaEqpCrudPort implements EqpCrudPort {
 
+    private static final String PORT_COUNT_PARAM_NAME = "PORTCOUNT";
+    private static final String INITIAL_PORT_STATE = "down";
+    private static final int DEFAULT_PORT_COUNT = 4;
+    private static final int MODEL_PARAM_PAGE_LIMIT = 500;
+
     private final EqpManagementDbSupport dbSupport;
     private final TcEqpStore eqpStore;
     private final TcEqpHsmsStore eqpHsmsStore;
@@ -55,8 +66,10 @@ public class JpaEqpCrudPort implements EqpCrudPort {
     private final TcEqpPortStatusStore eqpPortStatusStore;
     private final TcEqpParamStore eqpParamStore;
     private final TcEqpParamVersionStore eqpParamVersionStore;
+    private final TcModelParamStore modelParamStore;
     private final TcJarGatewayStore jarGatewayStore;
     private final TcJarBusinessStore jarBusinessStore;
+    private final TcWorkStore workStore;
 
     public JpaEqpCrudPort(
             final EqpManagementDbSupport dbSupport,
@@ -68,8 +81,10 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             final TcEqpPortStatusStore eqpPortStatusStore,
             final TcEqpParamStore eqpParamStore,
             final TcEqpParamVersionStore eqpParamVersionStore,
+            final TcModelParamStore modelParamStore,
             final TcJarGatewayStore jarGatewayStore,
-            final TcJarBusinessStore jarBusinessStore
+            final TcJarBusinessStore jarBusinessStore,
+            final TcWorkStore workStore
     ) {
         this.dbSupport = Objects.requireNonNull(dbSupport, "dbSupport is null");
         this.eqpStore = Objects.requireNonNull(eqpStore, "eqpStore is null");
@@ -80,16 +95,28 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         this.eqpPortStatusStore = Objects.requireNonNull(eqpPortStatusStore, "eqpPortStatusStore is null");
         this.eqpParamStore = Objects.requireNonNull(eqpParamStore, "eqpParamStore is null");
         this.eqpParamVersionStore = Objects.requireNonNull(eqpParamVersionStore, "eqpParamVersionStore is null");
+        this.modelParamStore = Objects.requireNonNull(modelParamStore, "modelParamStore is null");
         this.jarGatewayStore = Objects.requireNonNull(jarGatewayStore, "jarGatewayStore is null");
         this.jarBusinessStore = Objects.requireNonNull(jarBusinessStore, "jarBusinessStore is null");
+        this.workStore = Objects.requireNonNull(workStore, "workStore is null");
     }
 
     @Override
+    @Transactional
     public EqpManagementSnapshot create(final EqpManagementCommand.Create command) {
-        validateCreateCommand(command);
-        validateSelectedJarRefs(command.gatewayJarRef(), command.businessJarRef());
-
         try {
+            validateCreateCommand(command);
+            validateSelectedJarRefs(command.gatewayJarRef(), command.businessJarRef());
+            validatePassiveListenerGroupRoutePartition(
+                    null,
+                    command.interfaceType(),
+                    command.commMode(),
+                    command.routePartition(),
+                    command.eqpIp(),
+                    command.eqpPort(),
+                    command.socketSettings()
+            );
+
             final TcEqp createdEqp = eqpStore.upsert(new UpsertTcEqp(
                     command.eqpId(),
                     UiDomainEnumMapper.toDbProtocolType(command.interfaceType()),
@@ -111,6 +138,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             upsertProtocolDetails(eqpKey, command.interfaceType(), command.hsmsSettings(), command.socketSettings());
             upsertLogPolicy(eqpKey, resolveCreateLogSettings(command.logSettings()));
             upsertInitialState(eqpKey, command.interfaceType());
+            upsertInitialPortStatuses(createdEqp, normalizeOptionalText(command.appliedParamVersion()));
 
             return requireSnapshot(command.eqpId());
         } catch (RuntimeException exception) {
@@ -119,6 +147,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
     }
 
     @Override
+    @Transactional
     public EqpManagementSnapshot update(final String eqpId, final EqpManagementCommand.Update command) {
         if (eqpId == null || eqpId.isBlank()) {
             throw new UiBadRequestException("eqpId는 비어 있을 수 없습니다.");
@@ -127,10 +156,19 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             throw new UiBadRequestException("요청 본문이 비어 있습니다.");
         }
 
-        final EqpManagementSnapshot existing = requireSnapshot(eqpId);
-        validateSelectedJarRefs(command.gatewayJarRef(), command.businessJarRef());
-
         try {
+            final EqpManagementSnapshot existing = requireSnapshot(eqpId);
+            validateSelectedJarRefs(command.gatewayJarRef(), command.businessJarRef());
+            validatePassiveListenerGroupRoutePartition(
+                    existing.eqp().eqpId(),
+                    existing.eqp().commInterface(),
+                    command.commMode(),
+                    command.routePartition(),
+                    command.eqpIp(),
+                    command.eqpPort(),
+                    command.socketSettings()
+            );
+
             final TcEqp updatedEqp = eqpStore.upsert(new UpsertTcEqp(
                     existing.eqp().eqpId(),
                     UiDomainEnumMapper.toDbProtocolType(existing.eqp().commInterface()),
@@ -159,6 +197,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
     }
 
     @Override
+    @Transactional
     public void restore(final EqpManagementSnapshot snapshot) {
         if (snapshot == null) {
             throw new UiBadRequestException("복구 스냅샷이 비어 있습니다.");
@@ -196,12 +235,15 @@ public class JpaEqpCrudPort implements EqpCrudPort {
     }
 
     @Override
+    @Transactional
     public void delete(final String eqpId) {
         if (eqpId == null || eqpId.isBlank()) {
             throw new UiBadRequestException("eqpId는 비어 있을 수 없습니다.");
         }
 
         try {
+            final EqpManagementSnapshot snapshot = requireSnapshot(eqpId);
+            workStore.deleteAllByEqpKey(snapshot.eqp().eqpKey());
             eqpStore.deleteByEqpId(eqpId);
         } catch (RuntimeException exception) {
             throw toUiException("EQP 삭제", exception);
@@ -237,6 +279,43 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         if (command.socketSettings() == null && command.interfaceType() == UiProtocolType.SOCKET) {
             throw new UiBadRequestException("SOCKET 설비는 socketSettings가 필요합니다.");
         }
+    }
+
+    private void validatePassiveListenerGroupRoutePartition(
+            final String currentEqpId,
+            final UiProtocolType interfaceType,
+            final String commMode,
+            final Integer routePartition,
+            final String eqpIp,
+            final Integer eqpPort,
+            final EqpManagementCommand.SocketSettings socketSettings
+    ) {
+        if (!"PASSIVE".equalsIgnoreCase(normalizeCommMode(commMode))) {
+            return;
+        }
+        if (routePartition == null || eqpIp == null || eqpIp.isBlank() || eqpPort == null || eqpPort <= 0) {
+            return;
+        }
+
+        final String socketProtocolType = interfaceType == UiProtocolType.SOCKET
+                ? resolveSocketSettings(socketSettings).socketProtocolType()
+                : null;
+
+        dbSupport.findPassiveListenerGroupRoutePartitionConflict(
+                        interfaceType,
+                        currentEqpId,
+                        eqpIp,
+                        eqpPort,
+                        routePartition,
+                        socketProtocolType
+                )
+                .ifPresent(peerEqpId -> {
+                    final String interfaceLabel = interfaceType == UiProtocolType.SOCKET ? "SOCKET" : "HSMS";
+                    throw new UiBadRequestException(
+                            "동일 PASSIVE " + interfaceLabel + " listener-group의 routePartition은 동일해야 합니다. "
+                                    + "peerEqpId=" + peerEqpId
+                    );
+                });
     }
 
     private EqpManagementSnapshot requireSnapshot(final String eqpId) {
@@ -298,6 +377,87 @@ public class JpaEqpCrudPort implements EqpCrudPort {
 
     private void upsertInitialState(final long eqpKey, final UiProtocolType interfaceType) {
         eqpStateStore.upsert(createInitialStateCommand(eqpKey, interfaceType, OffsetDateTime.now()));
+    }
+
+    private void upsertInitialPortStatuses(final TcEqp eqp, final String appliedParamVersion) {
+        final int portCount = resolveInitialPortCount(eqp, appliedParamVersion);
+        final OffsetDateTime timestamp = OffsetDateTime.now();
+
+        for (int portNumber = 1; portNumber <= portCount; portNumber++) {
+            eqpPortStatusStore.upsert(new UpsertTcEqpPortStatus(
+                    eqp.eqpKey(),
+                    Integer.toString(portNumber),
+                    null,
+                    INITIAL_PORT_STATE,
+                    null,
+                    null,
+                    null,
+                    timestamp
+            ));
+        }
+    }
+
+    private int resolveInitialPortCount(final TcEqp eqp, final String appliedParamVersion) {
+        return findEqpPortCount(eqp.eqpKey(), appliedParamVersion)
+                .or(() -> findModelPortCount(eqp.modelVersionKey()))
+                .orElse(DEFAULT_PORT_COUNT);
+    }
+
+    private Optional<Integer> findEqpPortCount(final long eqpKey, final String appliedParamVersion) {
+        if (appliedParamVersion == null || appliedParamVersion.isBlank()) {
+            return Optional.empty();
+        }
+
+        return eqpParamStore.findAllByEqpKeyAndVersion(eqpKey, appliedParamVersion).stream()
+                .filter(Objects::nonNull)
+                .filter(param -> PORT_COUNT_PARAM_NAME.equalsIgnoreCase(normalizeOptionalText(param.paramName())))
+                .map(TcEqpParam::paramValue)
+                .map(this::parsePositivePortCount)
+                .flatMap(Optional::stream)
+                .findFirst();
+    }
+
+    private Optional<Integer> findModelPortCount(final long modelVersionKey) {
+        int offset = 0;
+
+        while (true) {
+            final List<TcModelParam> page = modelParamStore.findAllByModelVersionKey(
+                    modelVersionKey,
+                    PageRequest.of(offset, MODEL_PARAM_PAGE_LIMIT)
+            );
+            if (page == null || page.isEmpty()) {
+                return Optional.empty();
+            }
+
+            final Optional<Integer> portCount = page.stream()
+                    .filter(Objects::nonNull)
+                    .filter(param -> PORT_COUNT_PARAM_NAME.equalsIgnoreCase(normalizeOptionalText(param.paramName())))
+                    .map(TcModelParam::paramValue)
+                    .map(this::parsePositivePortCount)
+                    .flatMap(Optional::stream)
+                    .findFirst();
+            if (portCount.isPresent()) {
+                return portCount;
+            }
+            if (page.size() < MODEL_PARAM_PAGE_LIMIT) {
+                return Optional.empty();
+            }
+            offset += MODEL_PARAM_PAGE_LIMIT;
+        }
+    }
+
+    private Optional<Integer> parsePositivePortCount(final String rawValue) {
+        final String normalized = normalizeOptionalText(rawValue);
+        if (normalized == null) {
+            return Optional.empty();
+        }
+
+        try {
+            final int parsed = Integer.parseInt(normalized);
+            return parsed > 0 ? Optional.of(parsed) : Optional.empty();
+        } catch (NumberFormatException ignored) {
+            return Optional.empty();
+        }
     }
 
     /**

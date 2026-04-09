@@ -12,6 +12,7 @@ public record DeploySummarySnapshot(
         long deployKey,
         String deployName,
         UiCommandEventType eventType,
+        String resolvedScenarioCode,
         DeployStatus deployStatus,
         boolean pauseRequested,
         DeployExecutionPolicy executionPolicy,

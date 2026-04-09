@@ -20,6 +20,7 @@ import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.core.model.UiCommandEventType;
+import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.port.db.DeployPlanningStatePort;
 import com.nori.tc.ui.core.properties.UiDeployProperties;
 import org.springframework.stereotype.Service;
@@ -257,6 +258,7 @@ public class DeployPlanningService {
                 }
             }
             case EQP_UPDATE,
+                 EQP_MODEL_UPDATE,
                  EQP_DELETE,
                  EQP_START,
                  EQP_END,
@@ -305,7 +307,7 @@ public class DeployPlanningService {
         }
 
         switch (eventType) {
-            case EQP_CREATE, EQP_UPDATE -> {
+            case EQP_CREATE -> {
                 requireObject(uiMessage, "modelInfo");
                 requireLong(uiMessage, "modelInfo", "modelVersionKey");
                 requireObject(uiMessage, "gatewayProfile");
@@ -313,7 +315,17 @@ public class DeployPlanningService {
                 requireText(uiMessage, "gatewayProfile", "eqpIp");
                 requireInt(uiMessage, "gatewayProfile", "eqpPort");
                 requireObject(uiMessage, "modelParams");
-                requireObject(uiMessage, "eqpParams");
+            }
+            case EQP_UPDATE -> {
+                requireObject(uiMessage, "gatewayProfile");
+                requireText(uiMessage, "gatewayProfile", "connectionMode");
+                requireText(uiMessage, "gatewayProfile", "eqpIp");
+                requireInt(uiMessage, "gatewayProfile", "eqpPort");
+            }
+            case EQP_MODEL_UPDATE -> {
+                requireObject(uiMessage, "modelInfo");
+                requireLong(uiMessage, "modelInfo", "modelVersionKey");
+                requireObject(uiMessage, "modelParams");
             }
             case EQP_DELETE -> requireText(uiMessage, "deleteMode");
             case EQP_SEND_MESSAGE -> {
@@ -367,7 +379,6 @@ public class DeployPlanningService {
                 addIfPresent(deltaKinds, desiredState.modelVersionKey(), DeployDeltaKind.MODEL_CHANGED);
                 addIfPresent(deltaKinds, desiredState.businessJarRef(), DeployDeltaKind.BUSINESS_JAR_CHANGED);
                 addIfPresent(deltaKinds, desiredState.gatewayJarRef(), DeployDeltaKind.GATEWAY_JAR_CHANGED);
-                addIfPresent(deltaKinds, desiredState.eqpParamVersion(), DeployDeltaKind.EQP_PARAM_CHANGED);
                 if (desiredState.eqpIp() != null || desiredState.eqpPort() != null) {
                     deltaKinds.add(DeployDeltaKind.CONNECTION_ENDPOINT_CHANGED);
                 }
@@ -379,18 +390,6 @@ public class DeployPlanningService {
                 }
             }
             case EQP_UPDATE -> {
-                if (!Objects.equals(currentState.modelVersionKey(), safeLong(desiredState.modelVersionKey()))) {
-                    deltaKinds.add(DeployDeltaKind.MODEL_CHANGED);
-                }
-                if (!Objects.equals(currentState.businessJarRef(), desiredState.businessJarRef())) {
-                    deltaKinds.add(DeployDeltaKind.BUSINESS_JAR_CHANGED);
-                }
-                if (!Objects.equals(currentState.gatewayJarRef(), desiredState.gatewayJarRef())) {
-                    deltaKinds.add(DeployDeltaKind.GATEWAY_JAR_CHANGED);
-                }
-                if (!Objects.equals(normalizedText(currentState.appliedParamVersion()), normalizedText(desiredState.eqpParamVersion()))) {
-                    deltaKinds.add(DeployDeltaKind.EQP_PARAM_CHANGED);
-                }
                 if (!Objects.equals(normalizedText(currentState.eqpIp()), normalizedText(desiredState.eqpIp()))
                         || !Objects.equals(currentState.eqpPort(), safeInt(desiredState.eqpPort()))) {
                     deltaKinds.add(DeployDeltaKind.CONNECTION_ENDPOINT_CHANGED);
@@ -400,6 +399,14 @@ public class DeployPlanningService {
                         || !Objects.equals(normalizedText(currentState.socketType()), normalizedText(desiredState.socketType()))
                         || !Objects.equals(currentState.hsmsDeviceId(), desiredState.hsmsDeviceId())) {
                     deltaKinds.add(DeployDeltaKind.GATEWAY_RUNTIME_SHAPE_CHANGED);
+                }
+            }
+            case EQP_MODEL_UPDATE -> {
+                if (!Objects.equals(currentState.modelVersionKey(), safeLong(desiredState.modelVersionKey()))) {
+                    deltaKinds.add(DeployDeltaKind.MODEL_CHANGED);
+                }
+                if (!Objects.equals(currentState.businessJarRef(), desiredState.businessJarRef())) {
+                    deltaKinds.add(DeployDeltaKind.BUSINESS_JAR_CHANGED);
                 }
             }
             case EQP_PARAMETER_UPDATE -> {
@@ -555,10 +562,27 @@ public class DeployPlanningService {
             final String interfaceType,
             final JsonNode uiMessage
     ) {
-        if (eventType != UiCommandEventType.EQP_REGISTER_DEPLOY) {
-            return uiMessage;
+        return switch (eventType) {
+            case EQP_UPDATE,
+                 EQP_MODEL_UPDATE,
+                 EQP_BUSINESS_JARFILE_UPDATE,
+                 EQP_GATEWAY_JARFILE_UPDATE -> normalizeUpdateUiMessage(currentState, interfaceType, uiMessage);
+            case EQP_REGISTER_DEPLOY -> normalizeRegisterUiMessage(currentState, interfaceType, uiMessage);
+            default -> uiMessage;
+        };
+    }
+
+    private JsonNode normalizeUpdateUiMessage(
+            final DeployCurrentState currentState,
+            final String interfaceType,
+            final JsonNode uiMessage
+    ) {
+        if (uiMessage == null || !uiMessage.isObject()) {
+            throw new UiBadRequestException("공통 uiMessage는 JSON object 여야 합니다.");
         }
-        return normalizeRegisterUiMessage(currentState, interfaceType, uiMessage);
+        final ObjectNode normalized = ((ObjectNode) uiMessage).deepCopy();
+        injectEquipmentProfile(normalized, currentState, interfaceType);
+        return normalized;
     }
 
     private JsonNode normalizeRegisterUiMessage(
@@ -598,7 +622,108 @@ public class DeployPlanningService {
             normalized.put("interfaceType", interfaceType.trim());
         }
 
+        injectEquipmentProfile(normalized, currentState, interfaceType);
+
         return normalized;
+    }
+
+    private void injectEquipmentProfile(
+            final ObjectNode normalized,
+            final DeployCurrentState currentState,
+            final String interfaceType
+    ) {
+        if (normalized.has("equipmentProfile")) {
+            return;
+        }
+        if (currentState == null || currentState.equipmentProfile() == null) {
+            return;
+        }
+        normalized.set(
+                "equipmentProfile",
+                objectMapper.valueToTree(mergeEquipmentProfile(currentState.equipmentProfile(), normalized, interfaceType))
+        );
+    }
+
+    private UiEquipmentProfileSnapshot mergeEquipmentProfile(
+            final UiEquipmentProfileSnapshot baseProfile,
+            final JsonNode uiMessage,
+            final String interfaceType
+    ) {
+        final JsonNode gatewayProfile = uiMessage == null ? null : uiMessage.get("gatewayProfile");
+        final String resolvedInterfaceType = normalizedText(interfaceType)
+                .orElse(baseProfile.commInterfaceType());
+        final String resolvedConnectionMode = textValue(gatewayProfile, "connectionMode") != null
+                ? textValue(gatewayProfile, "connectionMode")
+                : baseProfile.connectionMode();
+        final String resolvedEqpIp = textValue(gatewayProfile, "eqpIp") != null
+                ? textValue(gatewayProfile, "eqpIp")
+                : baseProfile.eqpIp();
+        final Integer resolvedEqpPort = intValue(gatewayProfile, "eqpPort") != null
+                ? intValue(gatewayProfile, "eqpPort")
+                : baseProfile.eqpPort();
+        final String resolvedSocketType = textValue(gatewayProfile, "socketType") != null
+                ? textValue(gatewayProfile, "socketType")
+                : baseProfile.socketType();
+        final Integer resolvedHsmsDeviceId = intValue(gatewayProfile, "hsmsDeviceId") != null
+                ? intValue(gatewayProfile, "hsmsDeviceId")
+                : baseProfile.hsmsDeviceId();
+        final Long resolvedGatewayJarKey = longValue(uiMessage, "gatewayJar", "jarRef") != null
+                ? longValue(uiMessage, "gatewayJar", "jarRef")
+                : baseProfile.gatewayJarKey();
+        final Long resolvedBusinessJarKey = longValue(uiMessage, "businessJar", "jarRef") != null
+                ? longValue(uiMessage, "businessJar", "jarRef")
+                : baseProfile.businessJarKey();
+
+        final UiEquipmentProfileSnapshot.HsmsSettingsSnapshot hsmsSettings = baseProfile.hsmsSettings() == null
+                ? null
+                : new UiEquipmentProfileSnapshot.HsmsSettingsSnapshot(
+                resolvedHsmsDeviceId,
+                resolvedConnectionMode,
+                baseProfile.hsmsSettings().t3Timeout(),
+                baseProfile.hsmsSettings().t5Timeout(),
+                baseProfile.hsmsSettings().t6Timeout(),
+                baseProfile.hsmsSettings().t7Timeout(),
+                baseProfile.hsmsSettings().t8Timeout(),
+                baseProfile.hsmsSettings().linkTestEnabled(),
+                baseProfile.hsmsSettings().linkTestInterval(),
+                baseProfile.hsmsSettings().maxMsgBytes()
+        );
+        final UiEquipmentProfileSnapshot.SocketSettingsSnapshot socketSettings = baseProfile.socketSettings() == null
+                ? null
+                : new UiEquipmentProfileSnapshot.SocketSettingsSnapshot(
+                resolvedSocketType,
+                resolvedConnectionMode,
+                baseProfile.socketSettings().charset(),
+                baseProfile.socketSettings().heartbeatEnabled(),
+                baseProfile.socketSettings().heartbeatInterval(),
+                baseProfile.socketSettings().readTimeout(),
+                baseProfile.socketSettings().writeTimeout(),
+                baseProfile.socketSettings().maxFrameSizeBytes(),
+                baseProfile.socketSettings().keepAliveEnabled()
+        );
+
+        return new UiEquipmentProfileSnapshot(
+                baseProfile.eqpKey(),
+                baseProfile.eqpId(),
+                resolvedInterfaceType,
+                resolvedSocketType,
+                resolvedHsmsDeviceId,
+                resolvedEqpIp,
+                resolvedEqpPort,
+                baseProfile.modelKey(),
+                resolvedGatewayJarKey,
+                resolvedBusinessJarKey,
+                resolvedConnectionMode,
+                baseProfile.routePartition(),
+                baseProfile.enabled(),
+                hsmsSettings,
+                socketSettings,
+                baseProfile.currentStateSnapshot(),
+                baseProfile.portStatuses(),
+                baseProfile.logPolicy(),
+                baseProfile.params(),
+                java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).toString()
+        );
     }
 
     private JsonNode mergeUiMessage(
@@ -818,10 +943,34 @@ public class DeployPlanningService {
 
     private static Integer intValue(
             final JsonNode parent,
+            final String fieldName
+    ) {
+        return optionalIntValue(parent, fieldName).orElse(null);
+    }
+
+    private static Integer intValue(
+            final JsonNode parent,
             final String objectField,
             final String fieldName
     ) {
         return optionalIntValue(parent, objectField, fieldName).orElse(null);
+    }
+
+    private static Optional<Integer> optionalIntValue(
+            final JsonNode parent,
+            final String fieldName
+    ) {
+        if (parent == null || !parent.isObject()) {
+            return Optional.empty();
+        }
+        final JsonNode valueNode = parent.get(fieldName);
+        if (valueNode == null || valueNode.isNull()) {
+            return Optional.empty();
+        }
+        if (!valueNode.canConvertToInt()) {
+            throw new UiBadRequestException(fieldName + " 값은 숫자여야 합니다.");
+        }
+        return Optional.of(valueNode.intValue());
     }
 
     private static Optional<Integer> optionalIntValue(

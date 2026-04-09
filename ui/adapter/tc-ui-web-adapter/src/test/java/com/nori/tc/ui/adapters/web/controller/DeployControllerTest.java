@@ -10,6 +10,7 @@ import com.nori.tc.ui.core.deploy.DeployHistoryView;
 import com.nori.tc.ui.core.deploy.DeployRegisterTargetView;
 import com.nori.tc.ui.core.deploy.DeployResultMessage;
 import com.nori.tc.ui.core.deploy.DeployResultSeverity;
+import com.nori.tc.ui.core.deploy.DeployStateOverview;
 import com.nori.tc.ui.core.deploy.DeployStatus;
 import com.nori.tc.ui.core.deploy.DeploySummaryView;
 import com.nori.tc.ui.core.deploy.DeployTargetCounts;
@@ -393,6 +394,8 @@ class DeployControllerTest {
                         1001L,
                         "PHOTO Update",
                         com.nori.tc.ui.core.model.UiCommandEventType.EQP_UPDATE,
+                        null,
+                        new DeployStateOverview("SOCKET", "PHOTO_MODEL", "1.0.0", "photo-business.jar", "EQP_PARAM_V1"),
                         DeployStatus.RUNNING,
                         true,
                         DeployExecutionPolicy.BEST_EFFORT,
@@ -415,6 +418,7 @@ class DeployControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.deployKey").value(1001))
                 .andExpect(jsonPath("$.data.eventType").value("EQP_UPDATE"))
+                .andExpect(jsonPath("$.data.asIsState.modelName").value("PHOTO_MODEL"))
                 .andExpect(jsonPath("$.data.deployStatus").value("RUNNING"))
                 .andExpect(jsonPath("$.data.pauseRequested").value(true))
                 .andExpect(jsonPath("$.data.targetSummary.total").value(10))

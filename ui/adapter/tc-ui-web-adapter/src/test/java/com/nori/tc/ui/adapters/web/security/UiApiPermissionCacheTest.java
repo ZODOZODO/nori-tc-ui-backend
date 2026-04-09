@@ -1,6 +1,5 @@
 package com.nori.tc.ui.adapters.web.security;
 
-import com.nori.tc.ui.core.port.db.UiApiPermissionPort;
 import com.nori.tc.ui.domain.auth.UserPrincipal;
 import com.nori.tc.ui.domain.common.user.UiPermissionMatchType;
 import com.nori.tc.ui.domain.common.user.UiPermissionResourceType;

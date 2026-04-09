@@ -18,6 +18,8 @@ public record UiEquipmentProfileSnapshot(
         String eqpIp,
         Integer eqpPort,
         Long modelKey,
+        Long gatewayJarKey,
+        Long businessJarKey,
         String connectionMode,
         Integer routePartition,
         Boolean enabled,

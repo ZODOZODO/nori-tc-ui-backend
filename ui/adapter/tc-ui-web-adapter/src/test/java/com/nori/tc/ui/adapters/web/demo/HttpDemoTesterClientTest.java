@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class HttpDemoTesterClientTest {
 
@@ -63,5 +64,102 @@ class HttpDemoTesterClientTest {
         assertEquals("RUN-01", response.runId());
         assertEquals("RUNNING", response.state());
         assertEquals(List.of("1", "2"), response.targets().getFirst().availablePortIds());
+    }
+
+    @Test
+    void createJobsParsesExtendedJobSummaryFields() throws Exception {
+        server.createContext("/api/demo-jobs", exchange -> {
+            byte[] responseBody = new ObjectMapper().writeValueAsBytes(new DemoJobCreateResponse(
+                    List.of(new DemoJobSummaryResponse(
+                            "DJOB-20260408-0001",
+                            "CMP_DEMO_01",
+                            "CMP_DEMO_01",
+                            "CMP",
+                            "1",
+                            "E2E",
+                            "normal-flow-mock",
+                            1,
+                            "Normal Flow Mock",
+                            "RUNNING",
+                            "RUNNING",
+                            "테스트 실행",
+                            14,
+                            2,
+                            14,
+                            "CHANNEL_ACTIVE",
+                            OffsetDateTime.parse("2026-04-08T10:00:00+09:00"),
+                            OffsetDateTime.parse("2026-04-08T10:00:05+09:00"),
+                            null,
+                            OffsetDateTime.parse("2026-04-08T10:00:06+09:00"),
+                            null,
+                            null
+                    )),
+                    List.of()
+            ));
+            exchange.sendResponseHeaders(200, responseBody.length);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                outputStream.write(responseBody);
+            }
+        });
+
+        DemoJobCreateResponse response = client.createJobs(new DemoTesterCreateJobsRequest(
+                "E2E",
+                "normal-flow-mock",
+                1,
+                List.of("CMP_DEMO_01"),
+                "TESTER"
+        ));
+
+        DemoJobSummaryResponse acceptedJob = response.acceptedJobs().getFirst();
+        assertEquals("DJOB-20260408-0001", acceptedJob.jobId());
+        assertEquals(14, acceptedJob.progressPercent());
+        assertEquals(2, acceptedJob.currentStepCount());
+        assertEquals(14, acceptedJob.totalStepCount());
+        assertEquals("2026-04-08T10:00:06+09:00", acceptedJob.updatedAt().toString());
+        assertNull(acceptedJob.failureCode());
+        assertNull(acceptedJob.failureMessage());
+    }
+
+    @Test
+    void getJobsParsesExtendedJobSummaryFields() throws Exception {
+        server.createContext("/api/demo-jobs", exchange -> {
+            byte[] responseBody = new ObjectMapper().writeValueAsBytes(List.of(new DemoJobSummaryResponse(
+                    "DJOB-20260408-0002",
+                    "CMP_DEMO_01",
+                    "CMP_DEMO_01",
+                    "CMP",
+                    "1",
+                    "E2E",
+                    "normal-flow-mock",
+                    1,
+                    "Normal Flow Mock",
+                    "FAILED",
+                    "FAILED",
+                    "실패",
+                    14,
+                    2,
+                    14,
+                    "CHANNEL_CLOSED",
+                    OffsetDateTime.parse("2026-04-08T10:00:00+09:00"),
+                    OffsetDateTime.parse("2026-04-08T10:00:05+09:00"),
+                    OffsetDateTime.parse("2026-04-08T10:00:20+09:00"),
+                    OffsetDateTime.parse("2026-04-08T10:00:20+09:00"),
+                    "CHANNEL_CLOSED",
+                    "채널이 닫혔습니다."
+            )));
+            exchange.sendResponseHeaders(200, responseBody.length);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                outputStream.write(responseBody);
+            }
+        });
+
+        List<DemoJobSummaryResponse> jobs = client.getJobs("FAILED", 10);
+
+        DemoJobSummaryResponse job = jobs.getFirst();
+        assertEquals("FAILED", job.state());
+        assertEquals(2, job.currentStepCount());
+        assertEquals(14, job.totalStepCount());
+        assertEquals("CHANNEL_CLOSED", job.failureCode());
+        assertEquals("채널이 닫혔습니다.", job.failureMessage());
     }
 }

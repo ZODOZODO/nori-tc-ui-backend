@@ -60,6 +60,11 @@ final class UiDbAdapterExceptionSupport {
             if (current instanceof IllegalArgumentException) {
                 return true;
             }
+
+            final String className = current.getClass().getName().toLowerCase(Locale.ROOT);
+            if (className.contains("invaliddataaccessapiusage")) {
+                return true;
+            }
             current = current.getCause();
         }
         return false;

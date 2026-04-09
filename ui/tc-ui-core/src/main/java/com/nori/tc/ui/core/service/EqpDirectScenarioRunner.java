@@ -186,17 +186,23 @@ public class EqpDirectScenarioRunner {
         final JsonNode stepUiMessage = commandAssembler.buildDirectStepUiMessage(
                 context.executionId(),
                 context.eventType(),
+                context.eqpId(),
                 step,
                 traceId,
                 context.actor(),
                 context.uiMessage()
         );
-        final Long eqpKey = context.executionSnapshot() == null ? null : context.executionSnapshot().eqp().eqpKey();
-        final UiEquipmentProfileSnapshot equipmentProfile = commandAssembler.buildDirectEquipmentProfile(
+        final UiEquipmentProfileSnapshot equipmentProfile = context.executionSnapshot() == null
+                ? commandAssembler.buildDirectEquipmentProfile(
                 messageEventType,
                 context.eqpId(),
                 context.interfaceType(),
-                eqpKey,
+                null,
+                stepUiMessage
+        )
+                : commandAssembler.buildDirectEquipmentProfile(
+                messageEventType,
+                context.executionSnapshot(),
                 stepUiMessage
         );
 

@@ -1,6 +1,8 @@
 package com.nori.tc.ui.adapter.db;
 
 import com.nori.tc.ui.core.deploy.DeployCurrentState;
+import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
+import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.port.db.DeployPlanningStatePort;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -22,9 +24,14 @@ import java.util.Optional;
 public class DeployPlanningStateJdbcPort implements DeployPlanningStatePort {
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final EqpManagementDbSupport eqpManagementDbSupport;
 
-    public DeployPlanningStateJdbcPort(final NamedParameterJdbcTemplate jdbcTemplate) {
+    public DeployPlanningStateJdbcPort(
+            final NamedParameterJdbcTemplate jdbcTemplate,
+            final EqpManagementDbSupport eqpManagementDbSupport
+    ) {
         this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate is null");
+        this.eqpManagementDbSupport = Objects.requireNonNull(eqpManagementDbSupport, "eqpManagementDbSupport is null");
     }
 
     @Override
@@ -63,9 +70,13 @@ public class DeployPlanningStateJdbcPort implements DeployPlanningStatePort {
     }
 
     private DeployCurrentState mapCurrentState(final ResultSet resultSet) throws SQLException {
+        final String eqpId = resultSet.getString("eqp_id");
+        final UiEquipmentProfileSnapshot equipmentProfile = eqpManagementDbSupport.loadSnapshotByEqpId(eqpId)
+                .map(this::toEquipmentProfile)
+                .orElse(null);
         return new DeployCurrentState(
                 resultSet.getLong("eqp_key"),
-                resultSet.getString("eqp_id"),
+                eqpId,
                 resultSet.getString("comm_interface"),
                 resultSet.getString("comm_mode"),
                 resultSet.getString("eqp_ip"),
@@ -75,7 +86,84 @@ public class DeployPlanningStateJdbcPort implements DeployPlanningStatePort {
                 nullableLong(resultSet, "gateway_jar_key"),
                 nullableLong(resultSet, "business_jar_key"),
                 resultSet.getString("socket_protocol_type"),
-                nullableInt(resultSet, "hsms_device_id")
+                nullableInt(resultSet, "hsms_device_id"),
+                equipmentProfile
+        );
+    }
+
+    private UiEquipmentProfileSnapshot toEquipmentProfile(final EqpManagementSnapshot snapshot) {
+        return new UiEquipmentProfileSnapshot(
+                snapshot.eqp().eqpKey(),
+                snapshot.eqp().eqpId(),
+                snapshot.eqp().commInterface() == null ? null : snapshot.eqp().commInterface().name(),
+                snapshot.socket() == null ? null : snapshot.socket().socketProtocolType(),
+                snapshot.hsms() == null ? null : snapshot.hsms().deviceId(),
+                snapshot.eqp().eqpIp(),
+                snapshot.eqp().eqpPort(),
+                snapshot.model() == null ? null : snapshot.model().modelKey(),
+                snapshot.eqp().gatewayJarKey(),
+                snapshot.eqp().businessJarKey(),
+                snapshot.eqp().commMode(),
+                snapshot.eqp().routePartition(),
+                snapshot.eqp().enabled(),
+                snapshot.hsms() == null ? null : new UiEquipmentProfileSnapshot.HsmsSettingsSnapshot(
+                        snapshot.hsms().deviceId(),
+                        snapshot.eqp().commMode(),
+                        snapshot.hsms().t3Timeout(),
+                        snapshot.hsms().t5Timeout(),
+                        snapshot.hsms().t6Timeout(),
+                        snapshot.hsms().t7Timeout(),
+                        snapshot.hsms().t8Timeout(),
+                        snapshot.hsms().linkTestEnabled(),
+                        snapshot.hsms().linkTestInterval(),
+                        snapshot.hsms().maxMsgBytes()
+                ),
+                snapshot.socket() == null ? null : new UiEquipmentProfileSnapshot.SocketSettingsSnapshot(
+                        snapshot.socket().socketProtocolType(),
+                        snapshot.eqp().commMode(),
+                        snapshot.socket().charset(),
+                        snapshot.socket().heartbeatEnabled(),
+                        snapshot.socket().heartbeatInterval(),
+                        snapshot.socket().readTimeout(),
+                        snapshot.socket().writeTimeout(),
+                        snapshot.socket().maxFrameSizeBytes(),
+                        snapshot.socket().keepAliveEnabled()
+                ),
+                snapshot.runtimeState() == null ? null : new UiEquipmentProfileSnapshot.CurrentStateSnapshot(
+                        snapshot.runtimeState().controlState() == null ? null : snapshot.runtimeState().controlState().name(),
+                        snapshot.runtimeState().eqpState() == null ? null : snapshot.runtimeState().eqpState().name(),
+                        snapshot.runtimeState().sinceAt() == null ? null : snapshot.runtimeState().sinceAt().toString(),
+                        snapshot.runtimeState().reasonCode(),
+                        snapshot.runtimeState().reasonDetail(),
+                        snapshot.runtimeState().updatedAt() == null ? null : snapshot.runtimeState().updatedAt().toString()
+                ),
+                snapshot.portStatuses().stream()
+                        .map(port -> new UiEquipmentProfileSnapshot.PortStatusSnapshot(
+                                port.portId(),
+                                port.portType() == null ? null : port.portType().name(),
+                                port.portState(),
+                                port.carrierId(),
+                                port.carrierType() == null ? null : port.carrierType().name(),
+                                port.carrierState() == null ? null : port.carrierState().name(),
+                                port.updatedAt() == null ? null : port.updatedAt().toString()
+                        ))
+                        .toList(),
+                snapshot.logPolicy() == null ? null : new UiEquipmentProfileSnapshot.LogPolicySnapshot(
+                        snapshot.logPolicy().logLevel() == null ? null : snapshot.logPolicy().logLevel().name(),
+                        snapshot.logPolicy().logRetentionDays(),
+                        snapshot.logPolicy().logPath(),
+                        snapshot.logPolicy().updatedAt() == null ? null : snapshot.logPolicy().updatedAt().toString()
+                ),
+                snapshot.params().stream()
+                        .map(param -> new UiEquipmentProfileSnapshot.ParamSnapshot(
+                                param.eqpParamKey(),
+                                param.paramName(),
+                                param.paramVersion(),
+                                param.paramValue(),
+                                param.updatedAt() == null ? null : param.updatedAt().toString()
+                        ))
+                        .toList(),
+                snapshot.eqp().updatedAt() == null ? null : snapshot.eqp().updatedAt().toString()
         );
     }
 

@@ -142,10 +142,11 @@ class ModelControllerTest {
     }
 
     @Test
-    @DisplayName("workflow 상세 저장은 잘못된 action_data_index를 400으로 거절합니다")
-    void saveDetailRowsRejectsInvalidActionDataIndex() {
+    @DisplayName("workflow 상세 저장은 mdfTemplateName 없이도 action_data_index를 저장할 수 있습니다")
+    void saveDetailRowsAllowsActionDataIndexWithoutMdfTemplateName() {
         final Fixture fixture = new Fixture();
-        when(fixture.modelCrudPort.findByModelVersionKey(101L)).thenReturn(Optional.of(model(101L)));
+        final UiModel model = model(101L);
+        when(fixture.modelCrudPort.findByModelVersionKey(101L)).thenReturn(Optional.of(model));
 
         final ModelDetailSaveRequest request = workflowSaveRequest(
                 """
@@ -168,22 +169,33 @@ class ModelControllerTest {
                         }
                         """
         );
+        when(fixture.modelDetailQueryPort.findWorkflowsByModelVersionKey(101L)).thenReturn(List.of(new UiModelWorkflow(
+                77L,
+                101L,
+                "WF_READY",
+                "READY_MSG",
+                "1001",
+                "T01",
+                request.rows().get(0).values().get(4),
+                "PUBLISH_MES_COMMAND",
+                request.rows().get(0).values().get(6),
+                OffsetDateTime.parse("2026-03-13T10:15:30+09:00")
+        )));
 
         final ResponseEntity<ApiResponse<ModelDetailDataResponse>> response =
                 fixture.detailController.saveDetailRows(101L, "workflow", request);
 
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
-        assertEquals("INVALID_REQUEST", response.getBody().errorCode());
         assertEquals(
-                "workflow 1행의 action_data_index가 올바르지 않습니다. action_data_index의 mdfTemplateName은 필수입니다.",
-                response.getBody().errorMsg()
+                "EQPID {from=data, path=eqpId}",
+                response.getBody().data().rows().get(0).previewValues().get(6)
         );
-        verify(fixture.modelDetailCommandPort, never()).saveDetailRows(anyLong(), any(String.class), any());
+        verify(fixture.modelDetailCommandPort).saveDetailRows(anyLong(), any(String.class), any());
     }
 
     @Test
-    @DisplayName("MDF 업로드는 기존 이름을 유지해 저장하고 저장 결과를 반환합니다")
+    @DisplayName("MDF 업로드는 업로드 파일명을 저장 이름으로 사용하고 저장 결과를 반환합니다")
     void uploadMdfSavesValidatedXml() {
         final Fixture fixture = new Fixture();
         final UiModel model = model(101L);
@@ -199,7 +211,7 @@ class ModelControllerTest {
         when(fixture.modelCrudPort.findByModelVersionKey(101L)).thenReturn(Optional.of(model));
         when(fixture.modelDetailQueryPort.findMdfByModelVersionKey(101L)).thenReturn(Optional.of(existing));
         when(fixture.modelDetailCommandPort.saveMdf(anyLong(), any(String.class), any(byte[].class)))
-                .thenReturn(mdf(88L, 101L, "EXISTING_MDF", xml));
+                .thenReturn(mdf(88L, 101L, "updated-mdf", xml));
 
         final ResponseEntity<ApiResponse<ModelMdfContentResponse>> response =
                 fixture.detailController.uploadMdf(101L, file, null);
@@ -207,11 +219,11 @@ class ModelControllerTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         final ApiResponse<ModelMdfContentResponse> responseBody = response.getBody();
         assertNotNull(responseBody);
-        assertEquals("EXISTING_MDF", responseBody.data().name());
+        assertEquals("updated-mdf", responseBody.data().name());
         assertEquals(xml, responseBody.data().xml());
 
         final ArgumentCaptor<byte[]> xmlCaptor = ArgumentCaptor.forClass(byte[].class);
-        verify(fixture.modelDetailCommandPort).saveMdf(org.mockito.ArgumentMatchers.eq(101L), org.mockito.ArgumentMatchers.eq("EXISTING_MDF"), xmlCaptor.capture());
+        verify(fixture.modelDetailCommandPort).saveMdf(org.mockito.ArgumentMatchers.eq(101L), org.mockito.ArgumentMatchers.eq("updated-mdf"), xmlCaptor.capture());
         assertEquals(xml, new String(xmlCaptor.getValue(), StandardCharsets.UTF_8));
     }
 

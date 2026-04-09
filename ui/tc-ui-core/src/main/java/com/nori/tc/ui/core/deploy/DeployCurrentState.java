@@ -1,5 +1,7 @@
 package com.nori.tc.ui.core.deploy;
 
+import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
+
 import java.util.Optional;
 
 /**
@@ -17,7 +19,8 @@ public record DeployCurrentState(
         Long gatewayJarRef,
         Long businessJarRef,
         String socketType,
-        Integer hsmsDeviceId
+        Integer hsmsDeviceId,
+        UiEquipmentProfileSnapshot equipmentProfile
 ) {
 
     public DeployCurrentState {

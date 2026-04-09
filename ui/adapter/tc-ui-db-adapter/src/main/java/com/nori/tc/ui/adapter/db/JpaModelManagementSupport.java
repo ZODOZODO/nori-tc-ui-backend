@@ -5,6 +5,7 @@ import com.nori.tc.db.core.eqp.store.TcEqpStore;
 import com.nori.tc.db.core.model.store.TcModelDcopItemStore;
 import com.nori.tc.db.core.model.store.TcModelEventIdStore;
 import com.nori.tc.db.core.model.store.TcModelMdfStore;
+import com.nori.tc.db.core.model.store.TcModelMesMessageStore;
 import com.nori.tc.db.core.model.store.TcModelParamStore;
 import com.nori.tc.db.core.model.store.TcModelReportIdStore;
 import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
@@ -19,6 +20,7 @@ import com.nori.tc.db.domain.model.TcModel;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
 import com.nori.tc.db.domain.model.TcModelEventId;
 import com.nori.tc.db.domain.model.TcModelMdf;
+import com.nori.tc.db.domain.model.TcModelMesMessage;
 import com.nori.tc.db.domain.model.TcModelParam;
 import com.nori.tc.db.domain.model.TcModelReportId;
 import com.nori.tc.db.domain.model.TcModelSecsMessage;
@@ -121,6 +123,7 @@ final class JpaModelManagementSupport {
             final TcModelParamStore modelParamStore,
             final TcModelSecsMessageStore modelSecsMessageStore,
             final TcModelSocketMessageStore modelSocketMessageStore,
+            final TcModelMesMessageStore modelMesMessageStore,
             final TcModelVariableIdStore modelVariableIdStore,
             final TcModelReportIdStore modelReportIdStore,
             final TcModelEventIdStore modelEventIdStore,
@@ -134,6 +137,7 @@ final class JpaModelManagementSupport {
                 Objects.requireNonNull(modelParamStore, "modelParamStore is null"),
                 Objects.requireNonNull(modelSecsMessageStore, "modelSecsMessageStore is null"),
                 Objects.requireNonNull(modelSocketMessageStore, "modelSocketMessageStore is null"),
+                Objects.requireNonNull(modelMesMessageStore, "modelMesMessageStore is null"),
                 Objects.requireNonNull(modelVariableIdStore, "modelVariableIdStore is null"),
                 Objects.requireNonNull(modelReportIdStore, "modelReportIdStore is null"),
                 Objects.requireNonNull(modelEventIdStore, "modelEventIdStore is null"),
@@ -418,7 +422,6 @@ final class JpaModelManagementSupport {
         if (command.editModelVersionKey() <= 0L) {
             throw new UiBadRequestException("editModelVersionKey는 1 이상이어야 합니다.");
         }
-        normalizeRequiredText(command.newVersion(), "newVersion");
     }
 
     void validateCommitParentCommand(final JpaModelManagementPort.CommitParentCommand command) {
@@ -543,6 +546,7 @@ final class JpaModelManagementSupport {
             List<TcModelParam> params,
             List<TcModelSecsMessage> secsMessages,
             List<TcModelSocketMessage> socketMessages,
+            List<TcModelMesMessage> mesMessages,
             List<TcModelVariableId> variableIds,
             List<TcModelReportId> reportIds,
             List<TcModelEventId> eventIds,

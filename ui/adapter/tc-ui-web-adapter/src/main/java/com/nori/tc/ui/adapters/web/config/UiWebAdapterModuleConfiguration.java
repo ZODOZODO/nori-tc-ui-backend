@@ -9,12 +9,14 @@ import com.nori.tc.ui.adapters.web.application.admin.UserAdminFacade;
 import com.nori.tc.ui.adapters.web.controller.AsyncResultController;
 import com.nori.tc.ui.adapters.web.controller.AuthController;
 import com.nori.tc.ui.adapters.web.controller.DemoController;
+import com.nori.tc.ui.adapters.web.controller.DemoInternalController;
 import com.nori.tc.ui.adapters.web.controller.DeployController;
 import com.nori.tc.ui.adapters.web.controller.DeployScenarioAdminController;
 import com.nori.tc.ui.adapters.web.controller.DlqController;
 import com.nori.tc.ui.adapters.web.controller.EqpController;
 import com.nori.tc.ui.adapters.web.controller.EqpParamController;
 import com.nori.tc.ui.adapters.web.controller.GroupController;
+import com.nori.tc.ui.adapters.web.controller.LiveMapController;
 import com.nori.tc.ui.adapters.web.controller.ModelBranchController;
 import com.nori.tc.ui.adapters.web.controller.ModelDetailController;
 import com.nori.tc.ui.adapters.web.controller.ModelMutationController;
@@ -47,12 +49,14 @@ import org.springframework.context.annotation.Import;
         AsyncResultController.class,
         AuthController.class,
         DemoController.class,
+        DemoInternalController.class,
         DeployController.class,
         DeployScenarioAdminController.class,
         DlqController.class,
         EqpController.class,
         EqpParamController.class,
         GroupController.class,
+        LiveMapController.class,
         ModelBranchController.class,
         ModelDetailController.class,
         ModelMutationController.class,

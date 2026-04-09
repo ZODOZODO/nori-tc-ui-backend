@@ -20,7 +20,7 @@ import org.springframework.stereotype.Component;
  *
  * <p>라우팅 규칙:</p>
  * <ul>
- *   <li>EQP_CREATE_REP / EQP_UPDATE_REP / EQP_DELETE_REP /
+ *   <li>EQP_CREATE_REP / EQP_UPDATE_REP / EQP_MODEL_UPDATE_REP / EQP_DELETE_REP /
  *       EQP_GATEWAY_JARFILE_UPDATE_REP / EQP_BUSINESS_JARFILE_UPDATE_REP →
  *       {@link DualResponseRegistry}: Gateway와 Business 양쪽 응답을 수집하여
  *       DeferredResult 완료 처리</li>
@@ -82,6 +82,7 @@ public class UiCommandIngressService implements UiCommandIngressPort {
             // dual-response: Gateway + Business 양방향 응답 수집
             case "EQP_CREATE_REP",
                  "EQP_UPDATE_REP",
+                 "EQP_MODEL_UPDATE_REP",
                  "EQP_DELETE_REP",
                  "EQP_GATEWAY_JARFILE_UPDATE_REP",
                  "EQP_BUSINESS_JARFILE_UPDATE_REP" ->

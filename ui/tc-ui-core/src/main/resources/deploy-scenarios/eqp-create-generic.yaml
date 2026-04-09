@@ -28,46 +28,6 @@ steps:
       action: RESTORE_PREVIOUS_GATEWAY_CONTEXT
 
   - order: 20
-    code: RELOAD_BUSINESS_PLUGIN
-    name: Business plugin 적재
-    targetApp: BUSINESS
-    description: business jar가 있으면 plugin/runtime 준비를 수행한다.
-    when:
-      deltaAny:
-        - BUSINESS_JAR_CHANGED
-    run:
-      action: RELOAD_BUSINESS_PLUGIN
-      timeoutMs: 60000
-      replyRequired: true
-      retry:
-        maxAttempts: 1
-        backoffMs: 0
-    rollback:
-      enabled: true
-      mode: AUTO_COMPENSATABLE
-      action: RESTORE_PREVIOUS_BUSINESS_PLUGIN
-
-  - order: 30
-    code: RELOAD_BUSINESS_MODEL_RUNTIME
-    name: Business model runtime 적재
-    targetApp: BUSINESS
-    description: modelVersion 기반 runtime을 준비한다.
-    when:
-      deltaAny:
-        - MODEL_CHANGED
-    run:
-      action: RELOAD_BUSINESS_MODEL_RUNTIME
-      timeoutMs: 15000
-      replyRequired: true
-      retry:
-        maxAttempts: 1
-        backoffMs: 0
-    rollback:
-      enabled: true
-      mode: AUTO_COMPENSATABLE
-      action: RESTORE_PREVIOUS_BUSINESS_RUNTIME
-
-  - order: 40
     code: UPDATE_MODEL_BINDING
     name: Business model binding 연결
     targetApp: BUSINESS
@@ -88,27 +48,7 @@ steps:
       mode: AUTO_COMPENSATABLE
       action: RESTORE_PREVIOUS_MODEL_BINDING
 
-  - order: 50
-    code: UPDATE_EQP_PARAM
-    name: EQP parameter 적재
-    targetApp: BUSINESS
-    description: 설비별 parameter snapshot을 적재한다.
-    when:
-      deltaAny:
-        - EQP_PARAM_CHANGED
-    run:
-      action: UPDATE_EQP_PARAM
-      timeoutMs: 10000
-      replyRequired: true
-      retry:
-        maxAttempts: 1
-        backoffMs: 0
-    rollback:
-      enabled: true
-      mode: CONDITIONAL_COMPENSATABLE
-      action: RESTORE_PREVIOUS_EQP_PARAM
-
-  - order: 60
+  - order: 30
     code: RELOAD_GATEWAY_PLUGIN
     name: Gateway plugin 적재
     targetApp: GATEWAY

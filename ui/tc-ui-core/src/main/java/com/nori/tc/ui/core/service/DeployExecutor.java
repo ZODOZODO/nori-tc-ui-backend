@@ -7,7 +7,6 @@ import com.nori.tc.ui.core.deploy.DeploySnapshotKind;
 import com.nori.tc.ui.core.deploy.DeploySnapshotScope;
 import com.nori.tc.ui.core.deploy.DeployStatus;
 import com.nori.tc.ui.core.deploy.DeployStepStatus;
-import com.nori.tc.ui.core.deploy.PersistedDeployTarget;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.port.db.DeployStorePort;
 import com.nori.tc.ui.core.port.redis.DeployExecutionCoordinationPort;
@@ -36,6 +35,7 @@ public class DeployExecutor {
     private final DeployCommandAssembler commandAssembler;
     private final DeployTraceRecorder deployTraceRecorder;
     private final DeployRollbackCoordinator rollbackCoordinator;
+    private final DeployEqpFinalizationService deployEqpFinalizationService;
     private final DeployExecutionCoordinationPort deployExecutionCoordinationPort;
     private final UiDeployProperties deployProperties;
 
@@ -46,6 +46,7 @@ public class DeployExecutor {
             final DeployCommandAssembler commandAssembler,
             final DeployTraceRecorder deployTraceRecorder,
             final DeployRollbackCoordinator rollbackCoordinator,
+            final DeployEqpFinalizationService deployEqpFinalizationService,
             final DeployExecutionCoordinationPort deployExecutionCoordinationPort,
             final UiDeployProperties deployProperties
     ) {
@@ -53,6 +54,10 @@ public class DeployExecutor {
         this.commandAssembler = Objects.requireNonNull(commandAssembler, "commandAssembler is null");
         this.deployTraceRecorder = Objects.requireNonNull(deployTraceRecorder, "deployTraceRecorder is null");
         this.rollbackCoordinator = Objects.requireNonNull(rollbackCoordinator, "rollbackCoordinator is null");
+        this.deployEqpFinalizationService = Objects.requireNonNull(
+                deployEqpFinalizationService,
+                "deployEqpFinalizationService is null"
+        );
         this.deployExecutionCoordinationPort = Objects.requireNonNull(
                 deployExecutionCoordinationPort,
                 "deployExecutionCoordinationPort is null"
@@ -252,6 +257,7 @@ public class DeployExecutor {
                 }
             }
 
+            deployEqpFinalizationService.finalizeTargetSuccess(target, actor);
             deployStorePort.markTargetCompleted(
                     target.deployTargetKey(),
                     OffsetDateTime.now(ZoneOffset.UTC)
@@ -384,15 +390,16 @@ public class DeployExecutor {
     }
 
     private JsonNode resolveTargetPreState(final DeployExecutionTarget executionTarget) {
-        if (executionTarget.currentStepOrder() != null) {
-            return deployStorePort.findLatestTargetSnapshot(
-                            executionTarget.target().deployTargetKey(),
-                            DeploySnapshotScope.TARGET_PRE_STATE,
-                            null,
-                            DeploySnapshotKind.TARGET_FULL_STATE
-                    )
-                    .map(com.nori.tc.ui.core.deploy.DeployStoredSnapshot::snapshotData)
-                    .orElse(null);
+        final JsonNode existingSnapshot = deployStorePort.findLatestTargetSnapshot(
+                        executionTarget.target().deployTargetKey(),
+                        DeploySnapshotScope.TARGET_PRE_STATE,
+                        null,
+                        DeploySnapshotKind.TARGET_FULL_STATE
+                )
+                .map(com.nori.tc.ui.core.deploy.DeployStoredSnapshot::snapshotData)
+                .orElse(null);
+        if (existingSnapshot != null) {
+            return existingSnapshot;
         }
         return commandAssembler.captureTargetPreState(executionTarget.target()).orElse(null);
     }

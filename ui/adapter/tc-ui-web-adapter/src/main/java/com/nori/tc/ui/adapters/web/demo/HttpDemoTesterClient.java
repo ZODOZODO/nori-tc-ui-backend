@@ -13,6 +13,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
+import java.util.StringJoiner;
 
 /**
  * demo-tester HTTP 호출 구현체입니다.
@@ -36,6 +37,44 @@ public class HttpDemoTesterClient implements DemoTesterClient {
     @Override
     public DemoRunResponse createRun(final DemoTesterCreateRunRequest request) {
         return sendJson("POST", "/api/demo-runs", request, DemoRunResponse.class);
+    }
+
+    @Override
+    public List<DemoScenarioCatalogItemResponse> getScenarios(final String testType) {
+        final String path = testType == null || testType.isBlank()
+                ? "/api/demo-scenarios"
+                : "/api/demo-scenarios?testType=" + testType;
+        return sendJson("GET", path, null, new TypeReference<>() {});
+    }
+
+    @Override
+    public DemoJobCreateResponse createJobs(final DemoTesterCreateJobsRequest request) {
+        return sendJson("POST", "/api/demo-jobs", request, DemoJobCreateResponse.class);
+    }
+
+    @Override
+    public List<DemoJobSummaryResponse> getJobs(final String states, final Integer limit) {
+        final StringJoiner queryJoiner = new StringJoiner("&");
+        if (states != null && !states.isBlank()) {
+            queryJoiner.add("states=" + states);
+        }
+        if (limit != null && limit > 0) {
+            queryJoiner.add("limit=" + limit);
+        }
+        final String path = queryJoiner.length() == 0
+                ? "/api/demo-jobs"
+                : "/api/demo-jobs?" + queryJoiner;
+        return sendJson("GET", path, null, new TypeReference<>() {});
+    }
+
+    @Override
+    public DemoJobDetailResponse getJob(final String jobId) {
+        return sendJson("GET", "/api/demo-jobs/" + jobId, null, DemoJobDetailResponse.class);
+    }
+
+    @Override
+    public DemoJobDetailResponse cancelJob(final String jobId) {
+        return sendJson("POST", "/api/demo-jobs/" + jobId + "/cancel", null, DemoJobDetailResponse.class);
     }
 
     @Override

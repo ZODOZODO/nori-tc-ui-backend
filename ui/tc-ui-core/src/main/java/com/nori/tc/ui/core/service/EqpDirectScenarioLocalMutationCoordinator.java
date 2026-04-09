@@ -2,13 +2,13 @@ package com.nori.tc.ui.core.service;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
-import com.nori.tc.ui.core.deploy.DeployDesiredState;
 import com.nori.tc.ui.core.deploy.DeployTargetPlanDraft;
 import com.nori.tc.ui.core.deploy.PersistedDeployTarget;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.port.db.EqpCrudPort;
+import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import org.springframework.stereotype.Service;
 
@@ -26,11 +26,13 @@ public class EqpDirectScenarioLocalMutationCoordinator {
     public EqpDirectScenarioLocalMutationCoordinator(
             final EqpPersistenceService persistenceService,
             final EqpCrudPort eqpCrudPort,
+            final ModelDetailQueryPort modelDetailQueryPort,
             final ObjectMapper objectMapper
     ) {
         this.persistenceService = Objects.requireNonNull(persistenceService, "persistenceService is null");
         this.snapshotSupport = new DeployServiceSnapshotSupport(
                 Objects.requireNonNull(eqpCrudPort, "eqpCrudPort is null"),
+                Objects.requireNonNull(modelDetailQueryPort, "modelDetailQueryPort is null"),
                 Objects.requireNonNull(objectMapper, "objectMapper is null")
         );
     }
@@ -116,38 +118,27 @@ public class EqpDirectScenarioLocalMutationCoordinator {
     public void finalizeSuccess(final EqpDirectScenarioContext context) {
         switch (context.eventType()) {
             case EQP_DELETE -> persistenceService.delete(context.eqpId());
-            case EQP_PARAMETER_UPDATE -> persistenceService.update(
-                    context.eqpId(),
-                    buildFinalizationUpdateCommand(
-                            context.executionSnapshot(),
-                            context.actor(),
-                            context.planDraft().desiredState().eqpParamVersion(),
-                            null,
-                            null
-                    )
-            );
             case EQP_GATEWAY_JARFILE_UPDATE -> persistenceService.update(
                     context.eqpId(),
                     buildFinalizationUpdateCommand(
-                            context.executionSnapshot(),
-                            context.actor(),
-                            null,
-                            context.planDraft().desiredState().gatewayJarRef(),
-                            null
+                        context.executionSnapshot(),
+                        context.actor(),
+                        context.planDraft().desiredState().gatewayJarRef(),
+                        null
                     )
             );
             case EQP_BUSINESS_JARFILE_UPDATE -> persistenceService.update(
                     context.eqpId(),
                     buildFinalizationUpdateCommand(
-                            context.executionSnapshot(),
-                            context.actor(),
-                            null,
-                            null,
-                            context.planDraft().desiredState().businessJarRef()
+                        context.executionSnapshot(),
+                        context.actor(),
+                        null,
+                        context.planDraft().desiredState().businessJarRef()
                     )
             );
             case EQP_CREATE,
                  EQP_UPDATE,
+                 EQP_MODEL_UPDATE,
                  EQP_START,
                  EQP_END,
                  EQP_SEND_MESSAGE,
@@ -164,8 +155,8 @@ public class EqpDirectScenarioLocalMutationCoordinator {
         switch (context.eventType()) {
             case EQP_CREATE -> persistenceService.delete(context.eqpId());
             case EQP_UPDATE,
+                 EQP_MODEL_UPDATE,
                  EQP_DELETE,
-                 EQP_PARAMETER_UPDATE,
                  EQP_GATEWAY_JARFILE_UPDATE,
                  EQP_BUSINESS_JARFILE_UPDATE -> {
                 if (context.previousSnapshot() != null) {
@@ -187,7 +178,6 @@ public class EqpDirectScenarioLocalMutationCoordinator {
     private EqpManagementCommand.Update buildFinalizationUpdateCommand(
             final EqpManagementSnapshot snapshot,
             final String actor,
-            final String appliedParamVersion,
             final Long gatewayJarRef,
             final Long businessJarRef
     ) {
@@ -200,7 +190,7 @@ public class EqpDirectScenarioLocalMutationCoordinator {
                 snapshot.eqp().eqpIp(),
                 snapshot.eqp().eqpPort(),
                 snapshot.eqp().modelVersionKey(),
-                appliedParamVersion != null ? appliedParamVersion : snapshot.eqp().appliedParamVersion(),
+                snapshot.eqp().appliedParamVersion(),
                 gatewayJarRef != null ? gatewayJarRef : snapshot.eqp().gatewayJarKey(),
                 businessJarRef != null ? businessJarRef : snapshot.eqp().businessJarKey(),
                 snapshot.logPolicy() == null ? null : new EqpManagementCommand.LogSettings(

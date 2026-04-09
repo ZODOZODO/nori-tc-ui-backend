@@ -4,6 +4,7 @@ import com.nori.tc.ui.adapters.web.dto.request.EqpCreateRequest;
 import com.nori.tc.ui.adapters.web.dto.request.EqpManagementRequestSupport;
 import com.nori.tc.ui.adapters.web.dto.request.EqpUpdateRequest;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
+import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.domain.auth.UserPrincipal;
 import org.springframework.security.core.Authentication;
 
@@ -29,7 +30,7 @@ public final class EqpControllerCommandSupport {
                 request.eqpIp(),
                 request.eqpPort(),
                 request.modelVersionKey(),
-                request.appliedParamVersion(),
+                null,
                 request.gatewayJarRef(),
                 request.businessJarRef(),
                 toLogSettings(request.logSettings()),
@@ -40,6 +41,7 @@ public final class EqpControllerCommandSupport {
 
     public static EqpManagementCommand.Update toUpdateCommand(
             final EqpUpdateRequest request,
+            final EqpManagementSnapshot existingSnapshot,
             final Authentication authentication
     ) {
         return new EqpManagementCommand.Update(
@@ -49,10 +51,10 @@ public final class EqpControllerCommandSupport {
                 request.routePartition(),
                 request.eqpIp(),
                 request.eqpPort(),
-                request.modelVersionKey(),
-                request.appliedParamVersion(),
-                request.gatewayJarRef(),
-                request.businessJarRef(),
+                existingSnapshot.eqp().modelVersionKey(),
+                existingSnapshot.eqp().appliedParamVersion(),
+                existingSnapshot.eqp().gatewayJarKey(),
+                existingSnapshot.eqp().businessJarKey(),
                 toLogSettings(request.logSettings()),
                 toHsmsSettings(request.hsmsSettings()),
                 toSocketSettings(request.socketSettings())

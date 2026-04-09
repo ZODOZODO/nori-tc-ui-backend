@@ -25,6 +25,7 @@ import com.nori.tc.ui.core.deploy.DeployResultMessage;
 import com.nori.tc.ui.core.deploy.DeployScenarioDefinition;
 import com.nori.tc.ui.core.deploy.DeployRegisterScenarioPreviewCommand;
 import com.nori.tc.ui.core.deploy.DeployRegisterScenarioPreviewResult;
+import com.nori.tc.ui.core.deploy.DeployStateOverview;
 import com.nori.tc.ui.core.deploy.DeploySummaryView;
 import com.nori.tc.ui.core.deploy.DeployTargetCounts;
 import com.nori.tc.ui.core.deploy.DeployTargetPage;
@@ -472,6 +473,8 @@ public class DeployController {
                 summary.deployKey(),
                 summary.deployName(),
                 summary.eventType().name(),
+                summary.resolvedScenarioCode(),
+                toStateOverviewResponse(summary.asIsState()),
                 summary.deployStatus().name(),
                 summary.pauseRequested(),
                 summary.executionPolicy().name(),
@@ -483,6 +486,19 @@ public class DeployController {
                 summary.popupRequired(),
                 summary.resultCode(),
                 toResultMessage(summary.resultMessage())
+        );
+    }
+
+    private DeploySummaryResponse.StateOverviewResponse toStateOverviewResponse(final DeployStateOverview overview) {
+        if (overview == null) {
+            return null;
+        }
+        return new DeploySummaryResponse.StateOverviewResponse(
+                overview.interfaceType(),
+                overview.modelName(),
+                overview.modelVersion(),
+                overview.businessJarName(),
+                overview.eqpParamVersion()
         );
     }
 

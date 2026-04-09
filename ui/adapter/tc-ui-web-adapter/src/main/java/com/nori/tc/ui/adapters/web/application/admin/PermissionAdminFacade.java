@@ -12,6 +12,7 @@ import com.nori.tc.ui.domain.useradmin.UiPermission;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.Objects;
@@ -53,12 +54,14 @@ public class PermissionAdminFacade {
                 .map(assembler::toPermissionInfoResponse);
     }
 
+    @Transactional
     public PermissionInfoResponse create(final PermissionUpsertRequest request) {
         final UiPermission saved = permissionCrudPort.upsert(assembler.toCreateCommand(request));
         ensureAdminPermissionMapping(saved);
         return assembler.toPermissionInfoResponse(saved);
     }
 
+    @Transactional
     public Optional<PermissionInfoResponse> update(final long permId, final PermissionUpsertRequest request) {
         return permissionCrudPort.findByPermId(permId)
                 .map(existing -> {

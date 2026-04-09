@@ -1,24 +1,25 @@
 package com.nori.tc.ui.adapters.redis.registry;
 
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.nori.tc.ui.core.deploy.DeployTraceCompletion;
 import com.nori.tc.ui.core.model.UiCommandReply;
 import com.nori.tc.ui.core.port.redis.DeployTraceRedisPort;
 import com.nori.tc.ui.core.registry.DeployTraceRedisLookupResult;
-import com.nori.tc.ui.domain.task.UiTaskStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Primary;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.HashOperations;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Deploy trace reply 수집 상태를 Redis에 저장하는 어댑터입니다.
@@ -30,19 +31,21 @@ public class DeployTraceRedisAdapter implements DeployTraceRedisPort {
     private static final Logger log = LoggerFactory.getLogger(DeployTraceRedisAdapter.class);
 
     private static final String KEY_PREFIX = "tc:ui:backend:deploy-trace:";
-    private static final String FIELD_STATE = "_state";
-    private static final String FIELD_EXPECTED_SOURCES = "_expectedSources";
+    private static final String FIELD_META = "_meta";
     private static final long REGISTER_TTL_BUFFER_MS = 5_000L;
 
     public static final String DEPLOY_TRACE_COMPLETE_CHANNEL = "tc:ui:backend:deploy-trace:complete";
 
-    private final RedisTemplate<String, Object> businessRedisTemplate;
+    private final StringRedisTemplate businessStringRedisTemplate;
+    private final ObjectMapper uiRedisObjectMapper;
 
     public DeployTraceRedisAdapter(
-            @Qualifier("businessRedisTemplate") final RedisTemplate<String, Object> businessRedisTemplate
+            @Qualifier("businessStringRedisTemplate") final StringRedisTemplate businessStringRedisTemplate,
+            @Qualifier("uiRedisObjectMapper") final ObjectMapper uiRedisObjectMapper
     ) {
-        this.businessRedisTemplate = Objects.requireNonNull(businessRedisTemplate,
-                "businessRedisTemplate is null");
+        this.businessStringRedisTemplate = Objects.requireNonNull(businessStringRedisTemplate,
+                "businessStringRedisTemplate is null");
+        this.uiRedisObjectMapper = Objects.requireNonNull(uiRedisObjectMapper, "uiRedisObjectMapper is null");
     }
 
     @Override
@@ -53,10 +56,9 @@ public class DeployTraceRedisAdapter implements DeployTraceRedisPort {
         final String key = buildKey(traceId);
         final long ttlMs = Math.max(1L, timeoutMs + REGISTER_TTL_BUFFER_MS);
         try {
-            final HashOperations<String, Object, Object> hashOps = businessRedisTemplate.opsForHash();
-            hashOps.putIfAbsent(key, FIELD_STATE, "PENDING");
-            hashOps.putIfAbsent(key, FIELD_EXPECTED_SOURCES, List.copyOf(expectedSources));
-            businessRedisTemplate.expire(key, Duration.ofMillis(ttlMs));
+            final HashOperations<String, String, String> hashOps = businessStringRedisTemplate.opsForHash();
+            hashOps.putIfAbsent(key, FIELD_META, toJson(new StoredTraceMetadata(traceId, expectedSources)));
+            businessStringRedisTemplate.expire(key, Duration.ofMillis(ttlMs));
         } catch (Exception redisException) {
             log.error("deploy trace Redis 등록 실패. traceId={}, key={}", traceId, key, redisException);
             throw redisException;
@@ -71,8 +73,9 @@ public class DeployTraceRedisAdapter implements DeployTraceRedisPort {
         final String field = replyField(reply.source());
 
         try {
-            final HashOperations<String, Object, Object> hashOps = businessRedisTemplate.opsForHash();
-            final Set<String> expectedSources = readExpectedSources(hashOps.get(key, FIELD_EXPECTED_SOURCES));
+            final HashOperations<String, String, String> hashOps = businessStringRedisTemplate.opsForHash();
+            final StoredTraceMetadata metadata = readMetadata(hashOps.get(key, FIELD_META));
+            final Set<String> expectedSources = metadata == null ? Set.of() : metadata.expectedSources();
             if (expectedSources.isEmpty()) {
                 log.debug("대기 중이 아닌 deploy trace reply를 무시합니다. traceId={}, source={}",
                         reply.traceId(), reply.source());
@@ -84,9 +87,9 @@ public class DeployTraceRedisAdapter implements DeployTraceRedisPort {
                 return;
             }
 
-            hashOps.putIfAbsent(key, field, reply);
+            hashOps.putIfAbsent(key, field, toJson(reply));
             if (expectedSources.stream().allMatch(source -> hashOps.hasKey(key, replyField(source)))) {
-                businessRedisTemplate.convertAndSend(DEPLOY_TRACE_COMPLETE_CHANNEL, reply.traceId());
+                businessStringRedisTemplate.convertAndSend(DEPLOY_TRACE_COMPLETE_CHANNEL, reply.traceId());
             }
         } catch (Exception redisException) {
             log.error("deploy trace Redis 기록 실패. traceId={}, source={}",
@@ -101,7 +104,7 @@ public class DeployTraceRedisAdapter implements DeployTraceRedisPort {
 
         final String key = buildKey(traceId);
         try {
-            businessRedisTemplate.delete(key);
+            businessStringRedisTemplate.delete(key);
         } catch (Exception redisException) {
             log.warn("deploy trace Redis 정리 실패. traceId={}, key={}", traceId, key, redisException);
         }
@@ -113,19 +116,20 @@ public class DeployTraceRedisAdapter implements DeployTraceRedisPort {
 
         final String key = buildKey(traceId);
         try {
-            final HashOperations<String, Object, Object> hashOps = businessRedisTemplate.opsForHash();
-            final Set<String> expectedSources = readExpectedSources(hashOps.get(key, FIELD_EXPECTED_SOURCES));
+            final HashOperations<String, String, String> hashOps = businessStringRedisTemplate.opsForHash();
+            final StoredTraceMetadata metadata = readMetadata(hashOps.get(key, FIELD_META));
+            final Set<String> expectedSources = metadata == null ? Set.of() : metadata.expectedSources();
             if (expectedSources.isEmpty()) {
                 return DeployTraceRedisLookupResult.pending();
             }
 
             final List<UiCommandReply> replies = new ArrayList<>();
             for (String source : expectedSources) {
-                final Object raw = hashOps.get(key, replyField(source));
-                if (raw == null) {
+                final String raw = hashOps.get(key, replyField(source));
+                if (raw == null || raw.isBlank()) {
                     return DeployTraceRedisLookupResult.pending();
                 }
-                replies.add(toReply(raw));
+                replies.add(readReply(raw));
             }
 
             return DeployTraceRedisLookupResult.completed(new DeployTraceCompletion(
@@ -143,59 +147,39 @@ public class DeployTraceRedisAdapter implements DeployTraceRedisPort {
         }
     }
 
-    private Set<String> readExpectedSources(final Object raw) {
-        if (raw instanceof List<?> list) {
-            return list.stream()
-                    .filter(Objects::nonNull)
-                    .map(Object::toString)
-                    .map(String::trim)
-                    .filter(value -> !value.isBlank())
-                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
-        }
-        if (raw instanceof Set<?> set) {
-            return set.stream()
-                    .filter(Objects::nonNull)
-                    .map(Object::toString)
-                    .map(String::trim)
-                    .filter(value -> !value.isBlank())
-                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
-        }
-        return Set.of();
-    }
-
-    private UiCommandReply toReply(final Object raw) {
-        if (raw instanceof UiCommandReply reply) {
-            return reply;
-        }
-        if (raw instanceof Map<?, ?> map) {
-            return new UiCommandReply(
-                    requiredText(map.get("traceId"), "traceId"),
-                    requiredText(map.get("source"), "source"),
-                    requiredText(map.get("eventType"), "eventType"),
-                    requiredText(map.get("eqpId"), "eqpId"),
-                    requiredText(map.get("interfaceType"), "interfaceType"),
-                    UiTaskStatus.valueOf(requiredText(map.get("status"), "status")),
-                    nullableText(map.get("errorCode")),
-                    nullableText(map.get("errorMsg"))
-            );
-        }
-        throw new IllegalStateException("지원하지 않는 deploy trace reply 타입입니다. type=" + raw.getClass().getName());
-    }
-
-    private static String requiredText(final Object raw, final String fieldName) {
-        final String value = nullableText(raw);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(fieldName + " is required");
-        }
-        return value;
-    }
-
-    private static String nullableText(final Object raw) {
-        if (raw == null) {
+    private StoredTraceMetadata readMetadata(final String rawJson) {
+        if (rawJson == null || rawJson.isBlank()) {
             return null;
         }
-        final String text = raw.toString().trim();
-        return text.isEmpty() ? null : text;
+        try {
+            final StoredTraceMetadata metadata = uiRedisObjectMapper.readValue(rawJson, StoredTraceMetadata.class);
+            return new StoredTraceMetadata(
+                    metadata.traceId(),
+                    metadata.expectedSources().stream()
+                            .filter(Objects::nonNull)
+                            .map(String::trim)
+                            .filter(source -> !source.isBlank())
+                            .collect(Collectors.toUnmodifiableSet())
+            );
+        } catch (JacksonException exception) {
+            throw new IllegalStateException("deploy trace metadata 역직렬화에 실패했습니다.", exception);
+        }
+    }
+
+    private UiCommandReply readReply(final String rawJson) {
+        try {
+            return uiRedisObjectMapper.readValue(rawJson, UiCommandReply.class);
+        } catch (JacksonException exception) {
+            throw new IllegalStateException("deploy trace reply 역직렬화에 실패했습니다.", exception);
+        }
+    }
+
+    private String toJson(final Object value) {
+        try {
+            return uiRedisObjectMapper.writeValueAsString(value);
+        } catch (JacksonException exception) {
+            throw new IllegalStateException("deploy trace JSON 직렬화에 실패했습니다.", exception);
+        }
     }
 
     private static String buildKey(final String traceId) {
@@ -204,5 +188,16 @@ public class DeployTraceRedisAdapter implements DeployTraceRedisPort {
 
     private static String replyField(final String source) {
         return "reply:" + source;
+    }
+
+    private record StoredTraceMetadata(
+            String traceId,
+            Set<String> expectedSources
+    ) {
+
+        private StoredTraceMetadata {
+            traceId = traceId == null ? null : traceId.trim();
+            expectedSources = expectedSources == null ? Set.of() : Set.copyOf(expectedSources);
+        }
     }
 }

@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Import;
 @Configuration(proxyBeanMethods = false)
 @Import({
         DeployCommandAssembler.class,
+        DeployEqpFinalizationService.class,
         DeployExecutor.class,
         DeployPlanner.class,
         DeployPlanningService.class,
@@ -27,6 +28,7 @@ import org.springframework.context.annotation.Import;
         EqpManagementService.class,
         EqpPersistenceService.class,
         EqpRepairTaskService.class,
+        LiveMapQueryService.class,
         UiCoreFallbackStorageConfiguration.class,
         UiCommandIngressService.class
 })

@@ -1,5 +1,6 @@
 package com.nori.tc.ui.core.service;
 
+import tools.jackson.databind.JsonNode;
 import com.nori.tc.common.runtime.support.ExecutorShutdownResult;
 import com.nori.tc.common.runtime.support.ExecutorShutdownSupport;
 import com.nori.tc.common.runtime.support.RuntimeExecutorFactory;
@@ -15,11 +16,16 @@ import com.nori.tc.ui.core.deploy.DeployPlanCommand;
 import com.nori.tc.ui.core.deploy.DeployPlanningResult;
 import com.nori.tc.ui.core.deploy.DeployResultMessage;
 import com.nori.tc.ui.core.deploy.DeployResultSeverity;
+import com.nori.tc.ui.core.deploy.DeploySnapshotKind;
+import com.nori.tc.ui.core.deploy.DeploySnapshotScope;
+import com.nori.tc.ui.core.deploy.DeployStateOverview;
 import com.nori.tc.ui.core.deploy.DeployStatus;
+import com.nori.tc.ui.core.deploy.DeployStoredSnapshot;
 import com.nori.tc.ui.core.deploy.DeploySummarySnapshot;
 import com.nori.tc.ui.core.deploy.DeploySummaryView;
 import com.nori.tc.ui.core.deploy.DeployTargetCounts;
 import com.nori.tc.ui.core.deploy.DeployTargetPage;
+import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.deploy.PersistedDeploy;
 import com.nori.tc.ui.core.deploy.PersistedDeployTarget;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
@@ -30,6 +36,7 @@ import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
 import com.nori.tc.ui.core.model.UiCommandReply;
 import com.nori.tc.ui.core.port.db.DeployStorePort;
+import com.nori.tc.ui.core.port.db.EqpCrudPort;
 import com.nori.tc.ui.core.properties.UiDeployProperties;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -39,6 +46,7 @@ import org.springframework.stereotype.Service;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -58,6 +66,7 @@ public class DeployService {
 
     private final DeployPlanner deployPlanner;
     private final DeployStorePort deployStorePort;
+    private final EqpCrudPort eqpCrudPort;
     private final DeployTraceRecorder deployTraceRecorder;
     private final DeployCommandAssembler commandAssembler;
     private final DeployExecutor deployExecutor;
@@ -69,6 +78,7 @@ public class DeployService {
             final UiDeployProperties deployProperties,
             final DeployPlanner deployPlanner,
             final DeployStorePort deployStorePort,
+            final EqpCrudPort eqpCrudPort,
             final DeployTraceRecorder deployTraceRecorder,
             final DeployCommandAssembler commandAssembler,
             final DeployExecutor deployExecutor
@@ -77,6 +87,7 @@ public class DeployService {
                 Objects.requireNonNull(deployProperties, "deployProperties is null");
         this.deployPlanner = Objects.requireNonNull(deployPlanner, "deployPlanner is null");
         this.deployStorePort = Objects.requireNonNull(deployStorePort, "deployStorePort is null");
+        this.eqpCrudPort = Objects.requireNonNull(eqpCrudPort, "eqpCrudPort is null");
         this.deployTraceRecorder = Objects.requireNonNull(deployTraceRecorder, "deployTraceRecorder is null");
         this.commandAssembler = Objects.requireNonNull(commandAssembler, "commandAssembler is null");
         this.deployExecutor = Objects.requireNonNull(deployExecutor, "deployExecutor is null");
@@ -114,6 +125,7 @@ public class DeployService {
         final List<PersistedDeployTarget> executableTargets = persistedDeploy.targets().stream()
                 .filter(target -> !target.planDraft().noChange())
                 .toList();
+        executableTargets.forEach(commandAssembler::captureTargetPreState);
         if (executableTargets.isEmpty()) {
             deployStorePort.updateDeployStatus(
                     persistedDeploy.deployKey(),
@@ -176,11 +188,14 @@ public class DeployService {
                 snapshot.deployStatus(),
                 snapshot.targetSummary()
         );
+        final DeployStateOverview asIsState = resolveAsIsState(snapshot.deployKey(), snapshot.targetSummary().total());
 
         return new DeploySummaryView(
                 snapshot.deployKey(),
                 snapshot.deployName(),
                 snapshot.eventType(),
+                snapshot.resolvedScenarioCode(),
+                asIsState,
                 snapshot.deployStatus(),
                 snapshot.pauseRequested(),
                 snapshot.executionPolicy(),
@@ -193,6 +208,120 @@ public class DeployService {
                 resultCode,
                 resultMessage
         );
+    }
+
+    private DeployStateOverview resolveAsIsState(final long deployKey, final int targetTotalCount) {
+        if (targetTotalCount <= 0) {
+            return null;
+        }
+
+        final DeployTargetPage targetPage = deployStorePort.findDeployTargets(
+                deployKey,
+                0,
+                Math.max(targetTotalCount, 50),
+                null,
+                null
+        );
+
+        final LinkedHashSet<String> interfaceTypes = new LinkedHashSet<>();
+        final LinkedHashSet<String> modelNames = new LinkedHashSet<>();
+        final LinkedHashSet<String> modelVersions = new LinkedHashSet<>();
+        final LinkedHashSet<String> businessJarNames = new LinkedHashSet<>();
+        final LinkedHashSet<String> eqpParamVersions = new LinkedHashSet<>();
+
+        for (final var target : targetPage.targets()) {
+            final DeployStoredSnapshot snapshot = deployStorePort.findLatestTargetSnapshot(
+                    target.deployTargetKey(),
+                    DeploySnapshotScope.TARGET_PRE_STATE,
+                    null,
+                    DeploySnapshotKind.TARGET_FULL_STATE
+            ).orElse(null);
+
+            if (snapshot != null && snapshot.snapshotData() != null) {
+                final JsonNode snapshotData = snapshot.snapshotData();
+                addIfPresent(interfaceTypes, snapshotData.path("interfaceType").asText(null));
+                addIfPresent(modelNames, snapshotData.path("modelInfo").path("modelName").asText(null));
+                addIfPresent(modelVersions, snapshotData.path("modelInfo").path("modelVersion").asText(null));
+                addIfPresent(businessJarNames, snapshotData.path("businessJar").path("jarFileName").asText(null));
+                addIfPresent(eqpParamVersions, snapshotData.path("eqpParams").path("version").asText(null));
+                continue;
+            }
+            addIfPresent(interfaceTypes, resolveInterfaceType(target.eqpId()));
+            addAsIsFromLiveSnapshot(
+                    target.eqpId(),
+                    modelNames,
+                    modelVersions,
+                    businessJarNames,
+                    eqpParamVersions
+            );
+        }
+
+        final String interfaceType = summarizeValues(interfaceTypes);
+        final String modelName = summarizeValues(modelNames);
+        final String modelVersion = summarizeValues(modelVersions);
+        final String businessJarName = summarizeValues(businessJarNames);
+        final String eqpParamVersion = summarizeValues(eqpParamVersions);
+
+        if (interfaceType == null
+                && modelName == null
+                && modelVersion == null
+                && businessJarName == null
+                && eqpParamVersion == null) {
+            return null;
+        }
+
+        return new DeployStateOverview(
+                interfaceType,
+                modelName,
+                modelVersion,
+                businessJarName,
+                eqpParamVersion
+        );
+    }
+
+    private void addIfPresent(final LinkedHashSet<String> values, final String value) {
+        final String normalized = commandAssembler.normalizeOptionalText(value);
+        if (normalized != null) {
+            values.add(normalized);
+        }
+    }
+
+    private String resolveInterfaceType(final String eqpId) {
+        return eqpCrudPort.findSnapshotByEqpId(eqpId)
+                .map(EqpManagementSnapshot::eqp)
+                .map(eqp -> eqp.commInterface() == null ? null : eqp.commInterface().name())
+                .orElse(null);
+    }
+
+    private void addAsIsFromLiveSnapshot(
+            final String eqpId,
+            final LinkedHashSet<String> modelNames,
+            final LinkedHashSet<String> modelVersions,
+            final LinkedHashSet<String> businessJarNames,
+            final LinkedHashSet<String> eqpParamVersions
+    ) {
+        final EqpManagementSnapshot snapshot = eqpCrudPort.findSnapshotByEqpId(eqpId).orElse(null);
+        if (snapshot == null) {
+            return;
+        }
+        if (snapshot.model() != null) {
+            addIfPresent(modelNames, snapshot.model().modelName());
+            addIfPresent(modelVersions, snapshot.model().modelVersion());
+        }
+        if (snapshot.businessJar() != null) {
+            addIfPresent(businessJarNames, snapshot.businessJar().jarFileName());
+        }
+        addIfPresent(eqpParamVersions, snapshot.eqp().appliedParamVersion());
+    }
+
+    private String summarizeValues(final LinkedHashSet<String> values) {
+        if (values.isEmpty()) {
+            return null;
+        }
+        if (values.size() == 1) {
+            return values.iterator().next();
+        }
+        return "대상별 상이: " + String.join(", ", values);
     }
 
     /**

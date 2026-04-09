@@ -1,6 +1,5 @@
 package com.nori.tc.ui.adapters.web.controller;
 
-import tools.jackson.databind.JsonNode;
 import com.nori.tc.ui.adapters.web.config.UiDualRequestProperties;
 import com.nori.tc.ui.adapters.web.controller.support.EqpControllerCommandSupport;
 import com.nori.tc.ui.adapters.web.controller.support.EqpControllerResponseSupport;
@@ -236,10 +235,19 @@ public class EqpController {
             final Authentication authentication
     ) {
         log.info("EQP 수정 요청. eqpId={}", eqpId);
+        final Optional<EqpManagementSnapshot> snapshotOptional = eqpManagementService.getManageDetail(eqpId);
+        if (snapshotOptional.isEmpty()) {
+            final DeferredResult<ResponseEntity<ApiResponse<Void>>> deferredResult = new DeferredResult<>();
+            deferredResult.setResult(
+                    ResponseEntity.status(HttpStatus.NOT_FOUND)
+                            .body(ApiResponse.error("NOT_FOUND", "설비를 찾을 수 없습니다."))
+            );
+            return deferredResult;
+        }
         return submitManagementCommand(
                 eqpManagementService.update(
                         eqpId,
-                        EqpControllerCommandSupport.toUpdateCommand(request, authentication),
+                        EqpControllerCommandSupport.toUpdateCommand(request, snapshotOptional.get(), authentication),
                         dualRequestProperties.getDualRequestTimeoutMs()
                 ),
                 "EQP_UPDATE",

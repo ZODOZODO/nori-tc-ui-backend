@@ -1,5 +1,6 @@
 package com.nori.tc.ui.adapter.db;
 
+import com.nori.tc.ui.core.deploy.DeployActiveEqpConflict;
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,14 +25,14 @@ class DeployJdbcStoreSupportTest {
     void findActiveEqpConflictsOmitsExcludedDeployKeyPredicateWhenNull() {
         final NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
         final DeployJdbcStoreSupport support = new DeployJdbcStoreSupport(jdbcTemplate, new ObjectMapper());
-        when(jdbcTemplate.query(any(String.class), any(MapSqlParameterSource.class), any(RowMapper.class)))
-                .thenReturn(List.of());
+        when(jdbcTemplate.<DeployActiveEqpConflict>query(any(String.class), any(MapSqlParameterSource.class), anyRowMapper()))
+                .thenReturn(List.<DeployActiveEqpConflict>of());
 
         support.findActiveEqpConflicts(List.of("PHOTO_001", "PHOTO_002"), null);
 
         final var sqlCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
         final var parameterCaptor = org.mockito.ArgumentCaptor.forClass(MapSqlParameterSource.class);
-        verify(jdbcTemplate).query(sqlCaptor.capture(), parameterCaptor.capture(), any(RowMapper.class));
+        verify(jdbcTemplate).<DeployActiveEqpConflict>query(sqlCaptor.capture(), parameterCaptor.capture(), anyRowMapper());
 
         final String sql = sqlCaptor.getValue();
         final MapSqlParameterSource parameters = parameterCaptor.getValue();
@@ -45,18 +46,22 @@ class DeployJdbcStoreSupportTest {
     void findActiveEqpConflictsAddsExcludedDeployKeyPredicateWhenPresent() {
         final NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
         final DeployJdbcStoreSupport support = new DeployJdbcStoreSupport(jdbcTemplate, new ObjectMapper());
-        when(jdbcTemplate.query(any(String.class), any(MapSqlParameterSource.class), any(RowMapper.class)))
-                .thenReturn(List.of());
+        when(jdbcTemplate.<DeployActiveEqpConflict>query(any(String.class), any(MapSqlParameterSource.class), anyRowMapper()))
+                .thenReturn(List.<DeployActiveEqpConflict>of());
 
         support.findActiveEqpConflicts(List.of("PHOTO_001"), 7001L);
 
         final var sqlCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
         final var parameterCaptor = org.mockito.ArgumentCaptor.forClass(MapSqlParameterSource.class);
-        verify(jdbcTemplate).query(sqlCaptor.capture(), parameterCaptor.capture(), any(RowMapper.class));
+        verify(jdbcTemplate).<DeployActiveEqpConflict>query(sqlCaptor.capture(), parameterCaptor.capture(), anyRowMapper());
 
         final String sql = sqlCaptor.getValue();
         final MapSqlParameterSource parameters = parameterCaptor.getValue();
         assertTrue(sql.contains("AND d.deploy_key <> :excludedDeployKey"));
         assertEquals(7001L, parameters.getValue("excludedDeployKey"));
+    }
+
+    private static <T> RowMapper<T> anyRowMapper() {
+        return any();
     }
 }

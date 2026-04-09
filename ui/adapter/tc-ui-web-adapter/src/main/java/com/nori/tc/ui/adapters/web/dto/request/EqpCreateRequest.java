@@ -21,7 +21,6 @@ import jakarta.validation.constraints.Size;
  * @param eqpIp 설비 IP
  * @param eqpPort 설비 port
  * @param modelVersionKey 연결 model version key
- * @param appliedParamVersion 적용 파라미터 버전
  * @param gatewayJarRef gateway jar 참조 키
  * @param businessJarRef business jar 참조 키
  * @param logSettings 로그 정책
@@ -56,9 +55,6 @@ public record EqpCreateRequest(
         @NotNull(message = "modelVersionKey는 필수입니다.")
         @Positive(message = "modelVersionKey는 1 이상이어야 합니다.")
         Long modelVersionKey,
-
-        @Size(max = 100, message = "appliedParamVersion은 100자 이하여야 합니다.")
-        String appliedParamVersion,
 
         @Positive(message = "gatewayJarRef는 1 이상이어야 합니다.")
         Long gatewayJarRef,

@@ -27,6 +27,8 @@ final class UiKafkaContractMapper {
                 snapshot.eqpIp(),
                 snapshot.eqpPort(),
                 snapshot.modelKey(),
+                snapshot.gatewayJarKey(),
+                snapshot.businessJarKey(),
                 snapshot.connectionMode(),
                 snapshot.routePartition(),
                 snapshot.enabled(),

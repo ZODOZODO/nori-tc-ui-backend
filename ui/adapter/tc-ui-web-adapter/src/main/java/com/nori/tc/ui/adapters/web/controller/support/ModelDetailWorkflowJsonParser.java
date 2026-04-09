@@ -67,9 +67,6 @@ final class ModelDetailWorkflowJsonParser {
         final String mdfTemplateName = (!mdfTemplateNameNode.isMissingNode() && !mdfTemplateNameNode.isNull())
                 ? ModelDetailWorkflowJsonNormalizer.normalizeOptionalText(mdfTemplateNameNode.asString())
                 : null;
-        if (mdfTemplateName == null) {
-            throw new IllegalArgumentException("action_data_index의 mdfTemplateName은 필수입니다.");
-        }
         final JsonNode fieldsNode = requiredNode(
                 root,
                 "fields",

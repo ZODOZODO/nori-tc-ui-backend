@@ -11,13 +11,13 @@ import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.core.model.UiCommandEventType;
+import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -39,6 +39,7 @@ public class EqpDirectScenarioService {
     private final EqpDirectScenarioLocalMutationCoordinator localMutationCoordinator;
     private final EqpDirectScenarioRunner runner;
     private final ObjectMapper objectMapper;
+    private final ModelParamPayloadSupport modelParamPayloadSupport;
 
     public EqpDirectScenarioService(
             final EqpPersistenceService persistenceService,
@@ -46,6 +47,7 @@ public class EqpDirectScenarioService {
             final EqpDirectScenarioPlanner planner,
             final EqpDirectScenarioLocalMutationCoordinator localMutationCoordinator,
             final EqpDirectScenarioRunner runner,
+            final ModelDetailQueryPort modelDetailQueryPort,
             final ObjectMapper objectMapper
     ) {
         this.persistenceService = Objects.requireNonNull(persistenceService, "persistenceService is null");
@@ -54,6 +56,10 @@ public class EqpDirectScenarioService {
         this.localMutationCoordinator = Objects.requireNonNull(localMutationCoordinator, "localMutationCoordinator is null");
         this.runner = Objects.requireNonNull(runner, "runner is null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is null");
+        this.modelParamPayloadSupport = new ModelParamPayloadSupport(
+                Objects.requireNonNull(modelDetailQueryPort, "modelDetailQueryPort is null"),
+                objectMapper
+        );
     }
 
     public EqpCommandResult executeCreate(final EqpManagementCommand.Create command) {
@@ -93,11 +99,6 @@ public class EqpDirectScenarioService {
             validator.validateEqpId(eqpId);
             final EqpManagementSnapshot existingSnapshot = requireExistingSnapshot(eqpId);
             validator.validateUpdateCommand(command, existingSnapshot);
-            validator.validateModelBinding(
-                    existingSnapshot.eqp().commInterface(),
-                    command.isDev(),
-                    command.modelVersionKey()
-            );
 
             final JsonNode uiMessage = buildManagementUiMessage(existingSnapshot.eqp().commInterface(), command);
             final DeployTargetPlanDraft planDraft = planner.plan(
@@ -187,16 +188,6 @@ public class EqpDirectScenarioService {
         return executeExistingStateEvent(UiCommandEventType.EQP_RECONNECT, eqpId, requestedInterfaceType, actor, ensureObject(uiMessage));
     }
 
-    public EqpCommandResult executeParameterUpdate(
-            final String eqpId,
-            final String appliedParamVersion,
-            final String actor
-    ) {
-        final ObjectNode root = objectMapper.createObjectNode();
-        root.putObject("eqpParams").put("version", appliedParamVersion);
-        return executeExistingStateEvent(UiCommandEventType.EQP_PARAMETER_UPDATE, eqpId, null, actor, root);
-    }
-
     public EqpCommandResult executeGatewayJarUpdate(
             final String eqpId,
             final Long gatewayJarRef,
@@ -272,7 +263,6 @@ public class EqpDirectScenarioService {
                 command.eqpIp(),
                 command.eqpPort(),
                 command.modelVersionKey(),
-                command.appliedParamVersion(),
                 command.gatewayJarRef(),
                 command.businessJarRef(),
                 command.hsmsSettings(),
@@ -284,18 +274,78 @@ public class EqpDirectScenarioService {
             final UiProtocolType interfaceType,
             final EqpManagementCommand.Update command
     ) {
-        return buildManagementUiMessage(
-                interfaceType,
-                command.commMode(),
-                command.eqpIp(),
-                command.eqpPort(),
-                command.modelVersionKey(),
-                command.appliedParamVersion(),
-                command.gatewayJarRef(),
-                command.businessJarRef(),
-                command.hsmsSettings(),
-                command.socketSettings()
-        );
+        final ObjectNode root = objectMapper.createObjectNode();
+        root.put("interfaceType", interfaceType.name());
+
+        final ObjectNode gatewayProfile = root.putObject("gatewayProfile");
+        gatewayProfile.put("connectionMode", command.commMode());
+        gatewayProfile.put("eqpIp", command.eqpIp());
+        gatewayProfile.put("eqpPort", command.eqpPort());
+
+        if (command.socketSettings() != null) {
+            gatewayProfile.put("socketType", command.socketSettings().socketProtocolType());
+            final ObjectNode socketSettingsNode = gatewayProfile.putObject("socketSettings");
+            if (command.socketSettings().socketProtocolType() != null) {
+                socketSettingsNode.put("socketProtocolType", command.socketSettings().socketProtocolType());
+            }
+            if (command.socketSettings().charset() != null) {
+                socketSettingsNode.put("charset", command.socketSettings().charset());
+            }
+            if (command.socketSettings().heartbeatEnabled() != null) {
+                socketSettingsNode.put("heartbeatEnabled", command.socketSettings().heartbeatEnabled());
+            }
+            if (command.socketSettings().heartbeatInterval() != null) {
+                socketSettingsNode.put("heartbeatInterval", command.socketSettings().heartbeatInterval());
+            }
+            if (command.socketSettings().readTimeout() != null) {
+                socketSettingsNode.put("readTimeout", command.socketSettings().readTimeout());
+            }
+            if (command.socketSettings().writeTimeout() != null) {
+                socketSettingsNode.put("writeTimeout", command.socketSettings().writeTimeout());
+            }
+            if (command.socketSettings().maxFrameSizeBytes() != null) {
+                socketSettingsNode.put("maxFrameSizeBytes", command.socketSettings().maxFrameSizeBytes());
+            }
+            if (command.socketSettings().keepAliveEnabled() != null) {
+                socketSettingsNode.put("keepAliveEnabled", command.socketSettings().keepAliveEnabled());
+            }
+        }
+
+        if (command.hsmsSettings() != null) {
+            if (command.hsmsSettings().deviceId() != null) {
+                gatewayProfile.put("hsmsDeviceId", command.hsmsSettings().deviceId());
+            }
+            final ObjectNode hsmsSettingsNode = gatewayProfile.putObject("hsmsSettings");
+            if (command.hsmsSettings().deviceId() != null) {
+                hsmsSettingsNode.put("deviceId", command.hsmsSettings().deviceId());
+            }
+            if (command.hsmsSettings().t3Timeout() != null) {
+                hsmsSettingsNode.put("t3Timeout", command.hsmsSettings().t3Timeout());
+            }
+            if (command.hsmsSettings().t5Timeout() != null) {
+                hsmsSettingsNode.put("t5Timeout", command.hsmsSettings().t5Timeout());
+            }
+            if (command.hsmsSettings().t6Timeout() != null) {
+                hsmsSettingsNode.put("t6Timeout", command.hsmsSettings().t6Timeout());
+            }
+            if (command.hsmsSettings().t7Timeout() != null) {
+                hsmsSettingsNode.put("t7Timeout", command.hsmsSettings().t7Timeout());
+            }
+            if (command.hsmsSettings().t8Timeout() != null) {
+                hsmsSettingsNode.put("t8Timeout", command.hsmsSettings().t8Timeout());
+            }
+            if (command.hsmsSettings().linkTestEnabled() != null) {
+                hsmsSettingsNode.put("linkTestEnabled", command.hsmsSettings().linkTestEnabled());
+            }
+            if (command.hsmsSettings().linkTestInterval() != null) {
+                hsmsSettingsNode.put("linkTestInterval", command.hsmsSettings().linkTestInterval());
+            }
+            if (command.hsmsSettings().maxMsgBytes() != null) {
+                hsmsSettingsNode.put("maxMsgBytes", command.hsmsSettings().maxMsgBytes());
+            }
+        }
+
+        return root;
     }
 
     private JsonNode buildManagementUiMessage(
@@ -304,7 +354,6 @@ public class EqpDirectScenarioService {
             final String eqpIp,
             final Integer eqpPort,
             final long modelVersionKey,
-            final String appliedParamVersion,
             final Long gatewayJarRef,
             final Long businessJarRef,
             final EqpManagementCommand.HsmsSettings hsmsSettings,
@@ -313,13 +362,7 @@ public class EqpDirectScenarioService {
         final ObjectNode root = objectMapper.createObjectNode();
         root.put("interfaceType", interfaceType.name());
         root.putObject("modelInfo").put("modelVersionKey", modelVersionKey);
-        root.putObject("modelParams");
-
-        final ObjectNode eqpParams = root.putObject("eqpParams");
-        if (appliedParamVersion != null && !appliedParamVersion.isBlank()) {
-            eqpParams.put("version", appliedParamVersion.trim());
-        }
-        eqpParams.putArray("items");
+        root.set("modelParams", modelParamPayloadSupport.ensureModelParamsPayload(null, modelVersionKey));
 
         final ObjectNode gatewayProfile = root.putObject("gatewayProfile");
         gatewayProfile.put("connectionMode", commMode);

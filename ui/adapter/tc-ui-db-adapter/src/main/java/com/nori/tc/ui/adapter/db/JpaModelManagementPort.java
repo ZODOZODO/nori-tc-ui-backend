@@ -4,6 +4,7 @@ import com.nori.tc.db.core.eqp.store.TcEqpStore;
 import com.nori.tc.db.core.model.store.TcModelDcopItemStore;
 import com.nori.tc.db.core.model.store.TcModelEventIdStore;
 import com.nori.tc.db.core.model.store.TcModelMdfStore;
+import com.nori.tc.db.core.model.store.TcModelMesMessageStore;
 import com.nori.tc.db.core.model.store.TcModelParamStore;
 import com.nori.tc.db.core.model.store.TcModelReportIdStore;
 import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
@@ -12,6 +13,7 @@ import com.nori.tc.db.core.model.store.TcModelStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
 import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModel;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelMdf;
 import com.nori.tc.db.domain.common.model.ModelStatus;
 import com.nori.tc.db.domain.model.TcModel;
 import com.nori.tc.ui.adapter.db.mapper.UiDomainEnumMapper;
@@ -27,6 +29,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
@@ -53,8 +56,17 @@ public class JpaModelManagementPort implements ModelRootCommandPort, ModelBranch
     private static final Logger log = LoggerFactory.getLogger(JpaModelManagementPort.class);
 
     private static final String EDIT_VERSION = "EDIT";
+    private static final String DEFAULT_ROOT_MDF_NAME = "MDF";
+    private static final byte[] DEFAULT_ROOT_MDF_XML = """
+            <mdf>
+              <message name="DEFAULT_MES_MESSAGE" target="MES" output="KAFKA">
+                <field name="EQPID" var="EQPID" required="false"/>
+              </message>
+            </mdf>
+            """.getBytes(StandardCharsets.UTF_8);
 
     private final TcModelStore modelStore;
+    private final TcModelMdfStore modelMdfStore;
     private final JpaModelManagementSupport support;
 
     /**
@@ -66,6 +78,7 @@ public class JpaModelManagementPort implements ModelRootCommandPort, ModelBranch
             final TcModelParamStore modelParamStore,
             final TcModelSecsMessageStore modelSecsMessageStore,
             final TcModelSocketMessageStore modelSocketMessageStore,
+            final TcModelMesMessageStore modelMesMessageStore,
             final TcModelVariableIdStore modelVariableIdStore,
             final TcModelReportIdStore modelReportIdStore,
             final TcModelEventIdStore modelEventIdStore,
@@ -74,12 +87,14 @@ public class JpaModelManagementPort implements ModelRootCommandPort, ModelBranch
             final TcModelDcopItemStore modelDcopItemStore
     ) {
         this.modelStore = Objects.requireNonNull(modelStore, "modelStore is null");
+        this.modelMdfStore = Objects.requireNonNull(modelMdfStore, "modelMdfStore is null");
         this.support = new JpaModelManagementSupport(
                 modelStore,
                 eqpStore,
                 modelParamStore,
                 modelSecsMessageStore,
                 modelSocketMessageStore,
+                modelMesMessageStore,
                 modelVariableIdStore,
                 modelReportIdStore,
                 modelEventIdStore,
@@ -118,6 +133,7 @@ public class JpaModelManagementPort implements ModelRootCommandPort, ModelBranch
                     currentUser,
                     currentUser
             ));
+            saveDefaultRootMdf(created.modelVersionKey());
 
             log.info("root model 생성 완료. modelKey={}, modelName={}, commInterface={}",
                     created.modelKey(), created.modelName(), created.commInterface());
@@ -125,6 +141,18 @@ public class JpaModelManagementPort implements ModelRootCommandPort, ModelBranch
         } catch (RuntimeException e) {
             throw support.translateException(e, "root model 생성 중 충돌이 발생했습니다.", "root model 생성 입력이 올바르지 않습니다.");
         }
+    }
+
+    /**
+     * business 런타임이 최소 1개의 메시지 정의를 기대하므로 root 생성 시 기본 MDF를 함께 저장합니다.
+     */
+    private void saveDefaultRootMdf(final long modelVersionKey) {
+        modelMdfStore.upsert(new UpsertTcModelMdf(
+                null,
+                modelVersionKey,
+                DEFAULT_ROOT_MDF_NAME,
+                DEFAULT_ROOT_MDF_XML
+        ));
     }
 
     /**
@@ -291,7 +319,6 @@ public class JpaModelManagementPort implements ModelRootCommandPort, ModelBranch
     public UiModel checkinBranchEditVersion(final CheckinBranchEditVersionCommand command) {
         support.validateCheckinBranchEditVersionCommand(command);
         final String currentUser = support.normalizeCurrentUser(command.currentUser());
-        final String newVersion = support.normalizeRequiredText(command.newVersion(), "newVersion");
 
         try {
             final List<TcModel> allModels = loadAllModels();
@@ -303,11 +330,11 @@ public class JpaModelManagementPort implements ModelRootCommandPort, ModelBranch
             }
 
             support.ensureEditableByCurrentUser(editModel, currentUser);
-            support.validateModelVersion(newVersion);
-
-            if (modelStore.findByNameVersion(editModel.modelName(), newVersion).isPresent()) {
-                throw new UiConflictException("동일한 branch version이 이미 존재합니다.");
-            }
+            final String newVersion = support.generateNextBranchBaselineVersion(
+                    editModel.modelName(),
+                    allModels,
+                    resolveCurrentVersionDate()
+            );
 
             final TcModel checkedIn = modelStore.upsert(new UpsertTcModel(
                     null,

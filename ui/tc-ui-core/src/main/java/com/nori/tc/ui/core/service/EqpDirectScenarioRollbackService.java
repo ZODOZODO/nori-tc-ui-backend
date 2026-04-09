@@ -6,6 +6,7 @@ import com.nori.tc.ui.core.deploy.DeployResolvedStepPlan;
 import com.nori.tc.ui.core.deploy.DeployRollbackMode;
 import com.nori.tc.ui.core.eqp.EqpRepairAction;
 import com.nori.tc.ui.core.port.db.EqpCrudPort;
+import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -38,6 +39,7 @@ public class EqpDirectScenarioRollbackService {
             final EqpRepairTaskService repairTaskService,
             final EqpDirectScenarioLocalMutationCoordinator localMutationCoordinator,
             final EqpCrudPort eqpCrudPort,
+            final ModelDetailQueryPort modelDetailQueryPort,
             final ObjectMapper objectMapper
     ) {
         this.commandAssembler = Objects.requireNonNull(commandAssembler, "commandAssembler is null");
@@ -46,6 +48,7 @@ public class EqpDirectScenarioRollbackService {
         this.localMutationCoordinator = Objects.requireNonNull(localMutationCoordinator, "localMutationCoordinator is null");
         this.snapshotSupport = new DeployServiceSnapshotSupport(
                 Objects.requireNonNull(eqpCrudPort, "eqpCrudPort is null"),
+                Objects.requireNonNull(modelDetailQueryPort, "modelDetailQueryPort is null"),
                 Objects.requireNonNull(objectMapper, "objectMapper is null")
         );
     }
@@ -201,12 +204,13 @@ public class EqpDirectScenarioRollbackService {
             case EQP_DELETE -> EqpRepairAction.RUNTIME_CREATE;
             case EQP_GATEWAY_JARFILE_UPDATE, EQP_BUSINESS_JARFILE_UPDATE -> EqpRepairAction.JAR_RELOAD;
             case EQP_UPDATE,
+                 EQP_MODEL_UPDATE,
                  EQP_START,
                  EQP_END,
                  EQP_SEND_MESSAGE,
-                 EQP_RECONNECT,
-                 EQP_PARAMETER_UPDATE -> EqpRepairAction.RUNTIME_UPDATE;
+                 EQP_RECONNECT -> EqpRepairAction.RUNTIME_UPDATE;
             case EQP_REGISTER_DEPLOY -> EqpRepairAction.RUNTIME_UPDATE;
+            default -> throw new IllegalArgumentException("지원하지 않는 direct eventType 입니다. eventType=" + eventType);
         };
     }
 

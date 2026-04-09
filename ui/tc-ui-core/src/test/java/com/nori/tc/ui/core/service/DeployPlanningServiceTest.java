@@ -59,6 +59,7 @@ class DeployPlanningServiceTest {
                         3001L,
                         4001L,
                         "TEST01",
+                        null,
                         null
                 )),
                 catalogService,
@@ -82,15 +83,10 @@ class DeployPlanningServiceTest {
         final var firstTarget = first.targets().getFirst();
         final var secondTarget = second.targets().getFirst();
 
-        assertEquals(Set.of(
-                DeployDeltaKind.MODEL_CHANGED,
-                DeployDeltaKind.EQP_PARAM_CHANGED,
-                DeployDeltaKind.CONNECTION_ENDPOINT_CHANGED
-        ), firstTarget.deltaKinds());
+        assertEquals(Set.of(DeployDeltaKind.CONNECTION_ENDPOINT_CHANGED), firstTarget.deltaKinds());
         assertEquals("EQP_UPDATE_GENERIC", firstTarget.resolvedScenarioCode());
         assertIterableEquals(
-                List.of("UPSERT_GATEWAY_CONTEXT", "RELOAD_BUSINESS_MODEL_RUNTIME", "UPDATE_MODEL_BINDING",
-                        "UPDATE_EQP_PARAM", "RECONNECT_GATEWAY"),
+                List.of("UPSERT_GATEWAY_CONTEXT", "RECONNECT_GATEWAY"),
                 firstTarget.resolvedSteps().stream().map(step -> step.code()).toList()
         );
         assertEquals(firstTarget.deltaJson(), secondTarget.deltaJson());
@@ -163,64 +159,106 @@ class DeployPlanningServiceTest {
         assertEquals("REGISTER_MODEL_EQP_PARAM", target.resolvedScenarioCode());
         assertEquals(Set.of(DeployDeltaKind.MODEL_CHANGED), target.deltaKinds());
         assertIterableEquals(
-                List.of("RELOAD_BUSINESS_MODEL_RUNTIME", "UPDATE_MODEL_BINDING"),
+                List.of("UPDATE_MODEL_BINDING"),
+                target.resolvedSteps().stream().map(step -> step.code()).toList()
+        );
+    }
+
+    @Test
+    void planRegisterBusinessJarDeployUsesSinglePluginReloadStep() {
+        final DeployPlanCommand command = new DeployPlanCommand(
+                "Register Business Jar Deploy",
+                UiCommandEventType.EQP_REGISTER_DEPLOY,
+                DeployExecutionPolicy.BEST_EFFORT,
+                new DeployPlanCommand.CommonRequest(
+                        "SOCKET",
+                        registerBusinessJarUiMessage(),
+                        "REGISTER_BUSINESS_JAR_ONLY"
+                ),
+                List.of(new DeployPlanCommand.TargetRequest("PHOTO_001", objectMapper.createObjectNode()))
+        );
+
+        final DeployPlanningResult result = deployPlanningService.plan(command);
+        final var target = result.targets().getFirst();
+
+        assertEquals("REGISTER_BUSINESS_JAR_ONLY", target.resolvedScenarioCode());
+        assertEquals(Set.of(DeployDeltaKind.BUSINESS_JAR_CHANGED), target.deltaKinds());
+        assertIterableEquals(
+                List.of("RELOAD_BUSINESS_PLUGIN"),
+                target.resolvedSteps().stream().map(step -> step.code()).toList()
+        );
+    }
+
+    @Test
+    void planRegisterModelBusinessJarDeployUsesSingleModelBindingStep() {
+        final DeployPlanCommand command = new DeployPlanCommand(
+                "Register Model Business Jar Deploy",
+                UiCommandEventType.EQP_REGISTER_DEPLOY,
+                DeployExecutionPolicy.BEST_EFFORT,
+                new DeployPlanCommand.CommonRequest(
+                        "SOCKET",
+                        registerModelBusinessJarUiMessage(),
+                        "REGISTER_MODEL_BUSINESS_JAR"
+                ),
+                List.of(new DeployPlanCommand.TargetRequest("PHOTO_001", objectMapper.createObjectNode()))
+        );
+
+        final DeployPlanningResult result = deployPlanningService.plan(command);
+        final var target = result.targets().getFirst();
+
+        assertEquals("REGISTER_MODEL_BUSINESS_JAR", target.resolvedScenarioCode());
+        assertEquals(Set.of(DeployDeltaKind.MODEL_CHANGED, DeployDeltaKind.BUSINESS_JAR_CHANGED), target.deltaKinds());
+        assertIterableEquals(
+                List.of("UPDATE_MODEL_BINDING"),
+                target.resolvedSteps().stream().map(step -> step.code()).toList()
+        );
+    }
+
+    @Test
+    void planRegisterModelBusinessJarEqpParamDeployUsesModelBindingAndEqpParamSteps() {
+        final DeployPlanCommand command = new DeployPlanCommand(
+                "Register Model Business Jar Eqp Param Deploy",
+                UiCommandEventType.EQP_REGISTER_DEPLOY,
+                DeployExecutionPolicy.BEST_EFFORT,
+                new DeployPlanCommand.CommonRequest(
+                        "SOCKET",
+                        registerModelBusinessJarEqpParamUiMessage("EQP_PARAM_V2"),
+                        "REGISTER_MODEL_BUSINESS_JAR_EQP_PARAM"
+                ),
+                List.of(new DeployPlanCommand.TargetRequest("PHOTO_001", objectMapper.createObjectNode()))
+        );
+
+        final DeployPlanningResult result = deployPlanningService.plan(command);
+        final var target = result.targets().getFirst();
+
+        assertEquals("REGISTER_MODEL_BUSINESS_JAR_EQP_PARAM", target.resolvedScenarioCode());
+        assertEquals(
+                Set.of(DeployDeltaKind.MODEL_CHANGED, DeployDeltaKind.BUSINESS_JAR_CHANGED, DeployDeltaKind.EQP_PARAM_CHANGED),
+                target.deltaKinds()
+        );
+        assertIterableEquals(
+                List.of("UPDATE_MODEL_BINDING", "UPDATE_EQP_PARAM"),
                 target.resolvedSteps().stream().map(step -> step.code()).toList()
         );
     }
 
     private ObjectNode updateUiMessage() {
         final ObjectNode root = objectMapper.createObjectNode();
-        root.putObject("modelInfo")
-                .put("modelKey", "PHOTO_MODEL")
-                .put("modelVersion", "1.0.2")
-                .put("modelVersionKey", 1002L);
         root.putObject("gatewayProfile")
                 .put("connectionMode", "ACTIVE")
                 .put("eqpIp", "10.10.10.9")
                 .put("eqpPort", 6100)
                 .put("socketType", "TEST01");
-        root.putObject("modelParams")
-                .put("version", "MODEL_PARAM_V2");
-        root.putObject("eqpParams")
-                .put("version", "EQP_PARAM_V2");
-        root.putObject("businessJar")
-                .put("jarRef", 4001L)
-                .put("jarFileName", "business.jar")
-                .put("expectedSha256", "abc")
-                .put("sourceType", "DB");
-        root.putObject("gatewayJar")
-                .put("jarRef", 3001L)
-                .put("jarFileName", "gateway.jar")
-                .put("expectedSha256", "def")
-                .put("sourceType", "DB");
         return root;
     }
 
     private ObjectNode noChangeUiMessage() {
         final ObjectNode root = objectMapper.createObjectNode();
-        root.putObject("modelInfo")
-                .put("modelKey", "PHOTO_MODEL")
-                .put("modelVersion", "1.0.1")
-                .put("modelVersionKey", 1001L);
         root.putObject("gatewayProfile")
                 .put("connectionMode", "ACTIVE")
                 .put("eqpIp", "10.10.10.1")
                 .put("eqpPort", 6000)
                 .put("socketType", "TEST01");
-        root.putObject("modelParams")
-                .put("version", "MODEL_PARAM_V1");
-        root.putObject("eqpParams")
-                .put("version", "EQP_PARAM_V1");
-        root.putObject("businessJar")
-                .put("jarRef", 4001L)
-                .put("jarFileName", "business.jar")
-                .put("expectedSha256", "abc")
-                .put("sourceType", "DB");
-        root.putObject("gatewayJar")
-                .put("jarRef", 3001L)
-                .put("jarFileName", "gateway.jar")
-                .put("expectedSha256", "def")
-                .put("sourceType", "DB");
         return root;
     }
 
@@ -233,6 +271,31 @@ class DeployPlanningServiceTest {
 
     private ObjectNode registerEqpParamUiMessage(final String version) {
         final ObjectNode root = objectMapper.createObjectNode();
+        root.putObject("eqpParams")
+                .put("version", version);
+        return root;
+    }
+
+    private ObjectNode registerBusinessJarUiMessage() {
+        final ObjectNode root = objectMapper.createObjectNode();
+        root.putObject("modelInfo")
+                .put("modelVersionKey", 1001L);
+        root.putObject("businessJar")
+                .put("jarRef", 9002L);
+        return root;
+    }
+
+    private ObjectNode registerModelBusinessJarUiMessage() {
+        final ObjectNode root = objectMapper.createObjectNode();
+        root.putObject("modelInfo")
+                .put("modelVersionKey", 1002L);
+        root.putObject("businessJar")
+                .put("jarRef", 9002L);
+        return root;
+    }
+
+    private ObjectNode registerModelBusinessJarEqpParamUiMessage(final String version) {
+        final ObjectNode root = registerModelBusinessJarUiMessage();
         root.putObject("eqpParams")
                 .put("version", version);
         return root;
