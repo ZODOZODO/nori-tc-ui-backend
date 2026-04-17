@@ -22,6 +22,7 @@ import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.port.db.DeployStorePort;
 import com.nori.tc.ui.core.port.db.EqpCrudPort;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
+import com.nori.tc.ui.core.port.db.ModelCrudPort;
 import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
 import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
 import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
@@ -57,11 +58,13 @@ final class DeployServiceCommandSupport {
     private final DeployServiceSnapshotSupport snapshotSupport;
     private final ModelParamPayloadSupport modelParamPayloadSupport;
     private final EqpParamPayloadSupport eqpParamPayloadSupport;
+    private final ModelCrudPort modelCrudPort;
 
     DeployServiceCommandSupport(
             final DeployStorePort deployStorePort,
             final EqpCrudPort eqpCrudPort,
             final EqpQueryPort eqpQueryPort,
+            final ModelCrudPort modelCrudPort,
             final ModelDetailQueryPort modelDetailQueryPort,
             final UiGatewayEventPublishPort gatewayEventPublishPort,
             final UiBusinessEventPublishPort businessEventPublishPort,
@@ -71,6 +74,7 @@ final class DeployServiceCommandSupport {
         this.gatewayEventPublishPort = Objects.requireNonNull(gatewayEventPublishPort, "gatewayEventPublishPort is null");
         this.businessEventPublishPort = Objects.requireNonNull(businessEventPublishPort, "businessEventPublishPort is null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is null");
+        this.modelCrudPort = Objects.requireNonNull(modelCrudPort, "modelCrudPort is null");
         this.modelParamPayloadSupport = new ModelParamPayloadSupport(
                 Objects.requireNonNull(modelDetailQueryPort, "modelDetailQueryPort is null"),
                 objectMapper
@@ -592,6 +596,8 @@ final class DeployServiceCommandSupport {
         if (gatewayProfile == null || !gatewayProfile.isObject()) {
             return Optional.<UiEquipmentProfileSnapshot>empty().orElse(null);
         }
+        final JsonNode modelInfo = stepUiMessage == null ? null : stepUiMessage.path("modelInfo");
+        final Long resolvedModelVersionKey = longValue(modelInfo, "modelVersionKey");
 
         return new UiEquipmentProfileSnapshot(
                 eqpKey,
@@ -601,7 +607,7 @@ final class DeployServiceCommandSupport {
                 intValue(gatewayProfile, "hsmsDeviceId"),
                 textValue(gatewayProfile, "eqpIp"),
                 intValue(gatewayProfile, "eqpPort"),
-                null,
+                resolveModelKey(modelInfo, resolvedModelVersionKey, null),
                 longValue(stepUiMessage.path("gatewayJar"), "jarRef"),
                 longValue(stepUiMessage.path("businessJar"), "jarRef"),
                 textValue(gatewayProfile, "connectionMode"),
@@ -636,9 +642,15 @@ final class DeployServiceCommandSupport {
                 : executionSnapshot.eqp().updatedAt().withOffsetSameInstant(ZoneOffset.UTC);
         final JsonNode gatewayProfile = stepUiMessage == null ? null : stepUiMessage.get("gatewayProfile");
         final JsonNode eqpParamsNode = stepUiMessage == null ? null : stepUiMessage.path("eqpParams");
-        final Long resolvedModelVersionKey = longValue(stepUiMessage == null ? null : stepUiMessage.path("modelInfo"), "modelVersionKey") != null
-                ? longValue(stepUiMessage.path("modelInfo"), "modelVersionKey")
+        final JsonNode modelInfo = stepUiMessage == null ? null : stepUiMessage.path("modelInfo");
+        final Long resolvedModelVersionKey = longValue(modelInfo, "modelVersionKey") != null
+                ? longValue(modelInfo, "modelVersionKey")
                 : executionSnapshot.eqp().modelVersionKey();
+        final Long resolvedModelKey = resolveModelKey(
+                modelInfo,
+                resolvedModelVersionKey,
+                executionSnapshot.model() == null ? null : executionSnapshot.model().modelKey()
+        );
         final String resolvedConnectionMode = textValue(gatewayProfile, "connectionMode") != null
                 ? textValue(gatewayProfile, "connectionMode")
                 : executionSnapshot.eqp().commMode();
@@ -721,7 +733,7 @@ final class DeployServiceCommandSupport {
                 resolvedHsmsDeviceId,
                 resolvedEqpIp,
                 resolvedEqpPort,
-                resolvedModelVersionKey,
+                resolvedModelKey,
                 gatewayJarRefFromStep != null ? gatewayJarRefFromStep : executionSnapshot.eqp().gatewayJarKey(),
                 businessJarRefFromStep != null ? businessJarRefFromStep : executionSnapshot.eqp().businessJarKey(),
                 resolvedConnectionMode,
@@ -886,6 +898,23 @@ final class DeployServiceCommandSupport {
         } catch (Exception exception) {
             throw new UiBadRequestException("보상 equipmentProfile 역직렬화에 실패했습니다.");
         }
+    }
+
+    private Long resolveModelKey(
+            final JsonNode modelInfo,
+            final Long modelVersionKey,
+            final Long fallbackModelKey
+    ) {
+        final Long explicitModelKey = longValue(modelInfo, "modelKey");
+        if (explicitModelKey != null) {
+            return explicitModelKey;
+        }
+        if (modelVersionKey != null) {
+            return modelCrudPort.findByModelVersionKey(modelVersionKey)
+                    .map(model -> model.modelKey())
+                    .orElse(fallbackModelKey);
+        }
+        return fallbackModelKey;
     }
 
     private static Long longValue(final JsonNode node, final String fieldName) {

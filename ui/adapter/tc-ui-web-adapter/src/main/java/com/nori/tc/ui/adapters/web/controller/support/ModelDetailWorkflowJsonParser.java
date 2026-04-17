@@ -278,7 +278,7 @@ final class ModelDetailWorkflowJsonParser {
             throw new IllegalArgumentException(invalidMessage);
         }
         final String lowerCase = normalized.toLowerCase(Locale.ROOT);
-        if (!"data".equals(lowerCase) && !"metadata".equals(lowerCase)) {
+        if (!"data".equals(lowerCase) && !"metadata".equals(lowerCase) && !"param".equals(lowerCase)) {
             throw new IllegalArgumentException(invalidMessage);
         }
         return lowerCase;
@@ -289,7 +289,7 @@ final class ModelDetailWorkflowJsonParser {
         if (normalized == null) {
             throw new IllegalArgumentException(invalidMessage);
         }
-        if (normalized.startsWith("data.") || normalized.startsWith("metadata.")) {
+        if (normalized.startsWith("data.") || normalized.startsWith("metadata.") || normalized.startsWith("param.")) {
             throw new IllegalArgumentException(invalidMessage);
         }
         return normalized;

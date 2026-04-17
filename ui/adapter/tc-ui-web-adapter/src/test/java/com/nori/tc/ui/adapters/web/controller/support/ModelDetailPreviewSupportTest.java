@@ -91,6 +91,40 @@ class ModelDetailPreviewSupportTest {
     }
 
     @Test
+    @DisplayName("workflow/action_data_index preview는 param source도 canonical 용어로 요약합니다")
+    void summarizePreviewSupportsParamSource() {
+        final String workflowFilter = """
+                {
+                  "and": [
+                    {
+                      "from": "param",
+                      "path": "recipeId",
+                      "comparison": "equals",
+                      "expected": "RCP-01"
+                    }
+                  ]
+                }
+                """;
+        final String actionDataIndex = """
+                {
+                  "mdfTemplateName": "TOOL_CONDITION_REPLY_MES",
+                  "fields": {
+                    "RECIPE_ID": { "from": "param", "path": "recipeId" }
+                  }
+                }
+                """;
+
+        assertEquals(
+                "and(param.recipeId {comparison=equals, expected=\"RCP-01\"})",
+                ModelDetailPreviewSupport.summarizeWorkflowFilter(workflowFilter)
+        );
+        assertEquals(
+                "mdfTemplateName=TOOL_CONDITION_REPLY_MES / RECIPE_ID {from=param, path=recipeId}",
+                ModelDetailPreviewSupport.summarizeActionDataIndex(actionDataIndex)
+        );
+    }
+
+    @Test
     @DisplayName("JSON 파싱이 불가능하면 첫 번째 텍스트 라인을 그대로 사용합니다")
     void summarizeFallsBackToFirstMeaningfulLine() {
         final String raw = """

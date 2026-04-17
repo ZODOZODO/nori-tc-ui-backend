@@ -84,8 +84,8 @@ class ManagementRequestValidationContractTest {
     }
 
     @Test
-    @DisplayName("EQP 요청 DTO는 appliedParamVersion 100자를 허용합니다")
-    void eqpRequestsAllowAppliedParamVersionUpTo100Characters() {
+    @DisplayName("EQP 요청 DTO는 현재 생성/수정 필드 조합을 허용합니다")
+    void eqpRequestsAllowCurrentCreateAndUpdateShape() {
         final EqpCreateRequest createRequest = new EqpCreateRequest(
                 "EQP-01",
                 UiProtocolType.SECS,
@@ -95,9 +95,8 @@ class ManagementRequestValidationContractTest {
                 "127.0.0.1",
                 5000,
                 101L,
-                repeat('V', 100),
-                null,
-                null,
+                201L,
+                301L,
                 null,
                 null,
                 null
@@ -108,10 +107,6 @@ class ManagementRequestValidationContractTest {
                 1,
                 "127.0.0.1",
                 5000,
-                101L,
-                repeat('V', 100),
-                null,
-                null,
                 null,
                 null,
                 null
@@ -122,8 +117,8 @@ class ManagementRequestValidationContractTest {
     }
 
     @Test
-    @DisplayName("EQP 요청 DTO는 appliedParamVersion 100자 초과를 차단합니다")
-    void eqpRequestsRejectAppliedParamVersionOver100Characters() {
+    @DisplayName("EQP 생성 요청 DTO는 0 이하 jar ref를 차단합니다")
+    void eqpCreateRequestRejectsNonPositiveJarRefs() {
         final Set<ConstraintViolation<EqpCreateRequest>> createViolations = validator.validate(
                 new EqpCreateRequest(
                         "EQP-01",
@@ -134,33 +129,16 @@ class ManagementRequestValidationContractTest {
                         "127.0.0.1",
                         5000,
                         101L,
-                        repeat('V', 101),
-                        null,
-                        null,
-                        null,
-                        null,
-                        null
-                )
-        );
-        final Set<ConstraintViolation<EqpUpdateRequest>> updateViolations = validator.validate(
-                new EqpUpdateRequest(
-                        "ACTIVE",
-                        false,
-                        1,
-                        "127.0.0.1",
-                        5000,
-                        101L,
-                        repeat('V', 101),
-                        null,
-                        null,
+                        0L,
+                        0L,
                         null,
                         null,
                         null
                 )
         );
 
-        assertHasMessage(createViolations, "appliedParamVersion은 100자 이하여야 합니다.");
-        assertHasMessage(updateViolations, "appliedParamVersion은 100자 이하여야 합니다.");
+        assertHasMessage(createViolations, "gatewayJarRef는 1 이상이어야 합니다.");
+        assertHasMessage(createViolations, "businessJarRef는 1 이상이어야 합니다.");
     }
 
     private static void assertHasMessage(
@@ -169,7 +147,8 @@ class ManagementRequestValidationContractTest {
     ) {
         assertTrue(
                 violations.stream().map(ConstraintViolation::getMessage).anyMatch(expectedMessage::equals),
-                () -> "예상 validation 메시지가 없습니다. messages=" + violations.stream().map(ConstraintViolation::getMessage).toList()
+                () -> "예상 validation 메시지가 없습니다. messages="
+                        + violations.stream().map(ConstraintViolation::getMessage).toList()
         );
     }
 

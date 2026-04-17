@@ -76,7 +76,7 @@ public final class EqpManagementRuntimeSupport {
         final String traceId = UUID.randomUUID().toString();
         final String eqpId = snapshot.eqp().eqpId();
         final String interfaceType = snapshot.eqp().commInterface().name();
-        final JsonNode uiMessage = buildUiMessage(snapshot.eqp().modelVersionKey());
+        final JsonNode uiMessage = buildUiMessage(snapshot);
         final UiEquipmentProfileSnapshot equipmentProfile =
                 (eventType == UiCommandEventType.EQP_CREATE || eventType == UiCommandEventType.EQP_UPDATE)
                         ? toEquipmentProfile(snapshot)
@@ -168,7 +168,7 @@ public final class EqpManagementRuntimeSupport {
                 UI_SOURCE,
                 snapshot.eqp().eqpId(),
                 snapshot.eqp().commInterface().name(),
-                buildUiMessage(snapshot.eqp().modelVersionKey()),
+                buildUiMessage(snapshot),
                 null
         );
 
@@ -231,7 +231,7 @@ public final class EqpManagementRuntimeSupport {
         final String traceId = UUID.randomUUID().toString();
         final String eqpId = snapshot.eqp().eqpId();
         final String interfaceType = snapshot.eqp().commInterface().name();
-        final JsonNode uiMessage = buildUiMessage(snapshot.eqp().modelVersionKey());
+        final JsonNode uiMessage = buildUiMessage(snapshot);
 
         final CompletableFuture<UiDualTaskFinalResult> future = dualResponseRegistry.register(traceId, timeoutMs);
         final UiCommandMessage gatewayMessage = new UiCommandMessage(
@@ -376,12 +376,14 @@ public final class EqpManagementRuntimeSupport {
         return new UiEquipmentProfileSnapshot(
                 snapshot.eqp().eqpKey(),
                 snapshot.eqp().eqpId(),
-                snapshot.eqp().commInterface().name(),
+                snapshot.eqp().commInterface() == null ? null : snapshot.eqp().commInterface().name(),
                 snapshot.socket() == null ? null : snapshot.socket().socketProtocolType(),
                 snapshot.hsms() == null ? null : snapshot.hsms().deviceId(),
                 snapshot.eqp().eqpIp(),
                 snapshot.eqp().eqpPort(),
-                snapshot.eqp().modelVersionKey(),
+                snapshot.model() == null ? null : snapshot.model().modelKey(),
+                snapshot.eqp().gatewayJarKey(),
+                snapshot.eqp().businessJarKey(),
                 snapshot.eqp().commMode(),
                 snapshot.eqp().routePartition(),
                 snapshot.eqp().enabled(),
@@ -463,9 +465,12 @@ public final class EqpManagementRuntimeSupport {
         return eqpStateDown || disconnected;
     }
 
-    private JsonNode buildUiMessage(final long modelVersionKey) {
+    private JsonNode buildUiMessage(final EqpManagementSnapshot snapshot) {
         final ObjectNode modelInfo = JsonNodeFactory.instance.objectNode();
-        modelInfo.put("modelVersionKey", modelVersionKey);
+        modelInfo.put("modelVersionKey", snapshot.eqp().modelVersionKey());
+        if (snapshot.model() != null) {
+            modelInfo.put("modelKey", snapshot.model().modelKey());
+        }
 
         final ObjectNode uiMessage = JsonNodeFactory.instance.objectNode();
         uiMessage.set("modelInfo", modelInfo);

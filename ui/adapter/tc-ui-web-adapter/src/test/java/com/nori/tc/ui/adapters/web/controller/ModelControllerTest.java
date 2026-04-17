@@ -195,6 +195,67 @@ class ModelControllerTest {
     }
 
     @Test
+    @DisplayName("workflow 상세 저장은 param source가 포함된 workflow/action_data_index를 허용합니다")
+    void saveDetailRowsAllowsParamLookupSource() {
+        final Fixture fixture = new Fixture();
+        final UiModel model = model(101L);
+        when(fixture.modelCrudPort.findByModelVersionKey(101L)).thenReturn(Optional.of(model));
+
+        final ModelDetailSaveRequest request = workflowSaveRequest(
+                """
+                        {
+                          "and": [
+                            {
+                              "from": "param",
+                              "path": "recipeId",
+                              "comparison": "equals",
+                              "expected": "RCP-01"
+                            }
+                          ]
+                        }
+                        """,
+                """
+                        {
+                          "mdfTemplateName": "TOOL_CONDITION_REPLY_MES",
+                          "fields": {
+                            "RECIPE_ID": {
+                              "from": "param",
+                              "path": "recipeId"
+                            }
+                          }
+                        }
+                        """
+        );
+        when(fixture.modelDetailQueryPort.findWorkflowsByModelVersionKey(101L)).thenReturn(List.of(new UiModelWorkflow(
+                77L,
+                101L,
+                "WF_PARAM",
+                "READY_MSG",
+                "1001",
+                "T01",
+                request.rows().get(0).values().get(4),
+                "PUBLISH_MES_COMMAND",
+                request.rows().get(0).values().get(6),
+                OffsetDateTime.parse("2026-03-13T10:15:30+09:00")
+        )));
+
+        final ResponseEntity<ApiResponse<ModelDetailDataResponse>> response =
+                fixture.detailController.saveDetailRows(101L, "workflow", request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(
+                "and(param.recipeId {comparison=equals, expected=\"RCP-01\"})",
+                response.getBody().data().rows().get(0).previewValues().get(4)
+        );
+        assertEquals(
+                "mdfTemplateName=TOOL_CONDITION_REPLY_MES / RECIPE_ID {from=param, path=recipeId}",
+                response.getBody().data().rows().get(0).previewValues().get(6)
+        );
+        verify(fixture.modelDetailCommandPort).saveDetailRows(anyLong(), any(String.class), any());
+    }
+
+    @Test
     @DisplayName("MDF 업로드는 업로드 파일명을 저장 이름으로 사용하고 저장 결과를 반환합니다")
     void uploadMdfSavesValidatedXml() {
         final Fixture fixture = new Fixture();

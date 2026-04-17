@@ -92,6 +92,7 @@ class EqpDirectScenarioServiceTest {
         final EqpCommandResult result = service.executeCreate(createCommand("PHOTO_NEW"));
 
         assertFalse(result.success());
+        assertEquals(500L, gatewayPublisher.messages.getFirst().equipmentProfile().modelKey());
         assertTrue(result.errorCode() != null && !result.errorCode().isBlank());
         assertTrue(eqpCrudPort.findSnapshotByEqpId("PHOTO_NEW").isEmpty());
     }
@@ -110,6 +111,7 @@ class EqpDirectScenarioServiceTest {
         final EqpCommandResult result = service.executeUpdate("PHOTO_001", updateCommand("10.10.10.9", 6100, null, null, null));
 
         assertFalse(result.success());
+        assertEquals(500L, gatewayPublisher.messages.getFirst().equipmentProfile().modelKey());
         final EqpManagementSnapshot restored = eqpCrudPort.findSnapshotByEqpId("PHOTO_001").orElseThrow();
         assertEquals("10.10.10.1", restored.eqp().eqpIp());
         assertEquals(6000, restored.eqp().eqpPort());
@@ -282,6 +284,7 @@ class EqpDirectScenarioServiceTest {
                 mock(DeployStorePort.class),
                 eqpCrudPort,
                 eqpQueryPort(),
+                modelCrudPort,
                 modelDetailQueryPort,
                 gatewayPublisher,
                 businessPublisher,
