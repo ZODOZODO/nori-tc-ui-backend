@@ -1,6 +1,7 @@
 package com.nori.tc.ui.core.service;
 
 import tools.jackson.databind.JsonNode;
+import com.nori.tc.common.runtime.support.TraceIdGenerator;
 import com.nori.tc.ui.core.deploy.DeployResolvedStepPlan;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
@@ -227,10 +228,6 @@ public class EqpDirectScenarioRunner {
     }
 
     private String buildTraceId(final String executionId, final String stepCode) {
-        return DeployTraceRegistry.DIRECT_TRACE_PREFIX
-                + executionId
-                + "-STEP-"
-                + stepCode
-                + "-ATT-1";
+        return TraceIdGenerator.newTraceId();
     }
 }

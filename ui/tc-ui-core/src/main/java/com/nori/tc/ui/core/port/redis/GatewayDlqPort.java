@@ -7,10 +7,10 @@ import java.util.List;
  *
  * <p>역할:</p>
  * <p>Gateway Redis(6379)에 저장된 DLQ 항목을 조회하고 삭제합니다.
- * DLQ 항목 쓰기는 tc-comm-gateway-redis-adapter의 RedisDlqPublisher가 담당합니다.</p>
+ * DLQ 항목 쓰기는 tc-gateway-redis-adapter의 RedisDlqPublisher가 담당합니다.</p>
  *
  * <p>DLQ 키 패턴:</p>
- * <pre>tc:comm:gateway:dlq:{dlqId}</pre>
+ * <pre>tc:gateway:dlq:{dlqId}</pre>
  *
  * <p>구현체:</p>
  * <p>tc-ui-redis-adapter의 GatewayDlqRedisService가 이 인터페이스를 구현합니다.</p>

@@ -3,6 +3,7 @@ package com.nori.tc.ui.core.service;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
+import com.nori.tc.common.runtime.support.TraceIdGenerator;
 import com.nori.tc.ui.core.deploy.DeployResolvedStepPlan;
 import com.nori.tc.ui.core.deploy.DeployResultMessage;
 import com.nori.tc.ui.core.deploy.DeployResultSeverity;
@@ -287,11 +288,7 @@ final class DeployServiceCommandSupport {
             final String stepCode,
             final int attemptNo
     ) {
-        return DeployTraceRegistry.DEPLOY_TRACE_PREFIX
-                + deployKey
-                + "-TARGET-" + deployTargetKey
-                + "-STEP-" + stepCode
-                + "-ATT-" + attemptNo;
+        return TraceIdGenerator.newTraceId();
     }
 
     UiCommandEventType parseCompensationEventType(final String eventTypeText) {

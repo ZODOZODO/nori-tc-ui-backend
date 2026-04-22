@@ -3,6 +3,7 @@ package com.nori.tc.ui.core.service;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
+import com.nori.tc.common.runtime.support.TraceIdGenerator;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.model.AsyncResultEntry;
 import com.nori.tc.ui.core.model.AsyncStatus;
@@ -27,7 +28,6 @@ import org.springframework.stereotype.Service;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -73,7 +73,7 @@ public final class EqpManagementRuntimeSupport {
             final EqpManagementSnapshot snapshot,
             final long timeoutMs
     ) throws Exception {
-        final String traceId = UUID.randomUUID().toString();
+        final String traceId = TraceIdGenerator.newTraceId();
         final String eqpId = snapshot.eqp().eqpId();
         final String interfaceType = snapshot.eqp().commInterface().name();
         final JsonNode uiMessage = buildUiMessage(snapshot);
@@ -161,7 +161,7 @@ public final class EqpManagementRuntimeSupport {
             final EqpManagementSnapshot snapshot,
             final long timeoutMs
     ) throws Exception {
-        final String traceId = UUID.randomUUID().toString();
+        final String traceId = TraceIdGenerator.newTraceId();
         final UiCommandMessage message = new UiCommandMessage(
                 eventType,
                 traceId,
@@ -228,7 +228,7 @@ public final class EqpManagementRuntimeSupport {
     }
 
     void awaitJarReloadSuccess(final EqpManagementSnapshot snapshot, final long timeoutMs) throws Exception {
-        final String traceId = UUID.randomUUID().toString();
+        final String traceId = TraceIdGenerator.newTraceId();
         final String eqpId = snapshot.eqp().eqpId();
         final String interfaceType = snapshot.eqp().commInterface().name();
         final JsonNode uiMessage = buildUiMessage(snapshot);

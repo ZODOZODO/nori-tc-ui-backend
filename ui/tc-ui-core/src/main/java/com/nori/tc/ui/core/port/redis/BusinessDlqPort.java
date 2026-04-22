@@ -6,7 +6,7 @@ import java.util.List;
  * Business Redis DLQ(Dead Letter Queue) 조회·삭제 포트입니다.
  *
  * <p>역할:</p>
- * <p>Business Redis(6380)에 저장된 DLQ 항목을 조회하고 삭제합니다.
+ * <p>Business Redis 논리 연결에 저장된 DLQ 항목을 조회하고 삭제합니다.
  * DLQ 항목 쓰기는 tc-business-redis-adapter의 RedisBusinessDlqPublisher가 담당합니다.</p>
  *
  * <p>DLQ 키 패턴:</p>

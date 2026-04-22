@@ -38,6 +38,16 @@ public interface DeployTraceRedisPort {
     void cancel(String traceId);
 
     /**
+     * traceId가 deploy trace 저장소에 등록되어 있는지 확인합니다.
+     *
+     * @param traceId 확인할 traceId
+     * @return 등록되어 있으면 true
+     */
+    default boolean isRegistered(final String traceId) {
+        return false;
+    }
+
+    /**
      * traceId 기준 분산 저장소 결과를 조회합니다.
      *
      * @param traceId 조회 대상 traceId

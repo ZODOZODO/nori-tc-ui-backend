@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Business Redis(6380)에 저장된 DLQ 항목을 조회·삭제하는 서비스입니다.
+ * Business Redis 논리 연결에 저장된 DLQ 항목을 조회·삭제하는 서비스입니다.
  *
  * <p>이 서비스는 읽기(Read) 및 삭제(Delete) 전용입니다.
  * DLQ 항목 쓰기는 tc-business-redis-adapter의 RedisBusinessDlqPublisher가 담당합니다.</p>

@@ -3,6 +3,7 @@ package com.nori.tc.ui.core.service;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
+import com.nori.tc.common.runtime.support.TraceIdGenerator;
 import com.nori.tc.ui.core.deploy.DeployTargetPlanDraft;
 import com.nori.tc.ui.core.eqp.EqpCommandResult;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
@@ -18,7 +19,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.Objects;
-import java.util.UUID;
 
 /**
  * direct EQP event를 공통 scenario planner/runner로 실행하는 facade입니다.
@@ -469,7 +469,7 @@ public class EqpDirectScenarioService {
     }
 
     private String newExecutionId() {
-        return UUID.randomUUID().toString();
+        return TraceIdGenerator.newTraceId();
     }
 
     private EqpCommandResult toCommandResult(final Exception exception) {

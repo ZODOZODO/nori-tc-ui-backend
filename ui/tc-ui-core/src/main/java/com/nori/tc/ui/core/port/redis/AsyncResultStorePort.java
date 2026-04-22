@@ -10,7 +10,7 @@ import java.util.Optional;
  *
  * <p>역할:</p>
  * <p>eqp_start / eqp_end 요청에 대한 gateway 응답(tc.ui.commands 수신)을
- * Business Redis(6380)에 임시 저장합니다.
+ * Business Redis 논리 연결에 임시 저장합니다.
  * front는 202 즉시 반환 후 GET /api/async/{traceId}로 polling하여 결과를 확인합니다.</p>
  *
  * <p>캐시 키 형식:</p>

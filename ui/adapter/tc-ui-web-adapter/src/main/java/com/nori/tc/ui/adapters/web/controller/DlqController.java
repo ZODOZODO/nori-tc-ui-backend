@@ -48,7 +48,7 @@ public class DlqController {
      * 필수 의존성을 초기화합니다.
      *
      * @param gatewayDlqPort  Gateway DLQ 조회·삭제 포트 (Gateway Redis 6379)
-     * @param businessDlqPort Business DLQ 조회·삭제 포트 (Business Redis 6380)
+     * @param businessDlqPort Business DLQ 조회·삭제 포트
      */
     public DlqController(
             final GatewayDlqPort gatewayDlqPort,

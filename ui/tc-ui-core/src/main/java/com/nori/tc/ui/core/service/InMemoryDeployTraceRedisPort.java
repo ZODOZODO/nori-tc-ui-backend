@@ -49,6 +49,11 @@ final class InMemoryDeployTraceRedisPort implements DeployTraceRedisPort {
     }
 
     @Override
+    public boolean isRegistered(final String traceId) {
+        return traceId != null && traces.containsKey(traceId);
+    }
+
+    @Override
     public DeployTraceRedisLookupResult getCompletion(final String traceId) {
         final PendingTrace pendingTrace = traces.get(traceId);
         if (pendingTrace == null) {

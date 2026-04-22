@@ -10,6 +10,7 @@ version = "0.0.1-SNAPSHOT"
 
 dependencies {
     implementation(project(":ui:tc-ui-core"))
+    implementation("com.nori.tc:tc-common-runtime-support:0.0.1-SNAPSHOT")
     implementation(libs.spring.boot.starter.webmvc)
     implementation(libs.spring.boot.starter.security)
     implementation(libs.spring.boot.starter.actuator)

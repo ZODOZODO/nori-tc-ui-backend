@@ -20,7 +20,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Business Redis(6380)를 이용한 비동기 작업 결과 저장 서비스입니다.
+ * Business Redis 논리 연결을 이용한 비동기 작업 결과 저장 서비스입니다.
  *
  * <p>{@link AsyncResultStorePort}를 구현하며, eqp_start/eqp_end 요청에 대한
  * gateway 응답(tc.ui.commands 수신)을 임시 저장합니다.</p>

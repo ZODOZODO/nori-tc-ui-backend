@@ -8,8 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * UI Backend Redis 연결 설정 바인딩 클래스입니다.
  *
- * <p>Gateway Redis(6379)와 Business Redis(6380) 두 인스턴스에 대한
- * 연결 정보를 독립적으로 바인딩합니다.
+ * <p>Gateway Redis와 Business Redis 논리 연결 정보를 독립적으로 바인딩합니다.
  * Spring Boot 기본 {@code spring.data.redis.*} 설정은 사용하지 않습니다.</p>
  *
  * <p>바인딩 대상 (config/tc-redis.properties):</p>
@@ -19,7 +18,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * tc.ui.backend.redis.gateway.password=...
  *
  * tc.ui.backend.redis.business.host=192.168.0.13
- * tc.ui.backend.redis.business.port=6380
+ * tc.ui.backend.redis.business.port=6379
  * tc.ui.backend.redis.business.password=...
  * </pre>
  */
@@ -28,10 +27,10 @@ public class UiRedisProperties {
 
     private static final Logger log = LoggerFactory.getLogger(UiRedisProperties.class);
 
-    /** Gateway Redis(6379) 연결 설정 - DLQ/Quarantine 조회·삭제 용도 */
+    /** Gateway Redis 논리 연결 설정 - DLQ/Quarantine 조회·삭제 용도 */
     private RedisNodeProperties gateway;
 
-    /** Business Redis(6380) 연결 설정 - DLQ 조회·삭제 + 토큰 캐시 + 비동기 결과 저장 용도 */
+    /** Business Redis 논리 연결 설정 - DLQ 조회·삭제 + 토큰 캐시 + 비동기 결과 저장 용도 */
     private RedisNodeProperties business;
 
     /**

@@ -1,6 +1,7 @@
 package com.nori.tc.ui.adapters.web.security;
 
 import tools.jackson.databind.ObjectMapper;
+import com.nori.tc.common.runtime.support.TraceIdGenerator;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.core.exception.UiAuthenticationException;
 import com.nori.tc.ui.core.properties.UiAuthProperties;
@@ -25,7 +26,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
 
 /**
  * 인증 쿠키 기반 인증 처리 필터입니다.
@@ -275,7 +275,7 @@ public class UiTokenAuthenticationFilter extends OncePerRequestFilter {
 
         final String headerTraceId = request.getHeader(REQUEST_ID_HEADER);
         final String resolvedTraceId = (headerTraceId == null || headerTraceId.isBlank())
-                ? UUID.randomUUID().toString()
+                ? TraceIdGenerator.newTraceId()
                 : headerTraceId.trim();
 
         request.setAttribute(REQUEST_TRACE_ID_ATTRIBUTE, resolvedTraceId);

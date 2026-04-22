@@ -115,7 +115,10 @@ class HttpDemoTesterClientTest {
         assertEquals(14, acceptedJob.progressPercent());
         assertEquals(2, acceptedJob.currentStepCount());
         assertEquals(14, acceptedJob.totalStepCount());
-        assertEquals("2026-04-08T10:00:06+09:00", acceptedJob.updatedAt().toString());
+        assertEquals(
+                OffsetDateTime.parse("2026-04-08T10:00:06+09:00").toInstant(),
+                acceptedJob.updatedAt().toInstant()
+        );
         assertNull(acceptedJob.failureCode());
         assertNull(acceptedJob.failureMessage());
     }

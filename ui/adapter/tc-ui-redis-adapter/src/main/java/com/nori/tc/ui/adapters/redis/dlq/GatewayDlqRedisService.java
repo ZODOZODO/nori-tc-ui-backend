@@ -22,12 +22,12 @@ import java.util.Objects;
  * Gateway Redis(6379)에 저장된 DLQ 및 Quarantine 항목을 조회·삭제하는 서비스입니다.
  *
  * <p>이 서비스는 읽기(Read) 및 삭제(Delete) 전용입니다.
- * DLQ 항목 쓰기는 tc-comm-gateway-redis-adapter의 RedisDlqPublisher가 담당합니다.</p>
+ * DLQ 항목 쓰기는 tc-gateway-redis-adapter의 RedisDlqPublisher가 담당합니다.</p>
  *
  * <p>키 패턴:</p>
  * <ul>
- *   <li>DLQ: {@code tc:comm:gateway:dlq:{dlqId}}</li>
- *   <li>Quarantine: {@code tc:comm:gateway:quarantine:{equipmentId}}</li>
+ *   <li>DLQ: {@code tc:gateway:dlq:{dlqId}}</li>
+ *   <li>Quarantine: {@code tc:gateway:quarantine:{equipmentId}}</li>
  * </ul>
  *
  * <p>역직렬화:</p>
@@ -41,10 +41,10 @@ public class GatewayDlqRedisService implements GatewayDlqPort {
     private static final Logger log = LoggerFactory.getLogger(GatewayDlqRedisService.class);
 
     /** Gateway DLQ 키 접두사 */
-    private static final String DLQ_KEY_PREFIX = "tc:comm:gateway:dlq:";
+    private static final String DLQ_KEY_PREFIX = "tc:gateway:dlq:";
 
     /** Gateway Quarantine 키 접두사 */
-    private static final String QUARANTINE_KEY_PREFIX = "tc:comm:gateway:quarantine:";
+    private static final String QUARANTINE_KEY_PREFIX = "tc:gateway:quarantine:";
 
     /**
      * SCAN 명령 한 번에 반환할 힌트 개수.
@@ -181,7 +181,7 @@ public class GatewayDlqRedisService implements GatewayDlqPort {
      * <p>KEYS 명령은 Redis 를 블로킹하여 대규모 운영 환경에서 응답 지연을 유발합니다.
      * SCAN 커서 방식은 반복적으로 일부 키를 반환하므로 서버 부하를 분산합니다.</p>
      *
-     * @param pattern Redis SCAN match 패턴 (예: {@code tc:comm:gateway:dlq:*})
+     * @param pattern Redis SCAN match 패턴 (예: {@code tc:gateway:dlq:*})
      * @return 일치하는 키 목록 (오류 발생 시 빈 리스트)
      */
     private List<String> scanKeys(final String pattern) {

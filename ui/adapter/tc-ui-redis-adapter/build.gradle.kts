@@ -2,7 +2,7 @@
  * tc-ui-redis-adapter
  *
  * 역할
- * - Gateway Redis(6379)와 Business Redis(6380)에 동시 접속하는 어댑터입니다.
+ * - Gateway Redis와 Business Redis 논리 연결에 동시 접속하는 어댑터입니다.
  * - spring.data.redis.* 미사용: 직접 LettuceConnectionFactory를 생성하여 2개 인스턴스를 독립 관리합니다.
  *
  * 주요 구성 (Phase 4에서 구현)
@@ -10,8 +10,8 @@
  *   - UiRedisProperties         : @ConfigurationProperties 바인딩 (gateway/business 각각)
  *   - UiRedisConfiguration      : @Bean("gatewayRedisTemplate"), @Bean("businessRedisTemplate")
  * Service:
- *   - GatewayDlqRedisService    : tc:comm:gateway:dlq:* 읽기/삭제,
- *                                 tc:comm:gateway:quarantine:* 읽기 (gatewayRedisTemplate)
+ *   - GatewayDlqRedisService    : tc:gateway:dlq:* 읽기/삭제,
+ *                                 tc:gateway:quarantine:* 읽기 (gatewayRedisTemplate)
  *   - BusinessDlqRedisService   : tc:business:core:dlq:* 읽기/삭제 (businessRedisTemplate)
  *   - UiSessionCacheService     : tc:ui:backend:session:{token} TTL=300s (businessRedisTemplate)
  *   - AsyncResultStoreService   : tc:ui:backend:async:{traceId} TTL=600s (businessRedisTemplate)

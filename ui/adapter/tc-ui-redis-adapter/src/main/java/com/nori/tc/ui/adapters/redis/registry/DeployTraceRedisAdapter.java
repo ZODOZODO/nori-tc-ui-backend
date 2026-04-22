@@ -111,6 +111,19 @@ public class DeployTraceRedisAdapter implements DeployTraceRedisPort {
     }
 
     @Override
+    public boolean isRegistered(final String traceId) {
+        if (traceId == null || traceId.isBlank()) {
+            return false;
+        }
+        try {
+            return Boolean.TRUE.equals(businessStringRedisTemplate.hasKey(buildKey(traceId)));
+        } catch (Exception redisException) {
+            log.warn("deploy trace Redis 등록 여부 조회 실패. traceId={}", traceId, redisException);
+            return false;
+        }
+    }
+
+    @Override
     public DeployTraceRedisLookupResult getCompletion(final String traceId) {
         Objects.requireNonNull(traceId, "traceId is null");
 

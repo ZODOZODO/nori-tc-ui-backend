@@ -1,6 +1,7 @@
 package com.nori.tc.ui.core.service;
 
 import tools.jackson.databind.JsonNode;
+import com.nori.tc.common.runtime.support.TraceIdGenerator;
 import com.nori.tc.ui.core.eqp.EqpAsyncAcceptResult;
 import com.nori.tc.ui.core.eqp.EqpCommandResult;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
@@ -162,7 +163,7 @@ public class EqpManagementService {
             final long timeoutMs,
             final java.util.function.Supplier<EqpCommandResult> action
     ) {
-        final String traceId = java.util.UUID.randomUUID().toString();
+        final String traceId = TraceIdGenerator.newTraceId();
         asyncResultStorePort.registerPending(traceId, timeoutMs);
 
         try {

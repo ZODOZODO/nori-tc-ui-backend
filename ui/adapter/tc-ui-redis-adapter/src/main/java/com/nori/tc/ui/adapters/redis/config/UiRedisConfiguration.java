@@ -27,7 +27,7 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>핵심 목표:</p>
  * <ul>
- *   <li>Gateway Redis(6379), Business Redis(6380)를 각각 독립 연결로 관리합니다.</li>
+ *   <li>Gateway Redis와 Business Redis를 논리적으로 분리된 연결로 관리합니다.</li>
  *   <li>기존 JDK 직렬화를 제거하고 JSON 직렬화로 통일합니다.</li>
  *   <li>DualResponse 완료 알림 채널을 Business Redis Pub/Sub로 수신합니다.</li>
  * </ul>
@@ -121,7 +121,7 @@ public class UiRedisConfiguration {
     }
 
     // -------------------------------------------------------------------------
-    // Business Redis (6380)
+    // Business Redis logical connection
     // -------------------------------------------------------------------------
 
     /**

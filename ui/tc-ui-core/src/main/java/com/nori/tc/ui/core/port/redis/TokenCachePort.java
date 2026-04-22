@@ -8,7 +8,7 @@ import java.util.Optional;
  * 인증 토큰 캐시 포트입니다.
  *
  * <p>역할:</p>
- * <p>Business Redis(6380)에 토큰 → UserPrincipal 정보를 캐싱하여
+ * <p>Business Redis 논리 연결에 토큰 → UserPrincipal 정보를 캐싱하여
  * 매 요청마다 DB 조회 없이 인증 처리를 빠르게 수행합니다.</p>
  *
  * <p>캐시 키 형식:</p>

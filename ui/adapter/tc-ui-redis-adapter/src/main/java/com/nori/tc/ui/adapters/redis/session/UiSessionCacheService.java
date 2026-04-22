@@ -19,7 +19,7 @@ import java.util.Optional;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Business Redis(6380)를 이용한 인증 토큰 캐시 서비스입니다.
+ * Business Redis 논리 연결을 이용한 인증 토큰 캐시 서비스입니다.
  *
  * <p>{@link TokenCachePort}를 구현하며, 매 요청마다 DB를 조회하지 않고
  * Redis 캐시에서 {@link UserPrincipal}을 빠르게 조회할 수 있도록 합니다.</p>
