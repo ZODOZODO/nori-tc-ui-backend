@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Objects;
 
 /**
@@ -61,8 +63,18 @@ public class DemoInternalController {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "내부 API 토큰이 설정되지 않았습니다.");
         }
         final String actualHeaderValue = request.getHeader(expectedHeaderName);
-        if (!expectedHeaderValue.equals(actualHeaderValue)) {
+        if (!matchesSecret(expectedHeaderValue, actualHeaderValue)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "내부 API 인증에 실패했습니다.");
         }
+    }
+
+    private static boolean matchesSecret(final String expectedHeaderValue, final String actualHeaderValue) {
+        if (actualHeaderValue == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+                expectedHeaderValue.getBytes(StandardCharsets.UTF_8),
+                actualHeaderValue.getBytes(StandardCharsets.UTF_8)
+        );
     }
 }

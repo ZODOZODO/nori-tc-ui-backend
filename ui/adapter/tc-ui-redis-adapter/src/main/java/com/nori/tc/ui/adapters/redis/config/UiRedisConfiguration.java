@@ -23,11 +23,11 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * UI Backend Redis 이중 연결 + 직렬화 + Pub/Sub 설정 클래스입니다.
+ * UI Backend Redis 단일 연결 + 직렬화 + Pub/Sub 설정 클래스입니다.
  *
  * <p>핵심 목표:</p>
  * <ul>
- *   <li>Gateway Redis와 Business Redis를 논리적으로 분리된 연결로 관리합니다.</li>
+ *   <li>물리 Redis 연결은 1개만 생성하고, gateway/business는 논리 역할 이름으로만 유지합니다.</li>
  *   <li>기존 JDK 직렬화를 제거하고 JSON 직렬화로 통일합니다.</li>
  *   <li>DualResponse 완료 알림 채널을 Business Redis Pub/Sub로 수신합니다.</li>
  * </ul>
@@ -86,20 +86,30 @@ public class UiRedisConfiguration {
     }
 
     // -------------------------------------------------------------------------
-    // Gateway Redis (6379)
+    // Shared Redis connection
     // -------------------------------------------------------------------------
 
     /**
-     * Gateway Redis 연결 팩토리입니다.
+     * UI Backend 공용 Redis 연결 팩토리입니다.
+     *
+     * <p>기존 호출부 호환을 위해 gateway/business bean name은 alias로 유지합니다.</p>
      *
      * @param props Redis 연결 프로퍼티
-     * @return gateway 연결 팩토리
+     * @return UI Backend 공용 Redis 연결 팩토리
      */
-    @Bean(name = "gatewayLettuceConnectionFactory", destroyMethod = "destroy")
-    public LettuceConnectionFactory gatewayLettuceConnectionFactory(final UiRedisProperties props) {
-        final LettuceConnectionFactory factory = buildConnectionFactory(props.getGateway());
-        log.debug("Gateway Redis 연결 팩토리 생성 완료. host={}, port={}",
-                props.getGateway().getHost(), props.getGateway().getPort());
+    @Bean(
+            name = {
+                    "uiBackendLettuceConnectionFactory",
+                    "gatewayLettuceConnectionFactory",
+                    "businessLettuceConnectionFactory"
+            },
+            destroyMethod = "destroy"
+    )
+    public LettuceConnectionFactory uiBackendLettuceConnectionFactory(final UiRedisProperties props) {
+        final UiRedisProperties.RedisNodeProperties connection = props.getConnection();
+        final LettuceConnectionFactory factory = buildConnectionFactory(connection);
+        log.debug("UI Backend Redis 연결 팩토리 생성 완료. host={}, port={}",
+                connection.getHost(), connection.getPort());
         return factory;
     }
 
@@ -118,24 +128,6 @@ public class UiRedisConfiguration {
         final RedisTemplate<String, Object> template = buildTemplate(factory, valueSerializer);
         log.info("gatewayRedisTemplate 초기화 완료. serializer=RedisSerializer.json()");
         return template;
-    }
-
-    // -------------------------------------------------------------------------
-    // Business Redis logical connection
-    // -------------------------------------------------------------------------
-
-    /**
-     * Business Redis 연결 팩토리입니다.
-     *
-     * @param props Redis 연결 프로퍼티
-     * @return business 연결 팩토리
-     */
-    @Bean(name = "businessLettuceConnectionFactory", destroyMethod = "destroy")
-    public LettuceConnectionFactory businessLettuceConnectionFactory(final UiRedisProperties props) {
-        final LettuceConnectionFactory factory = buildConnectionFactory(props.getBusiness());
-        log.debug("Business Redis 연결 팩토리 생성 완료. host={}, port={}",
-                props.getBusiness().getHost(), props.getBusiness().getPort());
-        return factory;
     }
 
     /**
@@ -237,7 +229,11 @@ public class UiRedisConfiguration {
         final RedisStandaloneConfiguration config = new RedisStandaloneConfiguration();
         config.setHostName(node.getHost());
         config.setPort(node.getPort());
+        config.setDatabase(node.getDatabase());
 
+        if (node.getUsername() != null && !node.getUsername().isBlank()) {
+            config.setUsername(node.getUsername());
+        }
         if (node.getPassword() != null && !node.getPassword().isBlank()) {
             config.setPassword(RedisPassword.of(node.getPassword()));
         }

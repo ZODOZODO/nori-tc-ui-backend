@@ -44,7 +44,7 @@ import java.util.concurrent.Executor;
  * <ul>
  *   <li>{@link UiWebAdapterAutoConfiguration}  — Spring Security + REST Controller</li>
  *   <li>{@link UiKafkaAdapterAutoConfiguration} — Kafka Publisher/Subscriber + 토픽 설정</li>
- *   <li>{@link UiRedisAdapterAutoConfiguration} — Gateway/Business Redis 이중 연결</li>
+ *   <li>{@link UiRedisAdapterAutoConfiguration} — UI Backend 단일 Redis 연결</li>
  *   <li>{@link UiDbAdapterAutoConfiguration} — DB Port 구현 어댑터</li>
  * </ul>
  *
@@ -61,7 +61,7 @@ import java.util.concurrent.Executor;
         UiCoreModuleConfiguration.class,
         UiWebAdapterAutoConfiguration.class,   // Web: Controller + Security
         UiKafkaAdapterAutoConfiguration.class, // Kafka: Publisher/Subscriber + Listener config
-        UiRedisAdapterAutoConfiguration.class, // Redis: gateway/business template + Pub/Sub
+        UiRedisAdapterAutoConfiguration.class, // Redis: shared connection + logical templates + Pub/Sub
         UiDbAdapterAutoConfiguration.class     // DB: JPA Store Port adapter
 })
 public class TcUiBackendAutoConfiguration {
@@ -171,7 +171,7 @@ public class TcUiBackendAutoConfiguration {
      * 빠르게 확인할 수 있도록 compact summary 형식으로 출력합니다.</p>
      *
      * @param kafkaTopicProps Kafka 토픽 이름 바인딩 프로퍼티
-     * @param redisProps      Gateway / Business Redis 연결 설정 프로퍼티
+     * @param redisProps      UI Backend 단일 Redis 연결 설정 프로퍼티
      * @return ApplicationReadyEvent 기반 기동 완료 리스너
      */
     @Bean
@@ -183,7 +183,7 @@ public class TcUiBackendAutoConfiguration {
             // 각 구성 요소별 준비 완료 로그 — 기동 로그 검색 시 component 키워드로 필터링 가능
             log.info("UI_BOOT_COMPONENT_READY. component=WebSecurity");
             log.info("UI_BOOT_COMPONENT_READY. component=KafkaTopics");
-            log.info("UI_BOOT_COMPONENT_READY. component=DualRedis");
+            log.info("UI_BOOT_COMPONENT_READY. component=Redis");
             log.info("UI_BOOT_COMPONENT_READY. component=AuthExecutor");
 
             final String appName = event.getApplicationContext()
@@ -198,13 +198,12 @@ public class TcUiBackendAutoConfiguration {
                     sanitizeTopic(kafkaTopicProps.getGatewayEventsTopic()),
                     sanitizeTopic(kafkaTopicProps.getBusinessEventsTopic()));
 
-            // Redis 연결 정보: Gateway(DLQ/Quarantine 조회) + Business(DLQ + 토큰 캐시 + 비동기 결과)
-            final String gatewayRedis = buildRedisAddress(redisProps.getGateway());
-            final String businessRedis = buildRedisAddress(redisProps.getBusiness());
+            // Redis 연결 정보: 물리 Redis는 1개이고 gateway/business는 key prefix 기준의 논리 역할입니다.
+            final String redis = buildRedisAddress(redisProps.getConnection());
 
             // 기동 완료 요약 — 구성 이상 시 즉시 식별 가능한 단일 INFO 라인
-            log.info("UI_BOOT_READY. app={}, consume=[{}], produce=[{}], redis=[gateway:{}, business:{}]",
-                    appName, consumeTopics, produceTopics, gatewayRedis, businessRedis);
+            log.info("UI_BOOT_READY. app={}, consume=[{}], produce=[{}], redis={}",
+                    appName, consumeTopics, produceTopics, redis);
         };
     }
 
