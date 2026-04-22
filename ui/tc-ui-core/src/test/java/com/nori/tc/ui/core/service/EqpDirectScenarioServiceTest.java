@@ -241,6 +241,38 @@ class EqpDirectScenarioServiceTest {
         assertEquals(1, gatewayPublisher.messages.size());
     }
 
+    @Test
+    void passiveLifecycleCommandsAreRejectedBeforePublish() {
+        eqpCrudPort.put(snapshot("PASSIVE_001", 2L, "0.0.0.0", 7000, "EQP_PARAM_V1", 3001L, 4001L, "PASSIVE"));
+
+        final EqpCommandResult startResult = service.executeStart(
+                "PASSIVE_001",
+                "SOCKET",
+                reasonUiMessage("USER_REQUEST"),
+                "tester"
+        );
+        final EqpCommandResult endResult = service.executeEnd(
+                "PASSIVE_001",
+                "SOCKET",
+                reasonUiMessage("USER_REQUEST"),
+                "tester"
+        );
+        final EqpCommandResult reconnectResult = service.executeReconnect(
+                "PASSIVE_001",
+                "SOCKET",
+                reasonUiMessage("USER_REQUEST"),
+                "tester"
+        );
+
+        assertFalse(startResult.success());
+        assertFalse(endResult.success());
+        assertFalse(reconnectResult.success());
+        assertEquals(400, startResult.statusCode());
+        assertEquals(400, endResult.statusCode());
+        assertEquals(400, reconnectResult.statusCode());
+        assertTrue(gatewayPublisher.messages.isEmpty());
+    }
+
     private EqpDirectScenarioService newService() {
         final UiDeployProperties deployProperties = new UiDeployProperties(
                 "/home/donggeon/workspace_nori/nori-tc-ui-backend/ui/tc-ui-core/src/main/resources/deploy-scenarios",
@@ -470,13 +502,26 @@ class EqpDirectScenarioServiceTest {
             final Long gatewayJarRef,
             final Long businessJarRef
     ) {
+        return snapshot(eqpId, eqpKey, eqpIp, eqpPort, appliedParamVersion, gatewayJarRef, businessJarRef, "ACTIVE");
+    }
+
+    private EqpManagementSnapshot snapshot(
+            final String eqpId,
+            final long eqpKey,
+            final String eqpIp,
+            final int eqpPort,
+            final String appliedParamVersion,
+            final Long gatewayJarRef,
+            final Long businessJarRef,
+            final String commMode
+    ) {
         final OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         return new EqpManagementSnapshot(
                 new UiEqp(
                         eqpKey,
                         eqpId,
                         UiProtocolType.SOCKET,
-                        "ACTIVE",
+                        commMode,
                         false,
                         1,
                         eqpIp,

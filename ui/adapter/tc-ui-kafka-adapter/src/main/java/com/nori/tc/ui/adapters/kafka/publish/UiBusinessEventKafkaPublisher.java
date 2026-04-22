@@ -70,14 +70,15 @@ public class UiBusinessEventKafkaPublisher implements UiBusinessEventPublishPort
         final String traceId = message.traceId();
         final String eventType = message.eventType().name();
         final String source = message.source();
+        final String key = eqpId;
         final String topic = topicProperties.getBusinessEventsTopic();
 
         final int payloadBytes = estimatePayloadBytes(kafkaMessage);
         final int requestBytes = payloadBytes + KAFKA_RECORD_OVERHEAD_BYTES;
         if (requestBytes > publishProperties.getMaxRequestBytes()) {
             log.error(
-                    "Business 발행 차단: 메시지 크기 초과. topic={}, eqpId={}, traceId={}, eventType={}, payloadBytes={}, requestBytes={}, maxRequestBytes={}",
-                    topic, eqpId, traceId, eventType, payloadBytes, requestBytes, publishProperties.getMaxRequestBytes()
+                    "Business 발행 차단: outcome=REJECTED, reasonCode=MAX_REQUEST_BYTES_EXCEEDED, topic={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, payloadBytes={}, requestBytes={}, maxRequestBytes={}",
+                    topic, key, eqpId, traceId, source, eventType, payloadBytes, requestBytes, publishProperties.getMaxRequestBytes()
             );
             throw new UiKafkaPublishException(
                     "Business Kafka 발행 메시지 크기 초과",
@@ -87,11 +88,11 @@ public class UiBusinessEventKafkaPublisher implements UiBusinessEventPublishPort
             );
         }
 
-        final ProducerRecord<String, Object> record = new ProducerRecord<>(topic, eqpId, kafkaMessage);
+        final ProducerRecord<String, Object> record = new ProducerRecord<>(topic, key, kafkaMessage);
         KafkaHeaderSupport.addTracingHeaders(record, traceId, eventType, source);
 
-        log.info("tc.ui.events.business 발행 시도. topic={}, eqpId={}, traceId={}, eventType={}, requestBytes={}",
-                topic, eqpId, traceId, eventType, requestBytes);
+        log.info("tc.ui.events.business 발행 시도. outcome=REQUESTED, topic={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, requestBytes={}",
+                topic, key, eqpId, traceId, source, eventType, requestBytes);
 
         final long sendStartNano = System.nanoTime();
         final long publishTimeoutSeconds = publishProperties.getPublishTimeoutSeconds();
@@ -100,36 +101,36 @@ public class UiBusinessEventKafkaPublisher implements UiBusinessEventPublishPort
             final SendResult<String, Object> sendResult = kafkaTemplate.send(record)
                     .get(publishTimeoutSeconds, TimeUnit.SECONDS);
 
-            if (log.isDebugEnabled()) {
-                log.debug(
-                        "tc.ui.events.business 발행 완료. topic={}, partition={}, offset={}, eqpId={}, traceId={}, eventType={}, latencyMs={}",
-                        topic,
-                        sendResult.getRecordMetadata().partition(),
-                        sendResult.getRecordMetadata().offset(),
-                        eqpId,
-                        traceId,
-                        eventType,
-                        elapsedMillis(sendStartNano)
-                );
-            }
+            log.info(
+                    "tc.ui.events.business publish completed. outcome=PUBLISHED, topic={}, partition={}, offset={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, latencyMs={}",
+                    topic,
+                    sendResult.getRecordMetadata().partition(),
+                    sendResult.getRecordMetadata().offset(),
+                    key,
+                    eqpId,
+                    traceId,
+                    source,
+                    eventType,
+                    elapsedMillis(sendStartNano)
+            );
         } catch (TimeoutException e) {
             log.error(
-                    "tc.ui.events.business 발행 타임아웃. topic={}, eqpId={}, traceId={}, eventType={}, timeoutSeconds={}",
-                    topic, eqpId, traceId, eventType, publishTimeoutSeconds, e
+                    "tc.ui.events.business 발행 타임아웃. outcome=FAILED, reasonCode=PUBLISH_TIMEOUT, topic={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, timeoutSeconds={}",
+                    topic, key, eqpId, traceId, source, eventType, publishTimeoutSeconds, e
             );
             throw new UiKafkaPublishException("Business Kafka 발행 타임아웃", "BUSINESS", traceId, e);
         } catch (ExecutionException e) {
             final Throwable cause = e.getCause() != null ? e.getCause() : e;
             log.error(
-                    "tc.ui.events.business 발행 실패. topic={}, eqpId={}, traceId={}, eventType={}",
-                    topic, eqpId, traceId, eventType, cause
+                    "tc.ui.events.business 발행 실패. outcome=FAILED, reasonCode=PUBLISH_FAILED, topic={}, key={}, eqpId={}, traceId={}, source={}, eventType={}",
+                    topic, key, eqpId, traceId, source, eventType, cause
             );
             throw new UiKafkaPublishException("Business Kafka 발행 실패", "BUSINESS", traceId, cause);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error(
-                    "tc.ui.events.business 발행 인터럽트. topic={}, eqpId={}, traceId={}, eventType={}",
-                    topic, eqpId, traceId, eventType, e
+                    "tc.ui.events.business 발행 인터럽트. outcome=FAILED, reasonCode=PUBLISH_INTERRUPTED, topic={}, key={}, eqpId={}, traceId={}, source={}, eventType={}",
+                    topic, key, eqpId, traceId, source, eventType, e
             );
             throw new UiKafkaPublishException("Business Kafka 발행 인터럽트", "BUSINESS", traceId, e);
         }

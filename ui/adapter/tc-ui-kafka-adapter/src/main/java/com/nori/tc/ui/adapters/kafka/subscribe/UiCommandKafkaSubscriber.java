@@ -118,8 +118,8 @@ public class UiCommandKafkaSubscriber {
             incrementReceivedCounter(commandReply.eventType());
 
             log.info(
-                    "tc.ui.commands 수신. topic={}, partition={}, offset={}, eqpId={}, traceId={}, eventType={}, source={}",
-                    topic, partition, offset, key, commandReply.traceId(), commandReply.eventType(), commandReply.source()
+                    "tc.ui.commands 수신. outcome=RECEIVED, topic={}, partition={}, offset={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, status={}",
+                    topic, partition, offset, key, commandReply.eqpId(), commandReply.traceId(), commandReply.source(), commandReply.eventType(), commandReply.status()
             );
             if (log.isTraceEnabled()) {
                 log.trace(
@@ -133,8 +133,8 @@ public class UiCommandKafkaSubscriber {
             } catch (Exception ex) {
                 if (isInfrastructureException(ex)) {
                     log.error(
-                            "tc.ui.commands 처리 중 인프라 오류 - 재시도 위임. topic={}, partition={}, offset={}, traceId={}, eventType={}",
-                            topic, partition, offset, commandReply.traceId(), commandReply.eventType(), ex
+                            "tc.ui.commands 처리 중 인프라 오류 - 재시도 위임. outcome=RETRY_DELEGATED, topic={}, partition={}, offset={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, status={}",
+                            topic, partition, offset, key, commandReply.eqpId(), commandReply.traceId(), commandReply.source(), commandReply.eventType(), commandReply.status(), ex
                     );
                     if (ex instanceof RuntimeException runtimeEx) {
                         throw runtimeEx;
@@ -143,20 +143,18 @@ public class UiCommandKafkaSubscriber {
                 }
 
                 log.error(
-                        "tc.ui.commands 비즈니스 처리 실패 - ACK 후 skip. topic={}, partition={}, offset={}, traceId={}, eventType={}",
-                        topic, partition, offset, commandReply.traceId(), commandReply.eventType(), ex
+                        "tc.ui.commands 비즈니스 처리 실패 - ACK 후 skip. outcome=FAILED_ACK_SKIPPED, topic={}, partition={}, offset={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, status={}",
+                        topic, partition, offset, key, commandReply.eqpId(), commandReply.traceId(), commandReply.source(), commandReply.eventType(), commandReply.status(), ex
                 );
                 ack.acknowledge();
                 return;
             }
 
             ack.acknowledge();
-            if (log.isDebugEnabled()) {
-                log.debug(
-                        "tc.ui.commands 처리 완료 - offset 커밋. topic={}, partition={}, offset={}, traceId={}, eventType={}",
-                        topic, partition, offset, commandReply.traceId(), commandReply.eventType()
-                );
-            }
+            log.info(
+                    "tc.ui.commands 처리 완료 - offset 커밋. outcome=COMMITTED, topic={}, partition={}, offset={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, status={}",
+                    topic, partition, offset, key, commandReply.eqpId(), commandReply.traceId(), commandReply.source(), commandReply.eventType(), commandReply.status()
+            );
         }
     }
 
@@ -184,22 +182,24 @@ public class UiCommandKafkaSubscriber {
         incrementParseErrorCounter();
 
         log.warn(
-                "tc.ui.commands 파싱 실패 - ACK 후 skip. stage={}, topic={}, partition={}, offset={}, key={}, errorType={}, error={}",
+                "tc.ui.commands 파싱 실패 - ACK 후 skip. outcome=ABNORMAL_ACK_SKIPPED, stage={}, topic={}, partition={}, offset={}, key={}, eqpId={}, errorType={}, error={}",
                 stage,
                 record.topic(),
                 record.partition(),
                 record.offset(),
+                record.key(),
                 record.key(),
                 cause.getClass().getSimpleName(),
                 safeText(cause.getMessage())
         );
         if (log.isTraceEnabled()) {
             log.trace(
-                    "tc.ui.commands 파싱 실패 원문 payload. stage={}, topic={}, partition={}, offset={}, key={}, payload={}",
+                    "tc.ui.commands 파싱 실패 원문 payload. stage={}, topic={}, partition={}, offset={}, key={}, eqpId={}, payload={}",
                     stage,
                     record.topic(),
                     record.partition(),
                     record.offset(),
+                    record.key(),
                     record.key(),
                     safeText(record.value()),
                     cause
@@ -209,11 +209,12 @@ public class UiCommandKafkaSubscriber {
         ack.acknowledge();
         if (log.isDebugEnabled()) {
             log.debug(
-                    "tc.ui.commands 파싱 실패 레코드 ACK 완료. stage={}, topic={}, partition={}, offset={}, key={}",
+                    "tc.ui.commands 파싱 실패 레코드 ACK 완료. outcome=COMMITTED_AFTER_ABNORMAL, stage={}, topic={}, partition={}, offset={}, key={}, eqpId={}",
                     stage,
                     record.topic(),
                     record.partition(),
                     record.offset(),
+                    record.key(),
                     record.key()
             );
         }
@@ -260,7 +261,7 @@ public class UiCommandKafkaSubscriber {
             return UiTaskStatus.valueOf(rawStatus.trim().toUpperCase());
         } catch (Exception ex) {
             log.warn(
-                    "알 수 없는 STATUS 값 - FAIL로 보정. traceId={}, eventType={}, status={}",
+                    "알 수 없는 STATUS 값 - FAIL로 보정. outcome=ABNORMAL_DEFAULTED, traceId={}, eventType={}, status={}",
                     safeText(traceId), safeText(eventType), safeText(rawStatus)
             );
             return UiTaskStatus.FAIL;

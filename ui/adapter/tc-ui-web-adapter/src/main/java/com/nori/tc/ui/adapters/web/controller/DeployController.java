@@ -1,6 +1,5 @@
 package com.nori.tc.ui.adapters.web.controller;
 
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import com.nori.tc.ui.adapters.web.controller.support.UiPageRequestSupport;
 import com.nori.tc.ui.adapters.web.dto.request.DeployCreateRequest;
@@ -11,26 +10,17 @@ import com.nori.tc.ui.adapters.web.dto.response.DeployCreateResponse;
 import com.nori.tc.ui.adapters.web.dto.response.DeployHistoryPageResponse;
 import com.nori.tc.ui.adapters.web.dto.response.DeployRegisterScenarioPreviewResponse;
 import com.nori.tc.ui.adapters.web.dto.response.DeployRegisterTargetPageResponse;
-import com.nori.tc.ui.adapters.web.dto.response.DeployResultMessageResponse;
 import com.nori.tc.ui.adapters.web.dto.response.DeployScenarioCatalogResponse;
 import com.nori.tc.ui.adapters.web.dto.response.DeploySummaryResponse;
 import com.nori.tc.ui.adapters.web.dto.response.DeployTargetPageResponse;
 import com.nori.tc.ui.core.deploy.DeployCreateResult;
 import com.nori.tc.ui.core.deploy.DeployActionResult;
 import com.nori.tc.ui.core.deploy.DeployDeleteResult;
-import com.nori.tc.ui.core.deploy.DeployExecutionPolicy;
 import com.nori.tc.ui.core.deploy.DeployHistoryView;
-import com.nori.tc.ui.core.deploy.DeployPlanCommand;
-import com.nori.tc.ui.core.deploy.DeployResultMessage;
-import com.nori.tc.ui.core.deploy.DeployScenarioDefinition;
-import com.nori.tc.ui.core.deploy.DeployRegisterScenarioPreviewCommand;
 import com.nori.tc.ui.core.deploy.DeployRegisterScenarioPreviewResult;
-import com.nori.tc.ui.core.deploy.DeployStateOverview;
 import com.nori.tc.ui.core.deploy.DeploySummaryView;
-import com.nori.tc.ui.core.deploy.DeployTargetCounts;
 import com.nori.tc.ui.core.deploy.DeployTargetPage;
 import com.nori.tc.ui.core.deploy.DeployRegisterTargetView;
-import com.nori.tc.ui.core.deploy.DeployTargetSnapshot;
 import com.nori.tc.ui.core.deploy.DeployScenarioCatalog;
 import com.nori.tc.ui.core.service.DeployPlanner;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
@@ -54,9 +44,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Objects;
 
@@ -74,7 +62,8 @@ public class DeployController {
     private final DeployPlanner deployPlanner;
     private final DeployRegisterQueryService deployRegisterQueryService;
     private final DeployScenarioCatalogService deployScenarioCatalogService;
-    private final ObjectMapper objectMapper;
+    private final DeployControllerRequestMapper requestMapper;
+    private final DeployControllerResponseMapper responseMapper;
 
     public DeployController(
             final DeployService deployService,
@@ -93,7 +82,10 @@ public class DeployController {
                 deployScenarioCatalogService,
                 "deployScenarioCatalogService is null"
         );
-        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is null");
+        this.requestMapper = new DeployControllerRequestMapper(
+                Objects.requireNonNull(objectMapper, "objectMapper is null")
+        );
+        this.responseMapper = new DeployControllerResponseMapper();
     }
 
     /**
@@ -122,7 +114,7 @@ public class DeployController {
                 pageRequest
         );
 
-        return ResponseEntity.ok(ApiResponse.success(toRegisterTargetPageResponse(page)));
+        return ResponseEntity.ok(ApiResponse.success(responseMapper.toRegisterTargetPageResponse(page)));
     }
 
     /**
@@ -148,8 +140,8 @@ public class DeployController {
             @RequestParam(name = "limit", required = false) final Integer limit
     ) {
         final UiPageRequest pageRequest = UiPageRequestSupport.resolve(offset, limit);
-        final LocalDate fromLocalDate = parseLocalDate(fromDate, "fromDate");
-        final LocalDate toLocalDate = parseLocalDate(toDate, "toDate");
+        final LocalDate fromLocalDate = requestMapper.parseLocalDate(fromDate, "fromDate");
+        final LocalDate toLocalDate = requestMapper.parseLocalDate(toDate, "toDate");
         if (fromLocalDate != null && toLocalDate != null && toLocalDate.isBefore(fromLocalDate)) {
             throw new UiBadRequestException("toDate는 fromDate보다 빠를 수 없습니다.");
         }
@@ -163,7 +155,7 @@ public class DeployController {
                 pageRequest
         );
 
-        return ResponseEntity.ok(ApiResponse.success(toHistoryPageResponse(page)));
+        return ResponseEntity.ok(ApiResponse.success(responseMapper.toHistoryPageResponse(page)));
     }
 
     /**
@@ -179,21 +171,11 @@ public class DeployController {
             final Authentication authentication
     ) {
         final DeployCreateResult result = deployService.createDeploy(
-                toCommand(request),
+                requestMapper.toCommand(request),
                 resolveActor(authentication)
         );
 
-        final long deployKey = result.deployKey();
-        return ResponseEntity.accepted().body(ApiResponse.success(new DeployCreateResponse(
-                deployKey,
-                result.deployStatus().name(),
-                new DeployCreateResponse.PollingResponse(
-                        "/api/deploys/" + deployKey,
-                        "/api/deploys/" + deployKey + "/targets"
-                ),
-                result.resultCode(),
-                toResultMessage(result.resultMessage())
-        )));
+        return ResponseEntity.accepted().body(ApiResponse.success(responseMapper.toCreateResponse(result)));
     }
 
     /**
@@ -207,9 +189,9 @@ public class DeployController {
             @Valid @RequestBody final DeployRegisterScenarioPreviewRequest request
     ) {
         final DeployRegisterScenarioPreviewResult result = deployPlanner.previewRegisterScenarioSelection(
-                toPreviewCommand(request)
+                requestMapper.toPreviewCommand(request)
         );
-        return ResponseEntity.ok(ApiResponse.success(toRegisterScenarioPreviewResponse(result)));
+        return ResponseEntity.ok(ApiResponse.success(responseMapper.toRegisterScenarioPreviewResponse(result)));
     }
 
     /**
@@ -222,12 +204,12 @@ public class DeployController {
     public ResponseEntity<ApiResponse<DeployScenarioCatalogResponse>> getScenarios(
             @RequestParam(name = "eventType", required = false) final String eventType
     ) {
-        final UiCommandEventType eventTypeEnum = parseEventType(eventType);
+        final UiCommandEventType eventTypeEnum = requestMapper.parseEventType(eventType);
         final DeployScenarioCatalog catalog = deployScenarioCatalogService.currentCatalog();
         final List<DeployScenarioCatalogResponse.ScenarioSummary> scenarios = catalog.sortedScenarios().stream()
                 .filter(definition -> eventTypeEnum == null
                         || definition.appliesTo().eventTypes().contains(eventTypeEnum))
-                .map(DeployController::toScenarioSummary)
+                .map(responseMapper::toScenarioSummary)
                 .toList();
 
         return ResponseEntity.ok(ApiResponse.success(new DeployScenarioCatalogResponse(
@@ -254,14 +236,7 @@ public class DeployController {
             final Authentication authentication
     ) {
         final DeployActionResult result = deployService.cancelDeploy(deployKey, resolveActor(authentication));
-        return ResponseEntity.ok(ApiResponse.success(new DeployActionResponse(
-                result.deployKey(),
-                result.deployStatus().name(),
-                result.pauseRequested(),
-                null,
-                result.resultCode(),
-                toResultMessage(result.resultMessage())
-        )));
+        return ResponseEntity.ok(ApiResponse.success(responseMapper.toActionResponse(result)));
     }
 
     /**
@@ -277,14 +252,7 @@ public class DeployController {
             final Authentication authentication
     ) {
         final DeployActionResult result = deployService.startDeploy(deployKey, resolveActor(authentication));
-        return ResponseEntity.ok(ApiResponse.success(new DeployActionResponse(
-                result.deployKey(),
-                result.deployStatus().name(),
-                result.pauseRequested(),
-                null,
-                result.resultCode(),
-                toResultMessage(result.resultMessage())
-        )));
+        return ResponseEntity.ok(ApiResponse.success(responseMapper.toActionResponse(result)));
     }
 
     /**
@@ -300,14 +268,7 @@ public class DeployController {
             final Authentication authentication
     ) {
         final DeployActionResult result = deployService.holdDeploy(deployKey, resolveActor(authentication));
-        return ResponseEntity.ok(ApiResponse.success(new DeployActionResponse(
-                result.deployKey(),
-                result.deployStatus().name(),
-                result.pauseRequested(),
-                null,
-                result.resultCode(),
-                toResultMessage(result.resultMessage())
-        )));
+        return ResponseEntity.ok(ApiResponse.success(responseMapper.toActionResponse(result)));
     }
 
     /**
@@ -323,17 +284,7 @@ public class DeployController {
             final Authentication authentication
     ) {
         final DeployCreateResult result = deployService.redeploy(deployKey, resolveActor(authentication));
-        final long nextDeployKey = result.deployKey();
-        return ResponseEntity.accepted().body(ApiResponse.success(new DeployCreateResponse(
-                nextDeployKey,
-                result.deployStatus().name(),
-                new DeployCreateResponse.PollingResponse(
-                        "/api/deploys/" + nextDeployKey,
-                        "/api/deploys/" + nextDeployKey + "/targets"
-                ),
-                result.resultCode(),
-                toResultMessage(result.resultMessage())
-        )));
+        return ResponseEntity.accepted().body(ApiResponse.success(responseMapper.toCreateResponse(result)));
     }
 
     /**
@@ -349,14 +300,7 @@ public class DeployController {
             final Authentication authentication
     ) {
         final DeployDeleteResult result = deployService.deleteDeploy(deployKey, resolveActor(authentication));
-        return ResponseEntity.ok(ApiResponse.success(new DeployActionResponse(
-                result.deployKey(),
-                null,
-                null,
-                result.deleted(),
-                result.resultCode(),
-                toResultMessage(result.resultMessage())
-        )));
+        return ResponseEntity.ok(ApiResponse.success(responseMapper.toDeleteActionResponse(result)));
     }
 
     /**
@@ -370,7 +314,7 @@ public class DeployController {
             @PathVariable final long deployKey
     ) {
         final DeploySummaryView summary = deployService.getDeploySummary(deployKey);
-        return ResponseEntity.ok(ApiResponse.success(toSummaryResponse(summary)));
+        return ResponseEntity.ok(ApiResponse.success(responseMapper.toSummaryResponse(summary)));
     }
 
     /**
@@ -398,241 +342,7 @@ public class DeployController {
                 statusFilter,
                 eqpIdFilter
         );
-        return ResponseEntity.ok(ApiResponse.success(toTargetPageResponse(targetPage)));
-    }
-
-    private DeployPlanCommand toCommand(final DeployCreateRequest request) {
-        try {
-            return new DeployPlanCommand(
-                    request.deployName(),
-                    UiCommandEventType.fromText(request.eventType()),
-                    DeployExecutionPolicy.fromText(request.executionPolicy()),
-                    new DeployPlanCommand.CommonRequest(
-                            request.commonRequest().interfaceType(),
-                            toJsonObject(request.commonRequest().uiMessage(), "commonRequest.uiMessage"),
-                            request.commonRequest().resolvedScenarioCode()
-                    ),
-                    request.targets().stream()
-                            .map(target -> new DeployPlanCommand.TargetRequest(
-                                    target.eqpId(),
-                                    toJsonObject(target.uiMessageOverride(), "targets[].uiMessageOverride")
-                            ))
-                            .toList()
-            );
-        } catch (IllegalArgumentException exception) {
-            throw new UiBadRequestException(exception.getMessage());
-        }
-    }
-
-    private DeployRegisterScenarioPreviewCommand toPreviewCommand(
-            final DeployRegisterScenarioPreviewRequest request
-    ) {
-        try {
-            return new DeployRegisterScenarioPreviewCommand(
-                    request.commonRequest().interfaceType(),
-                    toJsonObject(request.commonRequest().uiMessage(), "commonRequest.uiMessage"),
-                    request.targets().stream()
-                            .map(target -> new DeployRegisterScenarioPreviewCommand.TargetRequest(
-                                    target.eqpId(),
-                                    toJsonObject(target.uiMessageOverride(), "targets[].uiMessageOverride")
-                            ))
-                            .toList()
-            );
-        } catch (IllegalArgumentException exception) {
-            throw new UiBadRequestException(exception.getMessage());
-        }
-    }
-
-    private DeployRegisterScenarioPreviewResponse toRegisterScenarioPreviewResponse(
-            final DeployRegisterScenarioPreviewResult result
-    ) {
-        return new DeployRegisterScenarioPreviewResponse(
-                result.removedEqpIds(),
-                result.remainingEqpIds(),
-                result.unionChangeKinds().stream().map(Enum::name).sorted().toList(),
-                result.recommendedScenarioCode(),
-                result.recommendedReason(),
-                result.scenarios().stream()
-                        .map(candidate -> new DeployRegisterScenarioPreviewResponse.ScenarioCandidate(
-                                candidate.code(),
-                                candidate.name(),
-                                candidate.summary(),
-                                candidate.version(),
-                                candidate.stepCount(),
-                                candidate.coversChangeKinds().stream().map(Enum::name).sorted().toList(),
-                                candidate.recommended(),
-                                candidate.selectable(),
-                                candidate.reason()
-                        ))
-                        .toList()
-        );
-    }
-
-    private DeploySummaryResponse toSummaryResponse(final DeploySummaryView summary) {
-        return new DeploySummaryResponse(
-                summary.deployKey(),
-                summary.deployName(),
-                summary.eventType().name(),
-                summary.resolvedScenarioCode(),
-                toStateOverviewResponse(summary.asIsState()),
-                summary.deployStatus().name(),
-                summary.pauseRequested(),
-                summary.executionPolicy().name(),
-                toIso(summary.createdAt()),
-                toIso(summary.startedAt()),
-                toIso(summary.finishedAt()),
-                toTargetSummaryResponse(summary.targetSummary()),
-                summary.terminal(),
-                summary.popupRequired(),
-                summary.resultCode(),
-                toResultMessage(summary.resultMessage())
-        );
-    }
-
-    private DeploySummaryResponse.StateOverviewResponse toStateOverviewResponse(final DeployStateOverview overview) {
-        if (overview == null) {
-            return null;
-        }
-        return new DeploySummaryResponse.StateOverviewResponse(
-                overview.interfaceType(),
-                overview.modelName(),
-                overview.modelVersion(),
-                overview.businessJarName(),
-                overview.eqpParamVersion()
-        );
-    }
-
-    private DeploySummaryResponse.TargetSummaryResponse toTargetSummaryResponse(final DeployTargetCounts counts) {
-        return new DeploySummaryResponse.TargetSummaryResponse(
-                counts.total(),
-                counts.pending(),
-                counts.noChange(),
-                counts.running(),
-                counts.completed(),
-                counts.failed(),
-                counts.rollingBack(),
-                counts.rolledBack(),
-                counts.compensationFailed(),
-                counts.canceled()
-        );
-    }
-
-    private DeployTargetPageResponse toTargetPageResponse(final DeployTargetPage page) {
-        final List<DeployTargetPageResponse.DeployTargetResponse> targets = page.targets().stream()
-                .map(this::toTargetResponse)
-                .toList();
-
-        return new DeployTargetPageResponse(
-                page.deployKey(),
-                page.page(),
-                page.size(),
-                page.totalElements(),
-                page.totalPages(),
-                targets
-        );
-    }
-
-    private DeployTargetPageResponse.DeployTargetResponse toTargetResponse(final DeployTargetSnapshot target) {
-        return new DeployTargetPageResponse.DeployTargetResponse(
-                target.deployTargetKey(),
-                target.eqpId(),
-                target.targetStatus().name(),
-                target.currentStepOrder(),
-                target.currentStepCode(),
-                target.currentStepStatus() == null ? null : target.currentStepStatus().name(),
-                target.rollbackRequired(),
-                target.lastErrorCode(),
-                target.lastErrorMessage(),
-                toIso(target.updatedAt())
-        );
-    }
-
-    private DeployRegisterTargetPageResponse toRegisterTargetPageResponse(
-            final PagedResponse<DeployRegisterTargetView> page
-    ) {
-        return new DeployRegisterTargetPageResponse(
-                page.items().stream()
-                        .map(this::toRegisterTargetResponse)
-                        .toList(),
-                page.offset(),
-                page.limit(),
-                page.count()
-        );
-    }
-
-    private DeployHistoryPageResponse toHistoryPageResponse(final PagedResponse<DeployHistoryView> page) {
-        return new DeployHistoryPageResponse(
-                page.items().stream()
-                        .map(this::toHistoryResponse)
-                        .toList(),
-                page.offset(),
-                page.limit(),
-                page.count()
-        );
-    }
-
-    private DeployRegisterTargetPageResponse.DeployRegisterTargetResponse toRegisterTargetResponse(
-            final DeployRegisterTargetView item
-    ) {
-        return new DeployRegisterTargetPageResponse.DeployRegisterTargetResponse(
-                item.eqpKey(),
-                item.eqpId(),
-                item.commInterface(),
-                item.enabled(),
-                item.modelVersionKey(),
-                item.modelName(),
-                item.modelVersion(),
-                item.modelStatus(),
-                item.businessJarRef(),
-                item.businessJarFileName(),
-                item.appliedParamVersion(),
-                item.blockedByActiveDeploy(),
-                item.activeDeployKey(),
-                item.activeDeployStatus(),
-                item.activeDeployName(),
-                item.activeRequestedBy()
-        );
-    }
-
-    private DeployHistoryPageResponse.DeployHistoryResponse toHistoryResponse(final DeployHistoryView item) {
-        return new DeployHistoryPageResponse.DeployHistoryResponse(
-                item.deployKey(),
-                item.deployName(),
-                item.eventType().name(),
-                item.deployStatus().name(),
-                item.pauseRequested(),
-                item.executionPolicy().name(),
-                item.requestedBy(),
-                toIso(item.createdAt()),
-                toIso(item.startedAt()),
-                toIso(item.finishedAt()),
-                item.terminal(),
-                item.interfaceType(),
-                item.selectedModelName(),
-                item.selectedModelVersion(),
-                item.selectedBusinessJarName(),
-                toTargetSummaryResponse(item.targetSummary())
-        );
-    }
-
-    private static DeployScenarioCatalogResponse.ScenarioSummary toScenarioSummary(
-            final DeployScenarioDefinition definition
-    ) {
-        return new DeployScenarioCatalogResponse.ScenarioSummary(
-                definition.scenario().code(),
-                definition.scenario().name(),
-                definition.scenario().summary(),
-                definition.version(),
-                definition.steps().size()
-        );
-    }
-
-    private DeployResultMessageResponse toResultMessage(final DeployResultMessage resultMessage) {
-        return new DeployResultMessageResponse(
-                resultMessage.title(),
-                resultMessage.message(),
-                resultMessage.severity().name()
-        );
+        return ResponseEntity.ok(ApiResponse.success(responseMapper.toTargetPageResponse(targetPage)));
     }
 
     private static String resolveActor(final Authentication authentication) {
@@ -645,49 +355,5 @@ public class DeployController {
             return principal.userId().trim();
         }
         return DEFAULT_ACTOR;
-    }
-
-    private static String toIso(final OffsetDateTime value) {
-        return value == null ? null : value.toString();
-    }
-
-    private static LocalDate parseLocalDate(
-            final String rawDate,
-            final String fieldName
-    ) {
-        if (rawDate == null || rawDate.isBlank()) {
-            return null;
-        }
-        try {
-            return LocalDate.parse(rawDate.trim());
-        } catch (DateTimeParseException exception) {
-            throw new UiBadRequestException(fieldName + "는 yyyy-MM-dd 형식이어야 합니다.");
-        }
-    }
-
-    private static UiCommandEventType parseEventType(final String rawEventType) {
-        if (rawEventType == null || rawEventType.isBlank()) {
-            return null;
-        }
-
-        try {
-            return UiCommandEventType.fromText(rawEventType);
-        } catch (IllegalArgumentException exception) {
-            throw new UiBadRequestException(exception.getMessage());
-        }
-    }
-
-    private JsonNode toJsonObject(
-            final Object value,
-            final String fieldName
-    ) {
-        if (value == null) {
-            return null;
-        }
-        final JsonNode jsonNode = objectMapper.valueToTree(value);
-        if (!jsonNode.isObject()) {
-            throw new UiBadRequestException(fieldName + " 는 JSON object 여야 합니다.");
-        }
-        return jsonNode;
     }
 }

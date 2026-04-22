@@ -10,6 +10,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.Objects;
+
 /**
  * tc.ui.commands 토픽 수신 메시지 처리 서비스입니다.
  *
@@ -54,9 +56,9 @@ public class UiCommandIngressService implements UiCommandIngressPort {
             final DualResponseRegistry dualResponseRegistry,
             final AsyncResultStorePort asyncResultStorePort
     ) {
-        this.deployService = deployService;
-        this.dualResponseRegistry = dualResponseRegistry;
-        this.asyncResultStorePort = asyncResultStorePort;
+        this.deployService = Objects.requireNonNull(deployService, "deployService is null");
+        this.dualResponseRegistry = Objects.requireNonNull(dualResponseRegistry, "dualResponseRegistry is null");
+        this.asyncResultStorePort = Objects.requireNonNull(asyncResultStorePort, "asyncResultStorePort is null");
     }
 
     /**
@@ -70,6 +72,8 @@ public class UiCommandIngressService implements UiCommandIngressPort {
      */
     @Override
     public void handle(final UiCommandReply reply) {
+        Objects.requireNonNull(reply, "reply is null");
+
         if (deployService.handleReply(reply)) {
             return;
         }

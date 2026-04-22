@@ -86,13 +86,14 @@ public class UiGatewayEventKafkaPublisher implements UiGatewayEventPublishPort {
         final String traceId = message.traceId();
         final String eventType = message.eventType().name();
         final String source = message.source();
+        final String key = eqpId;
         final String topic = topicProperties.getGatewayEventsTopic();
 
         final Optional<Integer> routePartitionOpt = routePartitionLookupPort.findRoutePartition(eqpId);
         if (routePartitionOpt.isEmpty()) {
             log.error(
-                    "tc.ui.events.gateway 발행 차단: route_partition 미배정. topic={}, eqpId={}, traceId={}, eventType={}, reason={}",
-                    topic, eqpId, traceId, eventType, REASON_NO_ROUTE_PARTITION
+                    "tc.ui.events.gateway 발행 차단: outcome=REJECTED, topic={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, reason={}",
+                    topic, key, eqpId, traceId, source, eventType, REASON_NO_ROUTE_PARTITION
             );
             throw new IllegalStateException(
                     "Gateway 발행 실패: eqpId=" + eqpId + "에 route_partition이 배정되지 않았습니다."
@@ -102,8 +103,8 @@ public class UiGatewayEventKafkaPublisher implements UiGatewayEventPublishPort {
         final int routePartition = routePartitionOpt.get();
         if (routePartition < 0) {
             log.error(
-                    "tc.ui.events.gateway 발행 차단: route_partition 음수. topic={}, eqpId={}, traceId={}, eventType={}, routePartition={}, reason={}",
-                    topic, eqpId, traceId, eventType, routePartition, REASON_NEGATIVE_PARTITION
+                    "tc.ui.events.gateway 발행 차단: outcome=REJECTED, topic={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, routePartition={}, reason={}",
+                    topic, key, eqpId, traceId, source, eventType, routePartition, REASON_NEGATIVE_PARTITION
             );
             throw new IllegalStateException(
                     "Gateway 발행 실패: eqpId=" + eqpId + "의 route_partition=" + routePartition + "은 유효하지 않습니다."
@@ -114,8 +115,8 @@ public class UiGatewayEventKafkaPublisher implements UiGatewayEventPublishPort {
         final int requestBytes = payloadBytes + KAFKA_RECORD_OVERHEAD_BYTES;
         if (requestBytes > publishProperties.getMaxRequestBytes()) {
             log.error(
-                    "Gateway 발행 차단: 메시지 크기 초과. topic={}, eqpId={}, traceId={}, eventType={}, payloadBytes={}, requestBytes={}, maxRequestBytes={}",
-                    topic, eqpId, traceId, eventType, payloadBytes, requestBytes, publishProperties.getMaxRequestBytes()
+                    "Gateway 발행 차단: outcome=REJECTED, reasonCode=MAX_REQUEST_BYTES_EXCEEDED, topic={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, payloadBytes={}, requestBytes={}, maxRequestBytes={}",
+                    topic, key, eqpId, traceId, source, eventType, payloadBytes, requestBytes, publishProperties.getMaxRequestBytes()
             );
             throw new UiKafkaPublishException(
                     "Gateway Kafka 발행 메시지 크기 초과",
@@ -125,11 +126,11 @@ public class UiGatewayEventKafkaPublisher implements UiGatewayEventPublishPort {
             );
         }
 
-        final ProducerRecord<String, Object> record = new ProducerRecord<>(topic, routePartition, eqpId, kafkaMessage);
+        final ProducerRecord<String, Object> record = new ProducerRecord<>(topic, routePartition, key, kafkaMessage);
         KafkaHeaderSupport.addTracingHeaders(record, traceId, eventType, source);
 
-        log.info("tc.ui.events.gateway 발행 시도. topic={}, partition={}, eqpId={}, traceId={}, eventType={}, requestBytes={}",
-                topic, routePartition, eqpId, traceId, eventType, requestBytes);
+        log.info("tc.ui.events.gateway 발행 시도. outcome=REQUESTED, topic={}, partition={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, requestBytes={}",
+                topic, routePartition, key, eqpId, traceId, source, eventType, requestBytes);
 
         final long sendStartNano = System.nanoTime();
         final long publishTimeoutSeconds = publishProperties.getPublishTimeoutSeconds();
@@ -137,36 +138,36 @@ public class UiGatewayEventKafkaPublisher implements UiGatewayEventPublishPort {
         try {
             final SendResult<String, Object> sendResult = kafkaTemplate.send(record)
                     .get(publishTimeoutSeconds, TimeUnit.SECONDS);
-            if (log.isDebugEnabled()) {
-                log.debug(
-                        "tc.ui.events.gateway 발행 완료. topic={}, partition={}, offset={}, eqpId={}, traceId={}, eventType={}, latencyMs={}",
-                        topic,
-                        sendResult.getRecordMetadata().partition(),
-                        sendResult.getRecordMetadata().offset(),
-                        eqpId,
-                        traceId,
-                        eventType,
-                        elapsedMillis(sendStartNano)
-                );
-            }
+            log.info(
+                    "tc.ui.events.gateway publish completed. outcome=PUBLISHED, topic={}, partition={}, offset={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, latencyMs={}",
+                    topic,
+                    sendResult.getRecordMetadata().partition(),
+                    sendResult.getRecordMetadata().offset(),
+                    key,
+                    eqpId,
+                    traceId,
+                    source,
+                    eventType,
+                    elapsedMillis(sendStartNano)
+            );
         } catch (TimeoutException e) {
             log.error(
-                    "tc.ui.events.gateway 발행 타임아웃. topic={}, partition={}, eqpId={}, traceId={}, eventType={}, timeoutSeconds={}",
-                    topic, routePartition, eqpId, traceId, eventType, publishTimeoutSeconds, e
+                    "tc.ui.events.gateway 발행 타임아웃. outcome=FAILED, reasonCode=PUBLISH_TIMEOUT, topic={}, partition={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, timeoutSeconds={}",
+                    topic, routePartition, key, eqpId, traceId, source, eventType, publishTimeoutSeconds, e
             );
             throw new UiKafkaPublishException("Gateway Kafka 발행 타임아웃", "GATEWAY", traceId, e);
         } catch (ExecutionException e) {
             final Throwable cause = e.getCause() != null ? e.getCause() : e;
             log.error(
-                    "tc.ui.events.gateway 발행 실패. topic={}, partition={}, eqpId={}, traceId={}, eventType={}",
-                    topic, routePartition, eqpId, traceId, eventType, cause
+                    "tc.ui.events.gateway 발행 실패. outcome=FAILED, reasonCode=PUBLISH_FAILED, topic={}, partition={}, key={}, eqpId={}, traceId={}, source={}, eventType={}",
+                    topic, routePartition, key, eqpId, traceId, source, eventType, cause
             );
             throw new UiKafkaPublishException("Gateway Kafka 발행 실패", "GATEWAY", traceId, cause);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error(
-                    "tc.ui.events.gateway 발행 인터럽트. topic={}, partition={}, eqpId={}, traceId={}, eventType={}",
-                    topic, routePartition, eqpId, traceId, eventType, e
+                    "tc.ui.events.gateway 발행 인터럽트. outcome=FAILED, reasonCode=PUBLISH_INTERRUPTED, topic={}, partition={}, key={}, eqpId={}, traceId={}, source={}, eventType={}",
+                    topic, routePartition, key, eqpId, traceId, source, eventType, e
             );
             throw new UiKafkaPublishException("Gateway Kafka 발행 인터럽트", "GATEWAY", traceId, e);
         }

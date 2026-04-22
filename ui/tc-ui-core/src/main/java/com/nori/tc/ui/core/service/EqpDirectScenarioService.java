@@ -230,6 +230,7 @@ public class EqpDirectScenarioService {
         try {
             validator.validateEqpId(eqpId);
             final EqpManagementSnapshot existingSnapshot = requireExistingSnapshot(eqpId);
+            rejectPassiveLifecycleEvent(eventType, existingSnapshot);
             final String interfaceType = resolveInterfaceType(requestedInterfaceType, existingSnapshot);
             final DeployTargetPlanDraft planDraft = planner.plan(eventType, eqpId, interfaceType, uiMessage);
             final EqpDirectScenarioContext context = localMutationCoordinator.prepareExistingStateEvent(
@@ -466,6 +467,25 @@ public class EqpDirectScenarioService {
             return requestedInterfaceType.trim();
         }
         return snapshot.eqp().commInterface().name();
+    }
+
+    private void rejectPassiveLifecycleEvent(
+            final UiCommandEventType eventType,
+            final EqpManagementSnapshot snapshot
+    ) {
+        if (!isLifecycleEvent(eventType)) {
+            return;
+        }
+        final String commMode = snapshot.eqp().commMode();
+        if ("PASSIVE".equalsIgnoreCase(commMode == null ? "" : commMode.trim())) {
+            throw new UiBadRequestException("PASSIVE 설비는 Start/End/Restart 명령 대상이 아닙니다.");
+        }
+    }
+
+    private boolean isLifecycleEvent(final UiCommandEventType eventType) {
+        return eventType == UiCommandEventType.EQP_START
+                || eventType == UiCommandEventType.EQP_END
+                || eventType == UiCommandEventType.EQP_RECONNECT;
     }
 
     private String newExecutionId() {

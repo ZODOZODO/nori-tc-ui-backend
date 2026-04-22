@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -38,6 +39,19 @@ class UiCommandIngressServiceTest {
         dualResponseRedisPort = new RecordingDualResponseRedisPort();
         dualResponseRegistry = new DualResponseRegistry(dualResponseRedisPort);
         ingressService = new UiCommandIngressService(deployService, dualResponseRegistry, asyncResultStorePort);
+    }
+
+    @Test
+    void handleShouldRejectNullReplyBeforeRouting() {
+        final NullPointerException exception = assertThrows(
+                NullPointerException.class,
+                () -> ingressService.handle(null)
+        );
+
+        assertEquals("reply is null", exception.getMessage());
+        verify(deployService, never()).handleReply(any());
+        verify(asyncResultStorePort, never()).markCompleted(any(), any());
+        assertEquals(0, dualResponseRedisPort.recordedResults.size());
     }
 
     @Test
