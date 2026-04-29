@@ -50,6 +50,7 @@ public class DeployPlanningStateJdbcPort implements DeployPlanningStatePort {
                                e.applied_param_version,
                                e.gateway_jar_key,
                                e.business_jar_key,
+                               e.route_partition,
                                s.socket_protocol_type,
                                h.device_id AS hsms_device_id
                           FROM tc_eqp e
@@ -87,6 +88,7 @@ public class DeployPlanningStateJdbcPort implements DeployPlanningStatePort {
                 nullableLong(resultSet, "business_jar_key"),
                 resultSet.getString("socket_protocol_type"),
                 nullableInt(resultSet, "hsms_device_id"),
+                nullableInt(resultSet, "route_partition"),
                 equipmentProfile
         );
     }

@@ -60,6 +60,7 @@ class DeployPlanningServiceTest {
                         4001L,
                         "TEST01",
                         null,
+                        0,
                         null
                 )),
                 catalogService,

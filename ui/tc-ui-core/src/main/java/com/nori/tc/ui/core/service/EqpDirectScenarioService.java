@@ -12,12 +12,14 @@ import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.core.model.UiCommandEventType;
+import com.nori.tc.ui.core.port.db.DemoJobCleanupPort;
 import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -38,6 +40,7 @@ public class EqpDirectScenarioService {
     private final EqpDirectScenarioPlanner planner;
     private final EqpDirectScenarioLocalMutationCoordinator localMutationCoordinator;
     private final EqpDirectScenarioRunner runner;
+    private final DemoJobCleanupPort demoJobCleanupPort;
     private final ObjectMapper objectMapper;
     private final ModelParamPayloadSupport modelParamPayloadSupport;
 
@@ -47,6 +50,7 @@ public class EqpDirectScenarioService {
             final EqpDirectScenarioPlanner planner,
             final EqpDirectScenarioLocalMutationCoordinator localMutationCoordinator,
             final EqpDirectScenarioRunner runner,
+            final DemoJobCleanupPort demoJobCleanupPort,
             final ModelDetailQueryPort modelDetailQueryPort,
             final ObjectMapper objectMapper
     ) {
@@ -55,6 +59,7 @@ public class EqpDirectScenarioService {
         this.planner = Objects.requireNonNull(planner, "planner is null");
         this.localMutationCoordinator = Objects.requireNonNull(localMutationCoordinator, "localMutationCoordinator is null");
         this.runner = Objects.requireNonNull(runner, "runner is null");
+        this.demoJobCleanupPort = Objects.requireNonNull(demoJobCleanupPort, "demoJobCleanupPort is null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is null");
         this.modelParamPayloadSupport = new ModelParamPayloadSupport(
                 Objects.requireNonNull(modelDetailQueryPort, "modelDetailQueryPort is null"),
@@ -99,6 +104,12 @@ public class EqpDirectScenarioService {
             validator.validateEqpId(eqpId);
             final EqpManagementSnapshot existingSnapshot = requireExistingSnapshot(eqpId);
             validator.validateUpdateCommand(command, existingSnapshot);
+            // routePartition 변경은 Gateway listener bind / outbound 연결의 라우팅 책임을 옮기는 행위이므로
+            // EQP가 운영 중(STARTED)인 상태에서 즉시 변경을 허용하면 진행 중 메시지가 잘못된 partition으로 라우팅되거나
+            // 새 owner Gateway 인스턴스가 listener를 미리 bind하지 못하는 race condition이 발생할 수 있습니다.
+            // 정합성을 위해 STARTED 상태에서는 routePartition 변경을 명시적으로 거부합니다.
+            // (PASSIVE listener-group routePartition 일관성은 JpaEqpCrudPort의 별도 가드가 함께 보호합니다.)
+            rejectRoutePartitionChangeOnStartedEquipment(existingSnapshot, command);
 
             final JsonNode uiMessage = buildManagementUiMessage(existingSnapshot.eqp().commInterface(), command);
             final DeployTargetPlanDraft planDraft = planner.plan(
@@ -127,13 +138,19 @@ public class EqpDirectScenarioService {
         try {
             validator.validateEqpId(eqpId);
             final EqpManagementSnapshot existingSnapshot = requireExistingSnapshot(eqpId);
+            // 활성 demo job이 있으면 tc_demo_job FK 위반으로 finalize 단계에서 실패하므로,
+            // Gateway/Business 정리에 들어가기 전에 미리 거부합니다.
+            rejectIfActiveDemoJobExists(existingSnapshot);
             final String interfaceType = existingSnapshot.eqp().commInterface().name();
             final JsonNode uiMessage = deleteUiMessage();
+            // PASSIVE 설비는 EQP_END lifecycle을 지원하지 않으므로 END_EQP_IF_RUNNING 단계가 빠진 전용 시나리오를 사용합니다.
+            final String resolvedScenarioCode = resolveDeleteScenarioCode(existingSnapshot);
             final DeployTargetPlanDraft planDraft = planner.plan(
                     UiCommandEventType.EQP_DELETE,
                     eqpId,
                     interfaceType,
-                    uiMessage
+                    uiMessage,
+                    resolvedScenarioCode
             );
             final EqpDirectScenarioContext context = localMutationCoordinator.prepareExistingStateEvent(
                     newExecutionId(),
@@ -149,6 +166,23 @@ public class EqpDirectScenarioService {
             return EqpCommandResult.ok();
         } catch (Exception exception) {
             return toCommandResult(exception);
+        }
+    }
+
+    private String resolveDeleteScenarioCode(final EqpManagementSnapshot snapshot) {
+        final String commMode = snapshot.eqp().commMode();
+        if ("PASSIVE".equalsIgnoreCase(commMode == null ? "" : commMode.trim())) {
+            return "EQP_DELETE_SAFE_PASSIVE";
+        }
+        return "EQP_DELETE_SAFE";
+    }
+
+    private void rejectIfActiveDemoJobExists(final EqpManagementSnapshot snapshot) {
+        final List<String> activeJobIds = demoJobCleanupPort.findActiveDemoJobIds(snapshot.eqp().eqpKey());
+        if (!activeJobIds.isEmpty()) {
+            throw new UiConflictException(
+                    "해당 설비에서 실행 중인 demo job이 있어 삭제할 수 없습니다. demoJobIds=" + activeJobIds
+            );
         }
     }
 
@@ -266,6 +300,7 @@ public class EqpDirectScenarioService {
                 command.modelVersionKey(),
                 command.gatewayJarRef(),
                 command.businessJarRef(),
+                command.routePartition(),
                 command.hsmsSettings(),
                 command.socketSettings()
         );
@@ -282,6 +317,10 @@ public class EqpDirectScenarioService {
         gatewayProfile.put("connectionMode", command.commMode());
         gatewayProfile.put("eqpIp", command.eqpIp());
         gatewayProfile.put("eqpPort", command.eqpPort());
+        // routePartition은 deploy planner가 delta를 계산하는 데 사용되며, 변경되면 Business runtime cache 갱신 step이 트리거됩니다.
+        if (command.routePartition() != null) {
+            gatewayProfile.put("routePartition", command.routePartition());
+        }
 
         if (command.socketSettings() != null) {
             gatewayProfile.put("socketType", command.socketSettings().socketProtocolType());
@@ -357,6 +396,7 @@ public class EqpDirectScenarioService {
             final long modelVersionKey,
             final Long gatewayJarRef,
             final Long businessJarRef,
+            final Integer routePartition,
             final EqpManagementCommand.HsmsSettings hsmsSettings,
             final EqpManagementCommand.SocketSettings socketSettings
     ) {
@@ -369,6 +409,9 @@ public class EqpDirectScenarioService {
         gatewayProfile.put("connectionMode", commMode);
         gatewayProfile.put("eqpIp", eqpIp);
         gatewayProfile.put("eqpPort", eqpPort);
+        if (routePartition != null) {
+            gatewayProfile.put("routePartition", routePartition);
+        }
 
         if (socketSettings != null) {
             gatewayProfile.put("socketType", socketSettings.socketProtocolType());
@@ -486,6 +529,38 @@ public class EqpDirectScenarioService {
         return eventType == UiCommandEventType.EQP_START
                 || eventType == UiCommandEventType.EQP_END
                 || eventType == UiCommandEventType.EQP_RECONNECT;
+    }
+
+    /**
+     * EQP가 STARTED 상태(controlState == REMOTE 또는 LOCAL)이면서 routePartition이 변경되는 경우 거부합니다.
+     *
+     * <p>routePartition 변경은 Gateway equipment context와 Business runtime cache 양쪽을 갱신하는 시나리오 step으로
+     * 처리되지만, EQP가 운영 중인 상태에서는 이미 진행 중인 메시지/연결이 잘못된 partition으로 흘러갈 위험이 있습니다.
+     * 따라서 routePartition 변경은 EQP가 OFFLINE/DOWN 상태일 때만 허용하고, 운영 중인 경우 운영자가 명시적으로
+     * EQP를 END한 뒤 변경하고 다시 START 하도록 강제합니다.</p>
+     */
+    private void rejectRoutePartitionChangeOnStartedEquipment(
+            final EqpManagementSnapshot existingSnapshot,
+            final EqpManagementCommand.Update command
+    ) {
+        final Integer newRoutePartition = command.routePartition();
+        if (newRoutePartition == null) {
+            return;
+        }
+        if (Objects.equals(newRoutePartition, existingSnapshot.eqp().routePartition())) {
+            return;
+        }
+        final var runtimeState = existingSnapshot.runtimeState();
+        if (runtimeState == null || runtimeState.controlState() == null) {
+            return;
+        }
+        final String controlStateName = runtimeState.controlState().name();
+        if ("REMOTE".equals(controlStateName) || "LOCAL".equals(controlStateName)) {
+            throw new UiConflictException(
+                    "EQP가 운영 중(controlState=" + controlStateName + ")인 상태에서는 routePartition을 변경할 수 없습니다. "
+                            + "먼저 EQP를 종료(End)한 뒤 routePartition을 변경하고 다시 시작해 주세요."
+            );
+        }
     }
 
     private String newExecutionId() {

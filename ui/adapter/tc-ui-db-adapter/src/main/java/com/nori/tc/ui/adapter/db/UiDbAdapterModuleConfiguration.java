@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Import;
  */
 @Configuration(proxyBeanMethods = false)
 @Import({
+        DemoJobJdbcCleanupPort.class,
         DeployJdbcStorePort.class,
         DeployPlanningStateJdbcPort.class,
         DeployScenarioCatalogMetaJdbcPort.class,

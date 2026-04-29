@@ -16,6 +16,7 @@ public record DeployDesiredState(
         Integer eqpPort,
         String socketType,
         Integer hsmsDeviceId,
+        Integer routePartition,
         JsonNode mergedUiMessage
 ) {
 }

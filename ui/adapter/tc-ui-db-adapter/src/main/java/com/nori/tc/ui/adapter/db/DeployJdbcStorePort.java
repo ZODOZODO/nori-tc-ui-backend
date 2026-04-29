@@ -1133,6 +1133,9 @@ public class DeployJdbcStorePort implements DeployStorePort {
                 nullableLong(resultSet, "current_business_jar_key"),
                 support.normalizeOptionalText(resultSet.getString("current_socket_type")),
                 nullableInteger(resultSet, "current_hsms_device_id"),
+                // 실행 이력에서 복구하는 current state는 routePartition을 따로 보관하지 않으므로 null로 둡니다.
+                // delta 재계산 경로에서는 신규 planning이 다시 일어나므로 영향 없음.
+                null,
                 null
         );
     }

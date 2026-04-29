@@ -127,20 +127,23 @@ public class LiveMapQueryService {
     }
 
     private Optional<String> resolveEqpParamValue(final EqpManagementSnapshot snapshot, final String paramName) {
+        // tc_eqp_param.param_value는 nullable이라 .map(::paramValue).findFirst() 순서로 짜면
+        // 매핑 결과 null에서 Optional.of(null) NPE가 납니다. element 단위로 findFirst() 한 뒤 map 합니다.
         return snapshot.params().stream()
                 .filter(param -> paramName.equalsIgnoreCase(param.paramName()))
                 .filter(param -> matchesAppliedVersion(snapshot.eqp().appliedParamVersion(), param))
                 .sorted(Comparator.comparing(UiEqpParam::updatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
-                .map(UiEqpParam::paramValue)
-                .findFirst();
+                .findFirst()
+                .map(UiEqpParam::paramValue);
     }
 
     private Optional<String> resolveModelParamValue(final Long modelVersionKey, final String paramName) {
+        // tc_model_param.param_value도 nullable이라 위와 동일한 NPE 패턴을 차단합니다.
         return modelDetailQueryPort.findParamsByModelVersionKey(modelVersionKey).stream()
                 .filter(param -> paramName.equalsIgnoreCase(param.paramName()))
                 .sorted(Comparator.comparing(UiModelParam::updatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
-                .map(UiModelParam::paramValue)
-                .findFirst();
+                .findFirst()
+                .map(UiModelParam::paramValue);
     }
 
     private boolean matchesAppliedVersion(final String appliedParamVersion, final UiEqpParam param) {
@@ -157,6 +160,8 @@ public class LiveMapQueryService {
         final String normalized = rawValue.trim().toUpperCase(Locale.ROOT);
         return switch (normalized) {
             case "CVD", "CMP", "DIFF", "PHOTO", "METRO", "METAL", "ETCH", "IMP", "WET", "ETC" -> normalized;
+            // CLN(세정) 공정은 WET 공정과 동일한 의미로 취급해 WET 클러스터로 합칩니다.
+            case "CLN" -> "WET";
             default -> "ETC";
         };
     }

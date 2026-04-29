@@ -438,6 +438,12 @@ final class DeployServiceCommandSupport {
                      EQP_REGISTER_DEPLOY -> UiCommandEventType.EQP_UPDATE;
                 default -> UiCommandEventType.EQP_UPDATE;
             };
+            // Business runtime cache 메타데이터(routePartition 등) 갱신은 EQP_UPDATE 이벤트로 Business에 전달되어
+            // BusinessUiTaskProcessorRegistry의 EQP_UPDATE handler가 BusinessModelRuntimeCache를 갱신합니다.
+            case UPDATE_BUSINESS_RUNTIME_METADATA -> UiCommandEventType.EQP_UPDATE;
+            // Gateway equipment context(routePartition 등) 갱신도 EQP_UPDATE 이벤트로 Gateway에 전달되어
+            // GatewayUiTaskProcessorRegistry의 EQP_UPDATE handler가 createOrUpdateContext 로 GatewayEquipmentInfo를 다시 적재합니다.
+            case UPDATE_GATEWAY_RUNTIME_METADATA -> UiCommandEventType.EQP_UPDATE;
             case RESTORE_PREVIOUS_MODEL_BINDING,
                  RESTORE_PREVIOUS_BUSINESS_RUNTIME,
                  RESTORE_PREVIOUS_BUSINESS_PLUGIN,
@@ -445,7 +451,9 @@ final class DeployServiceCommandSupport {
                  RESTORE_PREVIOUS_GATEWAY_CONTEXT,
                  RESTORE_PREVIOUS_GATEWAY_RUNTIME,
                  RESTORE_PREVIOUS_GATEWAY_PLUGIN,
-                 RESTORE_PREVIOUS_BUSINESS_BINDING ->
+                 RESTORE_PREVIOUS_BUSINESS_BINDING,
+                 RESTORE_PREVIOUS_BUSINESS_RUNTIME_METADATA,
+                 RESTORE_PREVIOUS_GATEWAY_RUNTIME_METADATA ->
                     throw new UiBadRequestException("rollback action은 T4에서 직접 실행하지 않습니다. action=" + action);
         };
     }
@@ -524,6 +532,12 @@ final class DeployServiceCommandSupport {
                 destination.put("deleteMode", "SAFE");
                 copyFields(destination, mergedUiMessage, "modelInfo", "businessJar");
             }
+            // Business runtime metadata 갱신은 routePartition을 포함한 gatewayProfile 정보를 그대로 전달합니다.
+            // Business는 equipmentProfile.routePartition을 정본으로 사용해 cache를 갱신합니다.
+            case UPDATE_BUSINESS_RUNTIME_METADATA -> copyFields(destination, mergedUiMessage, "gatewayProfile");
+            // Gateway runtime metadata 갱신도 동일하게 gatewayProfile 정보를 그대로 전달합니다.
+            // Gateway는 EQP_UPDATE 처리 시 createOrUpdateContext에서 DB를 다시 읽어 GatewayEquipmentInfo를 적재합니다.
+            case UPDATE_GATEWAY_RUNTIME_METADATA -> copyFields(destination, mergedUiMessage, "gatewayProfile");
             case SEND_MESSAGE -> copyAllFields(destination, mergedUiMessage);
             case RESTORE_PREVIOUS_MODEL_BINDING,
                  RESTORE_PREVIOUS_BUSINESS_RUNTIME,
@@ -532,7 +546,9 @@ final class DeployServiceCommandSupport {
                  RESTORE_PREVIOUS_GATEWAY_CONTEXT,
                  RESTORE_PREVIOUS_GATEWAY_RUNTIME,
                  RESTORE_PREVIOUS_GATEWAY_PLUGIN,
-                 RESTORE_PREVIOUS_BUSINESS_BINDING ->
+                 RESTORE_PREVIOUS_BUSINESS_BINDING,
+                 RESTORE_PREVIOUS_BUSINESS_RUNTIME_METADATA,
+                 RESTORE_PREVIOUS_GATEWAY_RUNTIME_METADATA ->
                     throw new UiBadRequestException("rollback payload는 T4에서 생성하지 않습니다. action=" + action);
         }
     }

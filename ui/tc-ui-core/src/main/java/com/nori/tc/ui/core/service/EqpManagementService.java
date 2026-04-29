@@ -13,9 +13,14 @@ import com.nori.tc.ui.core.port.db.EqpManageQueryPort;
 import com.nori.tc.ui.core.port.db.EqpOptionsQueryPort;
 import com.nori.tc.ui.core.port.redis.AsyncResultStorePort;
 import com.nori.tc.ui.domain.task.UiTaskStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -29,6 +34,7 @@ import java.util.concurrent.Executor;
 @Service
 public class EqpManagementService {
 
+    private static final Logger log = LoggerFactory.getLogger(EqpManagementService.class);
     public static final String EQP_MANAGEMENT_EXECUTOR_BEAN_NAME = "uiEqpManagementExecutor";
     private static final String DIRECT_ASYNC_SOURCE = "TC-UI-APP";
     private final EqpManageQueryPort eqpManageQueryPort;
@@ -65,6 +71,44 @@ public class EqpManagementService {
             throw new com.nori.tc.ui.core.exception.UiBadRequestException("eqpId는 비어 있을 수 없습니다.");
         }
         return eqpManageQueryPort.findManageSnapshotByEqpId(eqpId);
+    }
+
+    /**
+     * 여러 설비의 관리 상세를 한 번에 조회합니다.
+     *
+     * <p>그룹 화면처럼 다건을 동시에 보여줘야 하는 화면에서 N-fan-out HTTP 호출 대신 사용합니다.
+     * 입력 순서를 보존한 LinkedHashMap을 반환하며, 존재하지 않는 eqpId는 결과 맵에서 빠집니다.</p>
+     *
+     * @param eqpIds 대상 설비 ID 목록 (null 또는 빈 값은 무시)
+     * @return 입력 순서 그대로 보존된 eqpId → snapshot 맵
+     */
+    public Map<String, EqpManagementSnapshot> getManageDetailsByEqpIds(final List<String> eqpIds) {
+        if (eqpIds == null || eqpIds.isEmpty()) {
+            return Map.of();
+        }
+        final LinkedHashMap<String, EqpManagementSnapshot> result = new LinkedHashMap<>();
+        for (final String rawEqpId : eqpIds) {
+            if (rawEqpId == null) {
+                continue;
+            }
+            final String eqpId = rawEqpId.trim();
+            if (eqpId.isEmpty() || result.containsKey(eqpId)) {
+                continue;
+            }
+            // 한 EQP의 스냅샷 로딩 실패가 batch 전체를 죽이지 않도록 격리합니다.
+            // 실패한 항목은 missingEqpIds로 노출해 사용자에게 명시적으로 표시합니다.
+            try {
+                eqpManageQueryPort.findManageSnapshotByEqpId(eqpId)
+                        .ifPresent(snapshot -> result.put(eqpId, snapshot));
+            } catch (RuntimeException exception) {
+                log.warn(
+                        "EQP manage snapshot 조회 실패. 해당 항목은 응답에서 제외합니다. eqpId={}",
+                        eqpId,
+                        exception
+                );
+            }
+        }
+        return result;
     }
 
     /**

@@ -98,6 +98,16 @@ final class DeployServiceSnapshotSupport {
             case RESTORE_PREVIOUS_BUSINESS_BINDING -> eqpExists
                     ? buildBusinessCreateCompensationSnapshot(targetPreState, step.timeoutMs())
                     : buildDeleteCompensationSnapshot(UiCommandEventType.EQP_DELETE, target.planDraft().interfaceType(), step.timeoutMs());
+            // Business runtime metadata 보상은 Business가 EQP_UPDATE 이벤트로 이전 routePartition을 다시 받아 cache를 되돌립니다.
+            // RESTORE_PREVIOUS_BUSINESS_RUNTIME과 동일한 EQP_UPDATE 보상 흐름(forwardOnly=false)을 재사용합니다.
+            case RESTORE_PREVIOUS_BUSINESS_RUNTIME_METADATA -> eqpExists
+                    ? buildBusinessUpdateCompensationSnapshot(targetPreState, step.timeoutMs(), false)
+                    : buildSkipCompensationSnapshot("NO_PREVIOUS_BUSINESS_RUNTIME_METADATA");
+            // Gateway runtime metadata 보상은 RESTORE_PREVIOUS_GATEWAY_CONTEXT와 동일한 EQP_UPDATE 보상 흐름을 재사용합니다.
+            // forwardOnly=false: Gateway 측 createOrUpdateContext가 이전 routePartition으로 GatewayEquipmentInfo를 재적재합니다.
+            case RESTORE_PREVIOUS_GATEWAY_RUNTIME_METADATA -> eqpExists
+                    ? buildGatewayUpdateCompensationSnapshot(targetPreState, step.timeoutMs(), false)
+                    : buildSkipCompensationSnapshot("NO_PREVIOUS_GATEWAY_RUNTIME_METADATA");
             default -> buildSkipCompensationSnapshot("UNSUPPORTED_ROLLBACK_ACTION");
         };
     }

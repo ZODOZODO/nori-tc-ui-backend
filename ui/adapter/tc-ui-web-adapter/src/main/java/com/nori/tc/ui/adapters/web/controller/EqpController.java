@@ -10,6 +10,7 @@ import com.nori.tc.ui.adapters.web.dto.request.EqpUpdateRequest;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.adapters.web.dto.response.AsyncAcceptResponse;
 import com.nori.tc.ui.adapters.web.dto.response.EqpInfoResponse;
+import com.nori.tc.ui.adapters.web.dto.response.EqpManageDetailBatchResponse;
 import com.nori.tc.ui.adapters.web.dto.response.EqpManageDetailResponse;
 import com.nori.tc.ui.adapters.web.dto.response.EqpManageOptionsResponse;
 import com.nori.tc.ui.adapters.web.dto.response.EqpRuntimeStateResponse;
@@ -17,6 +18,7 @@ import com.nori.tc.ui.core.eqp.EqpAsyncAcceptResult;
 import com.nori.tc.ui.core.eqp.EqpCommandResult;
 import com.nori.tc.ui.core.eqp.EqpManagementOptions;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
+import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
@@ -41,7 +43,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.request.async.DeferredResult;
 
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -141,6 +146,51 @@ public class EqpController {
         }
 
         return ResponseEntity.ok(ApiResponse.success(EqpControllerResponseSupport.toManageDetailResponse(snapshotOptional.get())));
+    }
+
+    /**
+     * 여러 설비의 관리 상세를 한 번에 조회합니다.
+     *
+     * <p>그룹 화면(Gateway / gateway_app) 처럼 다건을 동시에 보여줘야 하는 화면에서
+     * 클라이언트의 N-fan-out 호출을 제거하기 위해 사용합니다.</p>
+     *
+     * <p>경로는 의도적으로 {@code /manage-batch}로 둡니다. 단순 {@code /manage}는 기존
+     * {@code GET /eqp/{eqpId}}와 path-pattern 매칭에서 모호해질 수 있어 안전하게 분리합니다.</p>
+     *
+     * @param eqpIds 콤마로 구분된 eqpId 목록 (예: {@code ?eqpIds=A,B,C})
+     * @return 입력 순서를 보존한 batch 응답. 존재하지 않는 항목은 missingEqpIds에 담깁니다.
+     */
+    private static final int MANAGE_DETAIL_BATCH_LIMIT = 200;
+
+    @GetMapping("/manage-batch")
+    public ResponseEntity<ApiResponse<EqpManageDetailBatchResponse>> getManageDetailBatch(
+            @RequestParam(name = "eqpIds") final String eqpIds
+    ) {
+        if (eqpIds == null || eqpIds.isBlank()) {
+            throw new UiBadRequestException("eqpIds는 비어 있을 수 없습니다.");
+        }
+
+        // CSV 입력을 trim + 중복 제거하여 순서 보존된 list로 정규화합니다.
+        final List<String> requestedEqpIds = Arrays.stream(eqpIds.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isEmpty())
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
+                .stream()
+                .toList();
+        if (requestedEqpIds.isEmpty()) {
+            throw new UiBadRequestException("유효한 eqpId가 없습니다.");
+        }
+        if (requestedEqpIds.size() > MANAGE_DETAIL_BATCH_LIMIT) {
+            throw new UiBadRequestException(
+                    "한 번에 조회 가능한 설비 수는 " + MANAGE_DETAIL_BATCH_LIMIT + "개 이하여야 합니다."
+            );
+        }
+
+        final Map<String, EqpManagementSnapshot> snapshots =
+                eqpManagementService.getManageDetailsByEqpIds(requestedEqpIds);
+        return ResponseEntity.ok(ApiResponse.success(
+                EqpControllerResponseSupport.toManageDetailBatchResponse(requestedEqpIds, snapshots)
+        ));
     }
 
     /**

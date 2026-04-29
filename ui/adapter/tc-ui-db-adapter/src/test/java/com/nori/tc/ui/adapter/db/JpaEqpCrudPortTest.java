@@ -32,6 +32,7 @@ import com.nori.tc.ui.adapter.db.mapper.UiEqpDbMapper;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
+import com.nori.tc.ui.core.port.db.DemoJobCleanupPort;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -660,6 +661,7 @@ class JpaEqpCrudPortTest {
         private final TcJarGatewayStore jarGatewayStore = mock(TcJarGatewayStore.class);
         private final TcJarBusinessStore jarBusinessStore = mock(TcJarBusinessStore.class);
         private final TcWorkStore workStore = mock(TcWorkStore.class);
+        private final DemoJobCleanupPort demoJobCleanupPort = mock(DemoJobCleanupPort.class);
         private final JpaEqpCrudPort port = new JpaEqpCrudPort(
                 dbSupport,
                 eqpStore,
@@ -673,7 +675,8 @@ class JpaEqpCrudPortTest {
                 modelParamStore,
                 jarGatewayStore,
                 jarBusinessStore,
-                workStore
+                workStore,
+                demoJobCleanupPort
         );
     }
 

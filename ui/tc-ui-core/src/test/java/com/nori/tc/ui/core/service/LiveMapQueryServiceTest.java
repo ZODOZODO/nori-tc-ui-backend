@@ -245,6 +245,47 @@ class LiveMapQueryServiceTest {
         assertEquals("DOWN", result.getFirst().status());
     }
 
+    @Test
+    void getEquipmentViewsMapsClnProcessTypeToWetCluster() {
+        final UiEqp eqp = createEqp("EQP-05", "v5");
+        when(eqpQueryPort.findAll(any(UiPageRequest.class)))
+                .thenReturn(PagedResponse.of(List.of(eqp), 0, 1000, 1));
+        when(eqpManageQueryPort.findManageSnapshotByEqpId("EQP-05"))
+                .thenReturn(Optional.of(new EqpManagementSnapshot(
+                        eqp,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "CONNECTED",
+                        List.of(),
+                        List.of(new UiEqpParam(
+                                5L,
+                                1L,
+                                "PROCESS_TYPE",
+                                "v5",
+                                "CLN",
+                                null,
+                                "tester",
+                                OffsetDateTime.now()
+                        )),
+                        List.of(),
+                        null,
+                        null
+                )));
+        when(modelDetailQueryPort.findParamsByModelVersionKey(101L))
+                .thenReturn(List.of());
+        when(eqpQueryPort.findRuntimeStateByEqpId("EQP-05"))
+                .thenReturn(Optional.of(new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED")));
+
+        final List<LiveMapEquipmentView> result = liveMapQueryService.getEquipmentViews();
+
+        // CLN(세정) 공정은 WET 공정과 동일 의미이므로 wet 클러스터에 배치되어야 합니다.
+        assertEquals("wet", result.getFirst().clusterId());
+        assertEquals("WET", result.getFirst().clusterName());
+    }
+
     private UiEqp createEqp(final String eqpId, final String appliedParamVersion) {
         return new UiEqp(
                 1L,

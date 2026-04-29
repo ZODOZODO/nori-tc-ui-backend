@@ -72,3 +72,43 @@ steps:
       enabled: true
       mode: CONDITIONAL_COMPENSATABLE
       action: RESTORE_PREVIOUS_GATEWAY_CONTEXT
+
+  - order: 90
+    code: UPDATE_BUSINESS_RUNTIME_METADATA
+    name: Business runtime metadata 갱신
+    targetApp: BUSINESS
+    description: routePartition 등 Business runtime cache 메타데이터를 최신 목표 상태로 반영한다.
+    when:
+      deltaAny:
+        - ROUTE_PARTITION_CHANGED
+    run:
+      action: UPDATE_BUSINESS_RUNTIME_METADATA
+      timeoutMs: 15000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: AUTO_COMPENSATABLE
+      action: RESTORE_PREVIOUS_BUSINESS_RUNTIME_METADATA
+
+  - order: 92
+    code: UPDATE_GATEWAY_RUNTIME_METADATA
+    name: Gateway runtime metadata 갱신
+    targetApp: GATEWAY
+    description: routePartition 등 Gateway equipment context의 라우팅 메타데이터를 최신 목표 상태로 반영한다.
+    when:
+      deltaAny:
+        - ROUTE_PARTITION_CHANGED
+    run:
+      action: UPDATE_GATEWAY_RUNTIME_METADATA
+      timeoutMs: 15000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: AUTO_COMPENSATABLE
+      action: RESTORE_PREVIOUS_GATEWAY_RUNTIME_METADATA

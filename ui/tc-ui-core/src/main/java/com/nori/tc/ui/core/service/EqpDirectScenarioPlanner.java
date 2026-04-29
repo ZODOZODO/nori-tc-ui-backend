@@ -34,6 +34,20 @@ public class EqpDirectScenarioPlanner {
             final String interfaceType,
             final JsonNode uiMessage
     ) {
+        return plan(eventType, eqpId, interfaceType, uiMessage, null);
+    }
+
+    /**
+     * resolvedScenarioCode로 단일 시나리오를 명시적으로 선택하는 plan 변형입니다.
+     * 동일 eventType에 대해 분기되는 시나리오(예: EQP_DELETE의 ACTIVE/PASSIVE)를 처리할 때 사용합니다.
+     */
+    public DeployTargetPlanDraft plan(
+            final UiCommandEventType eventType,
+            final String eqpId,
+            final String interfaceType,
+            final JsonNode uiMessage,
+            final String resolvedScenarioCode
+    ) {
         final DeployPlanCommand command = new DeployPlanCommand(
                 "DIRECT-" + eventType.name() + "-" + eqpId,
                 eventType,
@@ -41,7 +55,7 @@ public class EqpDirectScenarioPlanner {
                 new DeployPlanCommand.CommonRequest(
                         interfaceType,
                         uiMessage == null ? objectMapper.createObjectNode() : uiMessage,
-                        null
+                        resolvedScenarioCode
                 ),
                 List.of(new DeployPlanCommand.TargetRequest(eqpId, objectMapper.createObjectNode()))
         );

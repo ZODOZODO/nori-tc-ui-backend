@@ -1,6 +1,7 @@
 eqp-create-generic.yaml
 eqp-update-generic.yaml
 eqp-delete-safe.yaml
+eqp-delete-safe-passive.yaml
 eqp-start.yaml
 eqp-end.yaml
 eqp-reconnect.yaml

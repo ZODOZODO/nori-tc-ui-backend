@@ -1175,6 +1175,7 @@ class DeployServiceTest {
                         4001L,
                         "TEST01",
                         null,
+                        0,
                         equipmentProfile(eqpId)
                 )),
                 catalogService,

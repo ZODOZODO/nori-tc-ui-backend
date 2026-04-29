@@ -22,9 +22,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
+import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -208,20 +210,22 @@ public class JpaEqpQueryPort implements EqpQueryPort {
             }
 
             final long eqpKey = optionalEqp.get().eqpKey();
-            final Set<String> versionSet = new HashSet<>();
+            // createdAt 기준 정렬을 위해 버전별 최초 생성 시각을 보존합니다.
+            final Map<String, java.time.OffsetDateTime> versionCreatedAtMap = new LinkedHashMap<>();
             int versionMetaOffset = 0;
-            int offset = 0;
 
             while (versionMetaOffset < PARAM_VERSION_SCAN_MAX_ROWS) {
                 final com.nori.tc.db.core.common.PageRequest pageRequest =
                         com.nori.tc.db.core.common.PageRequest.of(versionMetaOffset, PARAM_VERSION_PAGE_LIMIT);
                 final List<TcEqpParamVersion> pageMetas = eqpParamVersionStore.findAllByEqpKey(eqpKey, pageRequest);
-                final List<String> pageVersions = pageMetas.stream()
-                        .map(meta -> meta.paramVersion() == null ? null : meta.paramVersion().trim())
-                        .filter(version -> version != null && !version.isBlank() && !EDIT_VERSION.equals(version))
-                        .toList();
 
-                versionSet.addAll(pageVersions);
+                for (final TcEqpParamVersion meta : pageMetas) {
+                    final String version = meta.paramVersion() == null ? null : meta.paramVersion().trim();
+                    if (version == null || version.isBlank() || EDIT_VERSION.equals(version)) {
+                        continue;
+                    }
+                    versionCreatedAtMap.putIfAbsent(version, meta.createdAt());
+                }
 
                 if (pageMetas.size() < PARAM_VERSION_PAGE_LIMIT) {
                     break;
@@ -230,17 +234,19 @@ public class JpaEqpQueryPort implements EqpQueryPort {
                 versionMetaOffset += PARAM_VERSION_PAGE_LIMIT;
             }
 
+            // tc_eqp_param_version 메타가 없는 파라미터 버전(레거시 데이터 등)도 포함합니다.
+            int offset = 0;
             while (offset < PARAM_VERSION_SCAN_MAX_ROWS) {
                 final com.nori.tc.db.core.common.PageRequest pageRequest =
                         com.nori.tc.db.core.common.PageRequest.of(offset, PARAM_VERSION_PAGE_LIMIT);
-                final var pageParams = eqpParamStore.findAllByEqpKey(eqpKey, pageRequest);
-                final List<String> pageVersions = pageParams.stream()
-                        .map(param -> param.paramVersion() == null ? null : param.paramVersion().trim())
-                        // EDIT 버전은 내부 잠금용이므로 드롭다운 목록에서 제외한다.
-                        .filter(version -> version != null && !version.isBlank() && !EDIT_VERSION.equals(version))
-                        .toList();
+                final List<TcEqpParam> pageParams = eqpParamStore.findAllByEqpKey(eqpKey, pageRequest);
 
-                versionSet.addAll(pageVersions);
+                pageParams.stream()
+                        .map(param -> param.paramVersion() == null ? null : param.paramVersion().trim())
+                        // EDIT 버전은 내부 잠금용이므로 제외합니다.
+                        .filter(version -> version != null && !version.isBlank() && !EDIT_VERSION.equals(version))
+                        // 버전 메타에 없는 경우에만 추가하며, createdAt은 null로 표시합니다.
+                        .forEach(version -> versionCreatedAtMap.putIfAbsent(version, null));
 
                 if (pageParams.size() < PARAM_VERSION_PAGE_LIMIT) {
                     break;
@@ -253,9 +259,22 @@ public class JpaEqpQueryPort implements EqpQueryPort {
                 log.warn("설비 파라미터 버전 조회 스캔 상한 도달. eqpId={}, maxRows={}", eqpId, PARAM_VERSION_SCAN_MAX_ROWS);
             }
 
-            final List<String> versions = versionSet.stream()
-                    .sorted(Comparator.reverseOrder())
-                    .toList();
+            // createdAt이 있는 버전은 최신순, 없는 버전(레거시)은 문자열 역순으로 뒤에 붙입니다.
+            final List<Map.Entry<String, java.time.OffsetDateTime>> withMeta = new ArrayList<>();
+            final List<String> withoutMeta = new ArrayList<>();
+            for (final Map.Entry<String, java.time.OffsetDateTime> entry : versionCreatedAtMap.entrySet()) {
+                if (entry.getValue() != null) {
+                    withMeta.add(entry);
+                } else {
+                    withoutMeta.add(entry.getKey());
+                }
+            }
+            withMeta.sort(Comparator.comparing(Map.Entry::getValue, Comparator.reverseOrder()));
+            withoutMeta.sort(Comparator.reverseOrder());
+
+            final List<String> versions = new ArrayList<>(withMeta.size() + withoutMeta.size());
+            withMeta.forEach(e -> versions.add(e.getKey()));
+            versions.addAll(withoutMeta);
 
             if (log.isDebugEnabled()) {
                 log.debug("설비 파라미터 버전 조회 완료. eqpId={}, versionCount={}", eqpId, versions.size());

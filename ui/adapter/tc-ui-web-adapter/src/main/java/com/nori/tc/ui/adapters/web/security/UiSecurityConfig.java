@@ -97,6 +97,8 @@ public class UiSecurityConfig {
                          * raw 토큰 비교가 가능한 RequestAttributeHandler를 명시적으로 사용합니다.
                          */
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+                        // demo-tester 내부 호출은 internal-header 인증으로 보호되므로 CSRF 면제
+                        .ignoringRequestMatchers("/api/internal/demo/**")
                 )
 
                 // CORS 활성화: 쿠키 기반 인증이므로 allowCredentials=true 정책을 사용합니다.
@@ -122,6 +124,8 @@ public class UiSecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/actuator/health", "/api/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/internal/demo/**").permitAll()
+                        // demo-tester 내부 호출은 internal-header 인증으로 별도 보호됨
+                        .requestMatchers(HttpMethod.POST, "/api/internal/demo/**").permitAll()
                         // CORS preflight 요청은 브라우저가 자동 호출하므로 인증 없이 허용합니다.
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         // 그 외 모든 요청: 인증 필수 + DB 기반 URL 인가

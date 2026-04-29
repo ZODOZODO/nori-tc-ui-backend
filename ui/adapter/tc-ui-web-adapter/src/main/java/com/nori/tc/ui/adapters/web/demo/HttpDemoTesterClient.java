@@ -116,9 +116,7 @@ public class HttpDemoTesterClient implements DemoTesterClient {
                 builder.method(method, HttpRequest.BodyPublishers.ofByteArray(objectMapper.writeValueAsBytes(body)));
             }
             HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() >= 400) {
-                throw new UiBadRequestException("demo-tester 호출에 실패했습니다. status=" + response.statusCode());
-            }
+            validateResponseStatus(response.statusCode(), method, path);
             return objectMapper.readValue(response.body(), responseType);
         } catch (IOException | InterruptedException exception) {
             if (exception instanceof InterruptedException) {
@@ -142,15 +140,23 @@ public class HttpDemoTesterClient implements DemoTesterClient {
                 builder.method(method, HttpRequest.BodyPublishers.ofByteArray(objectMapper.writeValueAsBytes(body)));
             }
             HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() >= 400) {
-                throw new UiBadRequestException("demo-tester 호출에 실패했습니다. status=" + response.statusCode());
-            }
+            validateResponseStatus(response.statusCode(), method, path);
             return objectMapper.readValue(response.body(), responseType);
         } catch (IOException | InterruptedException exception) {
             if (exception instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
             throw new UiBadRequestException("demo-tester 호출 중 오류가 발생했습니다: " + exception.getMessage(), exception);
+        }
+    }
+
+    private static void validateResponseStatus(final int statusCode, final String method, final String path) {
+        if (statusCode >= 500) {
+            // demo-tester 서버 내부 오류 — 요청 입력 문제가 아닌 서버 오류이므로 RuntimeException으로 전파합니다.
+            throw new IllegalStateException("demo-tester 서버 오류. method=" + method + ", path=" + path + ", status=" + statusCode);
+        }
+        if (statusCode >= 400) {
+            throw new UiBadRequestException("demo-tester 호출에 실패했습니다. status=" + statusCode);
         }
     }
 }

@@ -293,6 +293,7 @@ public class DeployPlanningService {
                 intValue(uiMessage, "gatewayProfile", "eqpPort"),
                 textValue(uiMessage, "gatewayProfile", "socketType"),
                 intValue(uiMessage, "gatewayProfile", "hsmsDeviceId"),
+                intValue(uiMessage, "gatewayProfile", "routePartition"),
                 uiMessage
         );
     }
@@ -400,6 +401,12 @@ public class DeployPlanningService {
                         || !Objects.equals(currentState.hsmsDeviceId(), desiredState.hsmsDeviceId())) {
                     deltaKinds.add(DeployDeltaKind.GATEWAY_RUNTIME_SHAPE_CHANGED);
                 }
+                // routePartition 변경은 Business runtime cache + Gateway equipment context 양쪽 갱신이 필수입니다.
+                // desiredState.routePartition이 null인 경우(uiMessage에 없음)는 변경 의도가 없는 것으로 간주합니다.
+                if (desiredState.routePartition() != null
+                        && !Objects.equals(currentState.routePartition(), desiredState.routePartition())) {
+                    deltaKinds.add(DeployDeltaKind.ROUTE_PARTITION_CHANGED);
+                }
             }
             case EQP_MODEL_UPDATE -> {
                 if (!Objects.equals(currentState.modelVersionKey(), safeLong(desiredState.modelVersionKey()))) {
@@ -459,7 +466,29 @@ public class DeployPlanningService {
         if (eventType == UiCommandEventType.EQP_REGISTER_DEPLOY) {
             return Optional.of(resolveRegisterScenario(catalog, deltaKinds, resolvedScenarioCode));
         }
+        // EQP_DELETE는 ACTIVE/PASSIVE에 따라 시나리오가 분기되므로,
+        // 호출 측이 resolvedScenarioCode를 명시한 경우 catalog에서 직접 선택합니다.
+        if (eventType == UiCommandEventType.EQP_DELETE
+                && normalizedText(resolvedScenarioCode).isPresent()) {
+            return Optional.of(resolveExplicitScenario(catalog, eventType, resolvedScenarioCode));
+        }
         return selectScenario(catalog, eventType, deltaKinds);
+    }
+
+    private DeployScenarioDefinition resolveExplicitScenario(
+            final DeployScenarioCatalog catalog,
+            final UiCommandEventType eventType,
+            final String resolvedScenarioCode
+    ) {
+        final String normalizedScenarioCode = normalizedText(resolvedScenarioCode)
+                .orElseThrow(() -> new UiBadRequestException("resolvedScenarioCode 값이 필요합니다."));
+        final DeployScenarioDefinition scenario = Optional.ofNullable(catalog.scenarios().get(normalizedScenarioCode))
+                .orElseThrow(() -> new UiBadRequestException("선택한 scenario를 찾을 수 없습니다. code=" + normalizedScenarioCode));
+
+        if (!scenario.appliesTo().eventTypes().contains(eventType)) {
+            throw new UiBadRequestException(eventType + " 에 사용할 수 없는 scenario 입니다. code=" + normalizedScenarioCode);
+        }
+        return scenario;
     }
 
     private Optional<DeployScenarioDefinition> selectScenario(

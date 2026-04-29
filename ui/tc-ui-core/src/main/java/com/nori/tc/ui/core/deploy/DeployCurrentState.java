@@ -20,6 +20,7 @@ public record DeployCurrentState(
         Long businessJarRef,
         String socketType,
         Integer hsmsDeviceId,
+        Integer routePartition,
         UiEquipmentProfileSnapshot equipmentProfile
 ) {
 
@@ -39,6 +40,10 @@ public record DeployCurrentState(
         }
         socketType = normalizeOptionalText(socketType);
         appliedParamVersion = normalizeOptionalText(appliedParamVersion);
+        // routePartition: nullable. 음수 값은 의미가 없으므로 정합성 차원에서 거부합니다.
+        if (routePartition != null && routePartition < 0) {
+            throw new IllegalArgumentException("routePartition must be greater than or equal to 0");
+        }
     }
 
     private static String requireText(final String fieldName, final String value) {
