@@ -43,6 +43,7 @@ class UiBackendRuntimeHealthIndicatorTest {
                 businessRedisFactory
         );
 
+        // test
         assertEquals(Status.OUT_OF_SERVICE, indicator.health().getStatus());
     }
 }
