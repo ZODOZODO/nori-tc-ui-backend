@@ -1,11 +1,54 @@
 stages:
+  - check
   - publish
+  - trigger
+
+pipeline-ok:
+  stage: check
+  script:
+    - echo "no relevant changes"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - ui/**/*
+        - build.gradle.kts
+        - settings.gradle.kts
+        - gradle.properties
+        - gradle/**/*
+      when: never
+    - if: '$CI_COMMIT_BRANCH == "main"'
 
 publish:
   stage: publish
-  image: eclipse-temurin:21-jdk
+  tags:
+    - norilab
+  image: harbor.nori.local/library/maven:3.9-eclipse-temurin-21
   script:
-    - ./gradlew publish
-  only:
-    - main
-  when: manual
+    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/norilab/tc-mes/nori-tc-common.git ../nori-tc-common
+    - chmod +x ./gradlew
+    - ./gradlew publish --no-daemon
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - ui/**/*
+        - build.gradle.kts
+        - settings.gradle.kts
+        - gradle.properties
+        - gradle/**/*
+
+trigger-exec:
+  stage: trigger
+  needs: ["publish"]
+  variables:
+    TRIGGER_APP: "tc-ui-backend"
+  trigger:
+    project: norilab/tc-mes/nori-tc-exec
+    branch: main
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - ui/**/*
+        - build.gradle.kts
+        - settings.gradle.kts
+        - gradle.properties
+        - gradle/**/*
