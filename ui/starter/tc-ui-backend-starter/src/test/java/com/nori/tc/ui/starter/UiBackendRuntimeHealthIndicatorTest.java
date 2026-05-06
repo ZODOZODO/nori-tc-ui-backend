@@ -15,7 +15,7 @@ import static org.mockito.Mockito.when;
 class UiBackendRuntimeHealthIndicatorTest {
 
     @Test
-    void shouldReturnOutOfServiceWhenRepairBacklogExists() {
+    void shouldReturnUpWhenRepairBacklogExistsButRedisReady() {
         final DeployService deployService = mock(DeployService.class);
         final DeployTraceRegistry deployTraceRegistry = mock(DeployTraceRegistry.class);
         final EqpRepairTaskService repairTaskService = mock(EqpRepairTaskService.class);
@@ -43,7 +43,7 @@ class UiBackendRuntimeHealthIndicatorTest {
                 businessRedisFactory
         );
 
-        // test
-        assertEquals(Status.OUT_OF_SERVICE, indicator.health().getStatus());
+        // repair 잔존은 서비스 불가 사유가 아님 — Redis 연결만 정상이면 UP
+        assertEquals(Status.UP, indicator.health().getStatus());
     }
 }

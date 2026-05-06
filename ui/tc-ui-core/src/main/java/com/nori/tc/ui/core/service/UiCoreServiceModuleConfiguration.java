@@ -28,6 +28,7 @@ import org.springframework.context.annotation.Import;
         EqpManagementService.class,
         EqpPersistenceService.class,
         EqpRepairTaskService.class,
+        CommLogQueryService.class,
         LiveMapQueryService.class,
         UiCoreFallbackStorageConfiguration.class,
         UiCommandIngressService.class

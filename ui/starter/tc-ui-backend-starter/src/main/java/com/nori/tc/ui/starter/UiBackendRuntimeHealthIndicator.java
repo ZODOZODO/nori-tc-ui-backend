@@ -53,14 +53,8 @@ public class UiBackendRuntimeHealthIndicator implements HealthIndicator {
                 && targetExecutorActiveCount >= deployService.targetConcurrency();
         final boolean redisReady = gatewayRedisStats.ready() && businessRedisStats.ready();
 
-        final Status status;
-        if (!redisReady) {
-            status = Status.DOWN;
-        } else if (repairBacklogCount > 0 || saturated) {
-            status = Status.OUT_OF_SERVICE;
-        } else {
-            status = Status.UP;
-        }
+        // Redis 연결 불가만 DOWN으로 처리. repair 잔존/executor 포화는 처리 중 상태이며 서비스 불가 사유가 아님.
+        final Status status = redisReady ? Status.UP : Status.DOWN;
 
         return Health.status(status)
                 .withDetail("gatewayRedisPing", gatewayRedisStats.ping())

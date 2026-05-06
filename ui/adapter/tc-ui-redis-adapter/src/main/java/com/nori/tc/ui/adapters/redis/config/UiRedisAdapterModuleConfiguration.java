@@ -1,6 +1,7 @@
 package com.nori.tc.ui.adapters.redis.config;
 
 import com.nori.tc.ui.adapters.redis.async.AsyncResultStoreService;
+import com.nori.tc.ui.adapters.redis.comm.CommLogRedisQueryAdapter;
 import com.nori.tc.ui.adapters.redis.coordination.DeployExecutionRedisAdapter;
 import com.nori.tc.ui.adapters.redis.dlq.BusinessDlqRedisService;
 import com.nori.tc.ui.adapters.redis.dlq.GatewayDlqRedisService;
@@ -20,6 +21,7 @@ import org.springframework.context.annotation.Import;
 @Import({
         UiRedisConfiguration.class,
         AsyncResultStoreService.class,
+        CommLogRedisQueryAdapter.class,
         DeployExecutionRedisAdapter.class,
         DeployTracePubSubListener.class,
         DeployTraceRedisAdapter.class,
