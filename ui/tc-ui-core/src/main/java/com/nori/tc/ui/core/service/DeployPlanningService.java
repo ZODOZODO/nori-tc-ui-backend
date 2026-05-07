@@ -227,7 +227,10 @@ public class DeployPlanningService {
         );
         final List<DeployResolvedStepPlan> resolvedSteps = scenarioOptional
                 .map(scenario -> resolveSteps(scenario, deltaKinds))
-                .orElseGet(List::of);
+                .orElseGet(List::of)
+                .stream()
+                .filter(step -> isReconnectStepAllowed(step, currentState))
+                .toList();
         final boolean noChange = isNoChange(deltaKinds, resolvedSteps);
 
         return new DeployTargetPlanDraft(
@@ -566,6 +569,21 @@ public class DeployPlanningService {
                         step.rollback().action()
                 ))
                 .toList();
+    }
+
+    private boolean isReconnectStepAllowed(
+            final DeployResolvedStepPlan step,
+            final DeployCurrentState currentState
+    ) {
+        if (!"RECONNECT_GATEWAY".equals(step.code())) {
+            return true;
+        }
+        final String controlState = Optional.ofNullable(currentState)
+                .map(DeployCurrentState::equipmentProfile)
+                .map(UiEquipmentProfileSnapshot::currentStateSnapshot)
+                .map(UiEquipmentProfileSnapshot.CurrentStateSnapshot::controlState)
+                .orElse(null);
+        return "REMOTE".equalsIgnoreCase(controlState) || "LOCAL".equalsIgnoreCase(controlState);
     }
 
     private JsonNode toDeltaJson(final Set<DeployDeltaKind> deltaKinds) {
