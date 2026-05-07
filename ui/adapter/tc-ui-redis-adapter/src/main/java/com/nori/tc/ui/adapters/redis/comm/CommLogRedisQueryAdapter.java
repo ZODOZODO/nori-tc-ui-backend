@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -25,6 +26,12 @@ import java.util.Set;
  *   <li>설비 통신: {@code tc:gateway:comm-log:{eqpId}}</li>
  *   <li>MES 통신: {@code tc:business:comm-log:{eqpId}}</li>
  * </ul>
+ *
+ * <p>직렬화 정책:</p>
+ * <p>적재 측(Gateway/Business)이 typeless {@code GenericJacksonJsonRedisSerializer}로 저장하므로,
+ * 조회 측도 동일 직렬화기를 쓰는 {@code commLogRedisTemplate}을 주입받습니다.
+ * 역직렬화 결과는 {@link java.util.LinkedHashMap}이므로
+ * {@link ObjectMapper#convertValue(Object, Class)}로 {@link RedisCommLogEntry}에 매핑합니다.</p>
  */
 @Component
 public class CommLogRedisQueryAdapter implements CommLogQueryPort {
@@ -34,14 +41,17 @@ public class CommLogRedisQueryAdapter implements CommLogQueryPort {
     private static final Logger log = LoggerFactory.getLogger(CommLogRedisQueryAdapter.class);
 
     private final RedisTemplate<String, Object> redisTemplate;
+    private final ObjectMapper objectMapper;
 
     @Value("${tc.comm-log.retention-hours:1}")
     private long retentionHours;
 
     public CommLogRedisQueryAdapter(
-            @Qualifier("gatewayRedisTemplate") final RedisTemplate<String, Object> redisTemplate
+            @Qualifier("commLogRedisTemplate") final RedisTemplate<String, Object> redisTemplate,
+            @Qualifier("uiRedisObjectMapper") final ObjectMapper objectMapper
     ) {
         this.redisTemplate = Objects.requireNonNull(redisTemplate, "redisTemplate is null");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is null");
     }
 
     @Override
@@ -64,16 +74,21 @@ public class CommLogRedisQueryAdapter implements CommLogQueryPort {
             }
             final List<CommLogEntry> result = new ArrayList<>(values.size());
             for (final Object value : values) {
-                if (value instanceof RedisCommLogEntry entry) {
-                    result.add(new CommLogEntry(
-                            entry.getEqpId(),
-                            entry.getTimestampMs(),
-                            entry.getDirection(),
-                            entry.getSource(),
-                            entry.getMessageName(),
-                            entry.getPayload()
-                    ));
+                if (value == null) {
+                    continue;
                 }
+                final RedisCommLogEntry entry = objectMapper.convertValue(value, RedisCommLogEntry.class);
+                if (entry == null) {
+                    continue;
+                }
+                result.add(new CommLogEntry(
+                        entry.getEqpId(),
+                        entry.getTimestampMs(),
+                        entry.getDirection(),
+                        entry.getSource(),
+                        entry.getMessageName(),
+                        entry.getPayload()
+                ));
             }
             return result;
         } catch (Exception ex) {

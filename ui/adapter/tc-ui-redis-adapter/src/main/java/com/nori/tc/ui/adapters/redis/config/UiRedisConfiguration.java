@@ -17,6 +17,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 import tools.jackson.databind.ObjectMapper;
@@ -166,6 +167,46 @@ public class UiRedisConfiguration {
         template.setConnectionFactory(factory);
         template.afterPropertiesSet();
         log.info("businessStringRedisTemplate 초기화 완료. serializer=StringRedisSerializer");
+        return template;
+    }
+
+    /**
+     * 통신 로그 조회 전용 RedisTemplate 빈입니다.
+     *
+     * <p>적재 측(Gateway/Business)의 {@code tcRedisTemplate}이
+     * {@link GenericJacksonJsonRedisSerializer}(ObjectMapper-인자 생성자, typeless mode)로 저장하므로,
+     * 조회 측에서도 동일한 직렬화 정책을 사용해야 호환됩니다.</p>
+     *
+     * <p>UI Backend의 다른 RedisTemplate은 {@link RedisSerializer#json()}(typed, {@code @class} 기반)을 사용하지만,
+     * 통신 로그는 적재/조회가 서로 다른 애플리케이션이므로 직렬화 mode가 일치해야 합니다.</p>
+     *
+     * <p>역직렬화 결과는 {@link java.util.LinkedHashMap}이므로, 호출부에서
+     * {@link ObjectMapper#convertValue(Object, Class)}로 도메인 객체로 변환합니다.</p>
+     *
+     * @param factory UI Backend 공용 Redis 연결 팩토리
+     * @param uiRedisObjectMapper Redis 직렬화용 ObjectMapper
+     * @return 통신 로그 조회 전용 RedisTemplate
+     */
+    @Bean(name = "commLogRedisTemplate")
+    public RedisTemplate<String, Object> commLogRedisTemplate(
+            @Qualifier("uiBackendLettuceConnectionFactory") final LettuceConnectionFactory factory,
+            @Qualifier("uiRedisObjectMapper") final ObjectMapper uiRedisObjectMapper
+    ) {
+        final RedisTemplate<String, Object> template = new RedisTemplate<>();
+        template.setConnectionFactory(factory);
+
+        final StringRedisSerializer stringSerializer = new StringRedisSerializer();
+        template.setKeySerializer(stringSerializer);
+        template.setHashKeySerializer(stringSerializer);
+
+        // 적재 측(Gateway/Business)의 tcRedisTemplate과 동일한 typeless GenericJacksonJsonRedisSerializer 사용
+        final GenericJacksonJsonRedisSerializer commLogSerializer =
+                new GenericJacksonJsonRedisSerializer(uiRedisObjectMapper);
+        template.setValueSerializer(commLogSerializer);
+        template.setHashValueSerializer(commLogSerializer);
+        template.afterPropertiesSet();
+
+        log.info("commLogRedisTemplate 초기화 완료. serializer=GenericJacksonJsonRedisSerializer(typeless)");
         return template;
     }
 
