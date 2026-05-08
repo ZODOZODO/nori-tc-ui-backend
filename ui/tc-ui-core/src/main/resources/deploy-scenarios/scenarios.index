@@ -1,5 +1,6 @@
 eqp-create-generic.yaml
 eqp-update-generic.yaml
+eqp-update-partition-move.yaml
 eqp-delete-safe.yaml
 eqp-delete-safe-passive.yaml
 eqp-start.yaml
