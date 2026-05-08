@@ -3,6 +3,7 @@ package com.nori.tc.ui.core.service;
 import tools.jackson.databind.JsonNode;
 import com.nori.tc.common.runtime.support.TraceIdGenerator;
 import com.nori.tc.ui.core.deploy.DeployResolvedStepPlan;
+import com.nori.tc.ui.core.deploy.DeployScenarioAction;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import org.springframework.stereotype.Service;
@@ -207,6 +208,7 @@ public class EqpDirectScenarioRunner {
                 stepUiMessage
         );
 
+        final Integer explicitGatewayPartition = resolveExplicitGatewayPartition(context, step.action());
         commandAssembler.publishDirectCommand(
                 step.targetApp(),
                 messageEventType,
@@ -214,8 +216,28 @@ public class EqpDirectScenarioRunner {
                 context.interfaceType(),
                 stepUiMessage,
                 equipmentProfile,
-                traceId
+                traceId,
+                explicitGatewayPartition
         );
+    }
+
+    /**
+     * EQP_UPDATE_PARTITION_MOVE 시나리오의 두 step (OLD/NEW) 은 publish target partition 을 명시 전달합니다.
+     * 그 외에는 null 을 반환해 publisher 가 DB lookup 으로 결정하도록 합니다.
+     */
+    private Integer resolveExplicitGatewayPartition(
+            final EqpDirectScenarioContext context,
+            final DeployScenarioAction action
+    ) {
+        return switch (action) {
+            case UPSERT_GATEWAY_CONTEXT_OLD_PARTITION -> context.previousSnapshot() == null
+                    ? null
+                    : context.previousSnapshot().eqp().routePartition();
+            case UPSERT_GATEWAY_CONTEXT_NEW_PARTITION -> context.executionSnapshot() == null
+                    ? null
+                    : context.executionSnapshot().eqp().routePartition();
+            default -> null;
+        };
     }
 
     private void handleFailure(

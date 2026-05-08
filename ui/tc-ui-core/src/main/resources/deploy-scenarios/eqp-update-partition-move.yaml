@@ -1,0 +1,69 @@
+version: 1
+
+scenario:
+  code: EQP_UPDATE_PARTITION_MOVE
+  name: EQP Update Partition Move
+  summary: |
+    routePartition 이동 시나리오. 옛 owner Gateway 가 PASSIVE listener / context 를 정리한 뒤
+    새 owner Gateway 가 listener bind / context 등록을 수행하고, 마지막으로 Business runtime cache 메타데이터를
+    갱신한다. UI 호출 측이 EqpDirectScenarioService.resolveUpdateScenarioCode 에서 명시적으로 본 코드를 선택한다.
+
+appliesTo:
+  eventTypes:
+    - EQP_UPDATE
+
+steps:
+  - order: 10
+    code: UPSERT_GATEWAY_CONTEXT_OLD_PARTITION
+    name: 옛 owner Gateway listener / context 정리
+    targetApp: GATEWAY
+    description: |
+      옛 routePartition 으로 EQP_UPDATE 메시지를 발행한다. 옛 owner pod 만 수신해
+      isOwned(newPartition)=false 분기로 PASSIVE listener 멤버 해제 + context 제거를 수행한다.
+    run:
+      action: UPSERT_GATEWAY_CONTEXT_OLD_PARTITION
+      timeoutMs: 15000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: CONDITIONAL_COMPENSATABLE
+      action: RESTORE_PREVIOUS_GATEWAY_CONTEXT
+
+  - order: 12
+    code: UPSERT_GATEWAY_CONTEXT_NEW_PARTITION
+    name: 새 owner Gateway listener / context 등록
+    targetApp: GATEWAY
+    description: |
+      새 routePartition 으로 EQP_UPDATE 메시지를 발행한다. 새 owner pod 만 수신해
+      wasOwned=false / isOwned(newPartition)=true 분기로 PASSIVE listener bind + context 등록을 수행한다.
+    run:
+      action: UPSERT_GATEWAY_CONTEXT_NEW_PARTITION
+      timeoutMs: 15000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: CONDITIONAL_COMPENSATABLE
+      action: RESTORE_PREVIOUS_GATEWAY_CONTEXT
+
+  - order: 90
+    code: UPDATE_BUSINESS_RUNTIME_METADATA
+    name: Business runtime metadata 갱신
+    targetApp: BUSINESS
+    description: routePartition 등 Business runtime cache 메타데이터를 최신 목표 상태로 반영한다.
+    run:
+      action: UPDATE_BUSINESS_RUNTIME_METADATA
+      timeoutMs: 15000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: AUTO_COMPENSATABLE
+      action: RESTORE_PREVIOUS_BUSINESS_RUNTIME_METADATA

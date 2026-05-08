@@ -25,6 +25,17 @@ public enum DeployScenarioAction {
     UPDATE_GATEWAY_RUNTIME_METADATA,
     UPDATE_EQP_PARAM,
     UPSERT_GATEWAY_CONTEXT,
+    /**
+     * EQP_UPDATE_PARTITION_MOVE 시나리오에서 옛 owner Gateway 인스턴스에게 routePartition 이동을 통보하는 step.
+     * UI 가 옛 routePartition 으로 EQP_UPDATE 를 명시 발행하므로 옛 owner pod 만 수신해 listener 해제 / context 정리.
+     * payload 는 일반 UPSERT_GATEWAY_CONTEXT 와 동일하되 publish target partition 이 OLD 입니다.
+     */
+    UPSERT_GATEWAY_CONTEXT_OLD_PARTITION,
+    /**
+     * EQP_UPDATE_PARTITION_MOVE 시나리오에서 새 owner Gateway 인스턴스에게 routePartition 이동을 통보하는 step.
+     * UI 가 새 routePartition 으로 EQP_UPDATE 를 명시 발행하므로 새 owner pod 만 수신해 listener bind / context 등록.
+     */
+    UPSERT_GATEWAY_CONTEXT_NEW_PARTITION,
     RECONNECT_GATEWAY,
     REBUILD_GATEWAY_RUNTIME,
     RELOAD_GATEWAY_PLUGIN,

@@ -219,6 +219,26 @@ final class DeployServiceCommandSupport {
             final UiEquipmentProfileSnapshot equipmentProfile,
             final String traceId
     ) {
+        publishDirectCommand(targetApp, eventType, eqpId, interfaceType, uiMessage, equipmentProfile, traceId, null);
+    }
+
+    /**
+     * publishDirectCommand 의 partition 명시 오버로드.
+     *
+     * <p>{@code explicitGatewayPartition} 이 null 이면 기존 동작 (Gateway 측 publisher 가 DB lookup 으로 partition 결정).
+     * 비-null 이면 해당 partition 으로 publishToPartition. EQP_UPDATE_PARTITION_MOVE 시나리오의
+     * UPSERT_GATEWAY_CONTEXT_OLD_PARTITION / NEW_PARTITION step 이 각각 OLD / NEW partition 을 명시 전달합니다.</p>
+     */
+    void publishDirectCommand(
+            final com.nori.tc.ui.core.deploy.DeployTargetApp targetApp,
+            final UiCommandEventType eventType,
+            final String eqpId,
+            final String interfaceType,
+            final JsonNode uiMessage,
+            final UiEquipmentProfileSnapshot equipmentProfile,
+            final String traceId,
+            final Integer explicitGatewayPartition
+    ) {
         final UiCommandMessage message = new UiCommandMessage(
                 eventType,
                 traceId,
@@ -230,7 +250,11 @@ final class DeployServiceCommandSupport {
         );
 
         if (targetApp == com.nori.tc.ui.core.deploy.DeployTargetApp.GATEWAY) {
-            gatewayEventPublishPort.publish(message);
+            if (explicitGatewayPartition != null) {
+                gatewayEventPublishPort.publishToPartition(message, explicitGatewayPartition);
+            } else {
+                gatewayEventPublishPort.publish(message);
+            }
             return;
         }
         businessEventPublishPort.publish(message);
@@ -438,6 +462,10 @@ final class DeployServiceCommandSupport {
                      EQP_REGISTER_DEPLOY -> UiCommandEventType.EQP_UPDATE;
                 default -> UiCommandEventType.EQP_UPDATE;
             };
+            // routePartition 이동 시나리오의 두 단계는 일반 EQP_UPDATE 이벤트 타입을 사용합니다.
+            // (옛 owner / 새 owner 구분은 publish target partition 으로만 분리하고 메시지 의미는 동일)
+            case UPSERT_GATEWAY_CONTEXT_OLD_PARTITION,
+                 UPSERT_GATEWAY_CONTEXT_NEW_PARTITION -> UiCommandEventType.EQP_UPDATE;
             // Business runtime cache 메타데이터(routePartition 등) 갱신은 EQP_UPDATE 이벤트로 Business에 전달되어
             // BusinessUiTaskProcessorRegistry의 EQP_UPDATE handler가 BusinessModelRuntimeCache를 갱신합니다.
             case UPDATE_BUSINESS_RUNTIME_METADATA -> UiCommandEventType.EQP_UPDATE;

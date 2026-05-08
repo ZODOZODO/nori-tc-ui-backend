@@ -112,11 +112,20 @@ public class EqpDirectScenarioService {
             rejectRoutePartitionChangeOnStartedEquipment(existingSnapshot, command);
 
             final JsonNode uiMessage = buildManagementUiMessage(existingSnapshot.eqp().commInterface(), command);
+            // Gateway pod 가 owned-transition 분기 (wasOwned/isOwned) 를 판정하려면 옛 routePartition 을 알아야 하므로
+            // 모든 EQP_UPDATE 메시지의 gatewayProfile 에 oldRoutePartition 필드를 주입합니다.
+            // 변경 없는 케이스에는 OLD == NEW 동일 값으로 들어갑니다.
+            injectOldRoutePartition(uiMessage, existingSnapshot.eqp().routePartition());
+            // routePartition 이 변경되면 옛 owner pod 의 listener 해제 + 새 owner pod 의 listener bind 가
+            // sequential 하게 필요하므로 전용 시나리오(EQP_UPDATE_PARTITION_MOVE) 로 분기합니다.
+            // 그 외에는 기존 EQP_UPDATE_GENERIC 시나리오를 사용합니다 (단일 publish 흐름).
+            final String resolvedScenarioCode = resolveUpdateScenarioCode(existingSnapshot, command);
             final DeployTargetPlanDraft planDraft = planner.plan(
                     UiCommandEventType.EQP_UPDATE,
                     eqpId,
                     existingSnapshot.eqp().commInterface().name(),
-                    uiMessage
+                    uiMessage,
+                    resolvedScenarioCode
             );
             final EqpDirectScenarioContext context = localMutationCoordinator.prepareUpdate(
                     newExecutionId(),
@@ -131,6 +140,43 @@ public class EqpDirectScenarioService {
             return EqpCommandResult.ok();
         } catch (Exception exception) {
             return toCommandResult(exception);
+        }
+    }
+
+    /**
+     * EQP_UPDATE 의 routePartition 변경 여부에 따라 시나리오 코드를 선택합니다.
+     *
+     * <p>옛/새 routePartition 이 모두 존재하고 서로 다르면 {@code EQP_UPDATE_PARTITION_MOVE} 를 반환하고,
+     * 그 외 (변경 없음 / 어느 쪽이 null) 에는 {@code EQP_UPDATE_GENERIC} 를 반환합니다.</p>
+     */
+    private String resolveUpdateScenarioCode(
+            final EqpManagementSnapshot existingSnapshot,
+            final EqpManagementCommand.Update command
+    ) {
+        final Integer oldRoutePartition = existingSnapshot.eqp().routePartition();
+        final Integer newRoutePartition = command.routePartition();
+        if (oldRoutePartition != null
+                && newRoutePartition != null
+                && !oldRoutePartition.equals(newRoutePartition)) {
+            return "EQP_UPDATE_PARTITION_MOVE";
+        }
+        return "EQP_UPDATE_GENERIC";
+    }
+
+    /**
+     * uiMessage 의 {@code gatewayProfile} 노드에 {@code oldRoutePartition} 필드를 주입합니다.
+     * Gateway pod 측 EQP_UPDATE 핸들러가 wasOwned/isOwned 분기로 PASSIVE listener 처리를 결정하는 데 사용합니다.
+     */
+    private void injectOldRoutePartition(final JsonNode uiMessage, final Integer oldRoutePartition) {
+        if (oldRoutePartition == null) {
+            return;
+        }
+        if (!(uiMessage instanceof tools.jackson.databind.node.ObjectNode root)) {
+            return;
+        }
+        final JsonNode gatewayProfileNode = root.get("gatewayProfile");
+        if (gatewayProfileNode instanceof tools.jackson.databind.node.ObjectNode gatewayProfile) {
+            gatewayProfile.put("oldRoutePartition", oldRoutePartition.intValue());
         }
     }
 

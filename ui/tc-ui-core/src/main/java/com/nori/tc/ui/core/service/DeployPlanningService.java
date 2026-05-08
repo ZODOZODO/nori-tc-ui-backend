@@ -469,9 +469,11 @@ public class DeployPlanningService {
         if (eventType == UiCommandEventType.EQP_REGISTER_DEPLOY) {
             return Optional.of(resolveRegisterScenario(catalog, deltaKinds, resolvedScenarioCode));
         }
-        // EQP_DELETE는 ACTIVE/PASSIVE에 따라 시나리오가 분기되므로,
+        // EQP_DELETE는 ACTIVE/PASSIVE에 따라 시나리오가 분기되고,
+        // EQP_UPDATE는 routePartition 변경 여부에 따라 GENERIC/PARTITION_MOVE 로 분기되므로,
         // 호출 측이 resolvedScenarioCode를 명시한 경우 catalog에서 직접 선택합니다.
-        if (eventType == UiCommandEventType.EQP_DELETE
+        if ((eventType == UiCommandEventType.EQP_DELETE
+                        || eventType == UiCommandEventType.EQP_UPDATE)
                 && normalizedText(resolvedScenarioCode).isPresent()) {
             return Optional.of(resolveExplicitScenario(catalog, eventType, resolvedScenarioCode));
         }

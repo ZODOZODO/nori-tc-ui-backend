@@ -146,6 +146,23 @@ public class DeployCommandAssembler {
         commandSupport.publishDirectCommand(targetApp, eventType, eqpId, interfaceType, uiMessage, equipmentProfile, traceId);
     }
 
+    /**
+     * publishDirectCommand 의 partition 명시 오버로드. EQP_UPDATE_PARTITION_MOVE 시나리오에서
+     * 옛/새 partition 으로 sequential 발행하기 위해 사용합니다.
+     */
+    public void publishDirectCommand(
+            final com.nori.tc.ui.core.deploy.DeployTargetApp targetApp,
+            final UiCommandEventType eventType,
+            final String eqpId,
+            final String interfaceType,
+            final JsonNode uiMessage,
+            final UiEquipmentProfileSnapshot equipmentProfile,
+            final String traceId,
+            final Integer explicitGatewayPartition
+    ) {
+        commandSupport.publishDirectCommand(targetApp, eventType, eqpId, interfaceType, uiMessage, equipmentProfile, traceId, explicitGatewayPartition);
+    }
+
     public UiCommandEventType resolveMessageEventType(
             final UiCommandEventType deployEventType,
             final DeployScenarioAction action

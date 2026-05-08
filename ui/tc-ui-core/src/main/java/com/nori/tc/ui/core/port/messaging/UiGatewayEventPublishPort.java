@@ -33,8 +33,8 @@ public interface UiGatewayEventPublishPort {
     /**
      * Gateway 이벤트 토픽의 명시적 partition으로 Kafka 메시지를 발행합니다.
      *
-     * <p>route_partition 이동 시 옛 owner pod에게 통보를 보내야 하므로 DB lookup이 아닌
-     * 호출 측이 지정한 partition을 그대로 사용합니다. 주로 {@code EQP_PARTITION_RELEASE} 발행에 사용됩니다.</p>
+     * <p>route_partition 이동 시나리오에서 옛 owner partition / 새 owner partition 양쪽으로 EQP_UPDATE를
+     * 시퀀셜하게 보내야 하므로, DB lookup이 아닌 호출 측이 지정한 partition을 그대로 사용합니다.</p>
      *
      * <p>본 메서드는 SAM(@FunctionalInterface) 호환을 위해 default 구현입니다. 운영 publisher는 반드시 override 해야 하며,
      * 미구현 publisher가 본 메서드를 호출하면 명시적으로 실패하여 운영 사고를 차단합니다.</p>
