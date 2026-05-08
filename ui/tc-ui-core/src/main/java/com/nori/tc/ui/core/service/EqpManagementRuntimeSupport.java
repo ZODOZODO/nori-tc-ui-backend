@@ -227,6 +227,54 @@ public final class EqpManagementRuntimeSupport {
         );
     }
 
+    /**
+     * 옛 partition으로 {@code EQP_PARTITION_RELEASE} 메시지를 비동기 best-effort로 발행합니다.
+     *
+     * <p>route_partition이 이동된 경우 옛 owner pod이 catalog/listener/채널을 정리할 수 있도록 통보합니다.</p>
+     *
+     * <p>본 발행 실패는 후속 EQP_UPDATE를 차단하지 않습니다(warn 로그만 남기고 진행).
+     * 옛 owner 잔존은 운영 모니터링으로 검출 가능하며, 다음 EQP_UPDATE 시 자연 해소되거나 수동 정리합니다.</p>
+     *
+     * @param updatedSnapshot 변경 후 snapshot (eqpId/interfaceType 추출용)
+     * @param oldRoutePartition 옛 owner의 route_partition
+     */
+    void publishPartitionReleaseQuietly(final EqpManagementSnapshot updatedSnapshot, final int oldRoutePartition) {
+        final String traceId = TraceIdGenerator.newTraceId();
+        final String eqpId = updatedSnapshot.eqp().eqpId();
+        final String interfaceType = updatedSnapshot.eqp().commInterface() == null
+                ? null
+                : updatedSnapshot.eqp().commInterface().name();
+        final JsonNode uiMessage = buildUiMessage(updatedSnapshot);
+
+        final UiCommandMessage releaseMessage = new UiCommandMessage(
+                UiCommandEventType.EQP_PARTITION_RELEASE,
+                traceId,
+                UI_SOURCE,
+                eqpId,
+                interfaceType,
+                uiMessage,
+                null
+        );
+
+        try {
+            gatewayEventPublishPort.publishToPartition(releaseMessage, oldRoutePartition);
+            log.info(
+                    "Partition release published to old partition. eqpId={}, oldRoutePartition={}, traceId={}",
+                    eqpId,
+                    oldRoutePartition,
+                    traceId
+            );
+        } catch (Exception ex) {
+            log.warn(
+                    "Partition release publish failed; proceeding with EQP_UPDATE (best-effort). eqpId={}, oldRoutePartition={}, traceId={}",
+                    eqpId,
+                    oldRoutePartition,
+                    traceId,
+                    ex
+            );
+        }
+    }
+
     void awaitJarReloadSuccess(final EqpManagementSnapshot snapshot, final long timeoutMs) throws Exception {
         final String traceId = TraceIdGenerator.newTraceId();
         final String eqpId = snapshot.eqp().eqpId();

@@ -17,7 +17,12 @@ public enum UiCommandEventType {
     EQP_PARAMETER_UPDATE,
     EQP_GATEWAY_JARFILE_UPDATE,
     EQP_BUSINESS_JARFILE_UPDATE,
-    EQP_REGISTER_DEPLOY;
+    EQP_REGISTER_DEPLOY,
+    /**
+     * route_partition 이동 시 옛 owner pod에 release를 통보하기 위한 이벤트입니다.
+     * UI가 새 partition으로 EQP_UPDATE를 발행하기 직전에 옛 partition으로 본 이벤트를 발행합니다.
+     */
+    EQP_PARTITION_RELEASE;
 
     /**
      * 문자열 eventType을 enum으로 변환합니다.

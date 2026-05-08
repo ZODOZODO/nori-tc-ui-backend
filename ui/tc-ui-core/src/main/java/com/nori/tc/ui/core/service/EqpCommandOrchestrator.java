@@ -93,7 +93,7 @@ public class EqpCommandOrchestrator {
 
             final EqpManagementSnapshot updatedSnapshot = persistenceService.update(eqpId, command);
             persisted = true;
-            runtimeSyncCoordinator.syncUpdate(updatedSnapshot, timeoutMs);
+            runtimeSyncCoordinator.syncUpdate(existingSnapshot, updatedSnapshot, timeoutMs);
 
             if (requiresJarReload(existingSnapshot, updatedSnapshot)) {
                 runtimeSyncCoordinator.reloadJar(updatedSnapshot, timeoutMs);

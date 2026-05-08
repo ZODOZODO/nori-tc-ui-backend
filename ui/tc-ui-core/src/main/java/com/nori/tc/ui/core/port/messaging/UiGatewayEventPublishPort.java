@@ -31,11 +31,39 @@ public interface UiGatewayEventPublishPort {
     void publish(UiCommandMessage message);
 
     /**
+     * Gateway 이벤트 토픽의 명시적 partition으로 Kafka 메시지를 발행합니다.
+     *
+     * <p>route_partition 이동 시 옛 owner pod에게 통보를 보내야 하므로 DB lookup이 아닌
+     * 호출 측이 지정한 partition을 그대로 사용합니다. 주로 {@code EQP_PARTITION_RELEASE} 발행에 사용됩니다.</p>
+     *
+     * <p>본 메서드는 SAM(@FunctionalInterface) 호환을 위해 default 구현입니다. 운영 publisher는 반드시 override 해야 하며,
+     * 미구현 publisher가 본 메서드를 호출하면 명시적으로 실패하여 운영 사고를 차단합니다.</p>
+     *
+     * @param message 발행할 UI 명령 메시지
+     * @param partition 명시적 발행 대상 partition 번호 (0 이상)
+     */
+    default void publishToPartition(UiCommandMessage message, int partition) {
+        throw new UnsupportedOperationException(
+                "publishToPartition is not implemented by this publisher; route_partition release publishing is unavailable."
+        );
+    }
+
+    /**
      * 테스트 또는 초기 구성에 사용할 noop(아무 동작 없음) 구현체를 반환합니다.
      *
      * @return 발행 동작을 무시하는 noop 구현체
      */
     static UiGatewayEventPublishPort noop() {
-        return message -> { /* noop: 아무 동작 없음 */ };
+        return new UiGatewayEventPublishPort() {
+            @Override
+            public void publish(final UiCommandMessage message) {
+                /* noop: 아무 동작 없음 */
+            }
+
+            @Override
+            public void publishToPartition(final UiCommandMessage message, final int partition) {
+                /* noop: 아무 동작 없음 */
+            }
+        };
     }
 }
