@@ -540,7 +540,9 @@ final class DeployServiceCommandSupport {
             final String eqpId
     ) {
         switch (action) {
-            case UPSERT_GATEWAY_CONTEXT -> copyFields(destination, mergedUiMessage, "gatewayProfile");
+            case UPSERT_GATEWAY_CONTEXT,
+                 UPSERT_GATEWAY_CONTEXT_OLD_PARTITION,
+                 UPSERT_GATEWAY_CONTEXT_NEW_PARTITION -> copyFields(destination, mergedUiMessage, "gatewayProfile");
             case RELOAD_BUSINESS_PLUGIN -> copyFields(destination, mergedUiMessage, "modelInfo", "businessJar");
             case RELOAD_BUSINESS_MODEL_RUNTIME -> {
                 copyFields(destination, mergedUiMessage, "modelInfo");
