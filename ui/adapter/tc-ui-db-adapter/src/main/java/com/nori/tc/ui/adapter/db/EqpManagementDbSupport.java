@@ -1,5 +1,6 @@
 package com.nori.tc.ui.adapter.db;
 
+import com.nori.tc.common.shard.ShardGroupResolver;
 import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.eqp.store.TcEqpHsmsStore;
 import com.nori.tc.db.core.eqp.store.TcEqpLogStore;
@@ -70,6 +71,7 @@ class EqpManagementDbSupport {
     private final TcJarBusinessStore jarBusinessStore;
     private final TcModelStore modelStore;
     private final TcEqpSocketProtocolTypeStore socketProtocolTypeStore;
+    private final ShardGroupResolver shardGroupResolver;
 
     EqpManagementDbSupport(
             final TcEqpStore eqpStore,
@@ -84,7 +86,8 @@ class EqpManagementDbSupport {
             final TcJarGatewayStore jarGatewayStore,
             final TcJarBusinessStore jarBusinessStore,
             final TcModelStore modelStore,
-            final TcEqpSocketProtocolTypeStore socketProtocolTypeStore
+            final TcEqpSocketProtocolTypeStore socketProtocolTypeStore,
+            final ShardGroupResolver shardGroupResolver
     ) {
         this.eqpStore = Objects.requireNonNull(eqpStore, "eqpStore is null");
         this.eqpHsmsStore = Objects.requireNonNull(eqpHsmsStore, "eqpHsmsStore is null");
@@ -99,6 +102,7 @@ class EqpManagementDbSupport {
         this.jarBusinessStore = Objects.requireNonNull(jarBusinessStore, "jarBusinessStore is null");
         this.modelStore = Objects.requireNonNull(modelStore, "modelStore is null");
         this.socketProtocolTypeStore = Objects.requireNonNull(socketProtocolTypeStore, "socketProtocolTypeStore is null");
+        this.shardGroupResolver = Objects.requireNonNull(shardGroupResolver, "shardGroupResolver is null");
     }
 
     Optional<EqpManagementSnapshot> loadSnapshotByEqpId(final String eqpId) {
@@ -190,7 +194,8 @@ class EqpManagementDbSupport {
                 .filter(peer -> sameText(peer.commMode(), "PASSIVE"))
                 .filter(peer -> sameText(peer.eqpIp(), normalizedEqpIp))
                 .filter(peer -> peer.eqpPort() == eqpPort)
-                .filter(peer -> !Objects.equals(peer.routePartition(), routePartition))
+                .filter(peer -> peer.routePartition() != null
+                        && !shardGroupResolver.inSameShardGroup(routePartition, peer.routePartition()))
                 .filter(peer -> samePassiveListenerGroup(interfaceType, peer.eqpKey(), normalizedSocketProtocolType))
                 .map(UiEqp::eqpId)
                 .findFirst();

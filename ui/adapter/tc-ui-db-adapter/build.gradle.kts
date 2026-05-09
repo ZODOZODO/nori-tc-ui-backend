@@ -39,6 +39,12 @@ dependencies {
      * 런타임 주입은 tc-ui-backend-app(starter)에서 담당합니다.
      */
     implementation("com.nori.tc:tc-db-core:0.0.1-SNAPSHOT")
+
+    /*
+     * 공유 shard-group 매핑 Resolver — PASSIVE listener-group 검증에서 같은 shard-group 의 partition 들을 허용합니다.
+     */
+    implementation("com.nori.tc:tc-common-shard:0.0.1-SNAPSHOT")
+
     implementation("org.springframework:spring-jdbc")
     implementation(libs.jackson.databind)
     implementation(libs.slf4j.api)
