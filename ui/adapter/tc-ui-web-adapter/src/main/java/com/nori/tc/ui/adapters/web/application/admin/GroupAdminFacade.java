@@ -2,16 +2,24 @@ package com.nori.tc.ui.adapters.web.application.admin;
 
 import com.nori.tc.ui.adapters.web.dto.request.GroupUpsertRequest;
 import com.nori.tc.ui.adapters.web.dto.response.GroupInfoResponse;
+import com.nori.tc.ui.adapters.web.dto.response.GroupMemberResponse;
 import com.nori.tc.ui.adapters.web.dto.response.GroupPermissionMappingResponse;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
 import com.nori.tc.ui.core.port.db.GroupCrudPort;
 import com.nori.tc.ui.core.port.db.GroupPermissionMappingPort;
+import com.nori.tc.ui.core.port.db.UserCrudPort;
+import com.nori.tc.ui.core.port.db.UserGroupMappingPort;
+import com.nori.tc.ui.domain.useradmin.UiManagedUser;
+import com.nori.tc.ui.domain.useradmin.UiUserGroupMember;
 import com.nori.tc.ui.domain.useradmin.UiUserGroupPermission;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Group 관리 use-case를 controller 밖으로 이동시키는 facade 입니다.
@@ -23,15 +31,21 @@ public class GroupAdminFacade {
 
     private final GroupCrudPort groupCrudPort;
     private final GroupPermissionMappingPort groupPermissionMappingPort;
+    private final UserGroupMappingPort userGroupMappingPort;
+    private final UserCrudPort userCrudPort;
     private final GroupAdminAssembler assembler;
 
     public GroupAdminFacade(
             final GroupCrudPort groupCrudPort,
             final GroupPermissionMappingPort groupPermissionMappingPort,
+            final UserGroupMappingPort userGroupMappingPort,
+            final UserCrudPort userCrudPort,
             final GroupAdminAssembler assembler
     ) {
         this.groupCrudPort = Objects.requireNonNull(groupCrudPort, "groupCrudPort is null");
         this.groupPermissionMappingPort = Objects.requireNonNull(groupPermissionMappingPort, "groupPermissionMappingPort is null");
+        this.userGroupMappingPort = Objects.requireNonNull(userGroupMappingPort, "userGroupMappingPort is null");
+        this.userCrudPort = Objects.requireNonNull(userCrudPort, "userCrudPort is null");
         this.assembler = Objects.requireNonNull(assembler, "assembler is null");
     }
 
@@ -80,5 +94,22 @@ public class GroupAdminFacade {
 
     public void removePermissionMapping(final long groupId, final long permId) {
         groupPermissionMappingPort.deleteByGroupIdPermId(groupId, permId);
+    }
+
+    public Optional<PagedResponse<GroupMemberResponse>> listUsersByGroupId(
+            final long groupId,
+            final UiPageRequest pageRequest
+    ) {
+        if (groupCrudPort.findByGroupId(groupId).isEmpty()) {
+            return Optional.empty();
+        }
+        final PagedResponse<UiUserGroupMember> mappings = userGroupMappingPort.findAllByGroupId(groupId, pageRequest);
+        final Map<Long, UiManagedUser> usersByUserPk = mappings.items().stream()
+                .map(UiUserGroupMember::userPk)
+                .distinct()
+                .map(userCrudPort::findByUserPk)
+                .flatMap(Optional::stream)
+                .collect(Collectors.toMap(UiManagedUser::userPk, Function.identity()));
+        return Optional.of(assembler.toGroupMemberPage(mappings, usersByUserPk));
     }
 }

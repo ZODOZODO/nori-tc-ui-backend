@@ -179,6 +179,60 @@ public class JpaUserGroupMappingPort implements UserGroupMappingPort {
     }
 
     /**
+     * 특정 그룹에 속한 사용자 매핑 목록을 페이지 단위로 조회합니다.
+     *
+     * @param groupId 그룹 PK
+     * @param pageRequest offset/limit 요청(없으면 기본 페이지 사용)
+     * @return 목록 + count 페이지 응답
+     */
+    @Override
+    public PagedResponse<UiUserGroupMember> findAllByGroupId(final long groupId, final UiPageRequest pageRequest) {
+        if (groupId <= 0) {
+            log.warn("사용자-그룹 매핑 목록 조회 요청 거부 - groupId는 1 이상이어야 합니다. groupId={}", groupId);
+            throw new UiBadRequestException("groupId는 1 이상이어야 합니다.");
+        }
+        final UiPageRequest effectivePage = (pageRequest == null) ? UiPageRequest.defaultPage() : pageRequest;
+        final com.nori.tc.db.core.common.PageRequest dbPageRequest = UiCoreCommandDbMapper.toDbPageRequest(effectivePage);
+
+        if (log.isDebugEnabled()) {
+            log.debug("사용자-그룹 매핑 목록 조회 시작. groupId={}, offset={}, limit={}",
+                    groupId, effectivePage.offset(), effectivePage.limit());
+        }
+
+        try {
+            final List<TcUserGroupMember> dbItems = userGroupMemberStore.findAllByGroupId(groupId, dbPageRequest);
+            final long totalCount = UiDbPagedCountSupport.resolveTotalCount(
+                    dbItems,
+                    dbPageRequest,
+                    UiDbPagedCountSupport.DEFAULT_COUNT_SCAN_LIMIT,
+                    page -> userGroupMemberStore.findAllByGroupId(groupId, page),
+                    log,
+                    "user-group-mapping"
+            );
+            final List<UiUserGroupMember> items = dbItems.stream()
+                    .map(member -> UiUserAdminDbMapper.toDomain(member))
+                    .toList();
+
+            if (log.isDebugEnabled()) {
+                log.debug("사용자-그룹 매핑 목록 조회 완료. groupId={}, offset={}, limit={}, pageSize={}, totalCount={}",
+                        groupId, effectivePage.offset(), effectivePage.limit(), items.size(), totalCount);
+            }
+
+            return PagedResponse.of(items, effectivePage.offset(), effectivePage.limit(), totalCount);
+        } catch (RuntimeException e) {
+            if (UiDbAdapterExceptionSupport.isBadRequest(e)) {
+                log.warn("사용자-그룹 매핑 목록 조회 요청 거부 - 잘못된 입력. groupId={}, offset={}, limit={}, reason={}",
+                        groupId, effectivePage.offset(), effectivePage.limit(),
+                        UiDbAdapterExceptionSupport.resolveMessage(e, "invalid page request"));
+                throw new UiBadRequestException("사용자-그룹 매핑 목록 조회 입력이 올바르지 않습니다.", e);
+            }
+            log.error("사용자-그룹 매핑 목록 조회 실패. groupId={}, offset={}, limit={}",
+                    groupId, effectivePage.offset(), effectivePage.limit(), e);
+            throw e;
+        }
+    }
+
+    /**
      * (userPk, groupId) 유니크 키 기준으로 매핑을 물리 삭제합니다.
      *
      * @param userPk 사용자 PK
