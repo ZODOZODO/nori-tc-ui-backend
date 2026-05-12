@@ -6,6 +6,7 @@ import com.nori.tc.ui.adapters.web.dto.request.UserPasswordResetRequest;
 import com.nori.tc.ui.adapters.web.dto.request.UserUpsertRequest;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.adapters.web.dto.response.UserGroupMappingResponse;
+import com.nori.tc.ui.adapters.web.dto.response.UserGroupMembershipResponse;
 import com.nori.tc.ui.adapters.web.dto.response.UserInfoResponse;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
@@ -38,6 +39,7 @@ import java.util.Objects;
  *   <li>DELETE /api/user/{userPk}</li>
  *   <li>POST /api/user/{userPk}/group/{groupId}</li>
  *   <li>DELETE /api/user/{userPk}/group/{groupId}</li>
+ *   <li>GET /api/user/{userPk}/group</li>
  *   <li>POST /api/user/{userPk}/password/reset</li>
  * </ul>
  */
@@ -207,6 +209,38 @@ public class UserController {
         userAdminFacade.removeGroupMapping(userPk, groupId);
         log.info("사용자-그룹 매핑 삭제 완료. userPk={}, groupId={}", userPk, groupId);
         return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    /**
+     * 특정 사용자의 그룹 매핑 목록을 페이지 단위로 조회합니다.
+     *
+     * @param userPk 사용자 PK
+     * @param offset 조회 시작 위치(기본값 0)
+     * @param limit 조회 건수(기본값 100, 최대 500)
+     * @return 사용자-그룹 매핑 페이지 응답
+     */
+    @GetMapping("/{userPk}/group")
+    public ResponseEntity<ApiResponse<PagedResponse<UserGroupMembershipResponse>>> listGroupsByUser(
+            @PathVariable final long userPk,
+            @RequestParam(name = "offset", required = false) final Integer offset,
+            @RequestParam(name = "limit", required = false) final Integer limit
+    ) {
+        final UiPageRequest pageRequest = UiPageRequestSupport.resolve(offset, limit);
+
+        final var optionalPage = userAdminFacade.listGroupsByUserPk(userPk, pageRequest);
+        if (optionalPage.isEmpty()) {
+            log.warn("사용자-그룹 매핑 목록 조회 대상 사용자 없음. userPk={}", userPk);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiResponse.error("NOT_FOUND", "사용자를 찾을 수 없습니다."));
+        }
+        final PagedResponse<UserGroupMembershipResponse> responsePage = optionalPage.get();
+
+        if (log.isDebugEnabled()) {
+            log.debug("사용자-그룹 매핑 목록 조회 완료. userPk={}, offset={}, limit={}, pageSize={}, totalCount={}",
+                    userPk, responsePage.offset(), responsePage.limit(), responsePage.items().size(), responsePage.count());
+        }
+
+        return ResponseEntity.ok(ApiResponse.success(responsePage));
     }
 
     /**

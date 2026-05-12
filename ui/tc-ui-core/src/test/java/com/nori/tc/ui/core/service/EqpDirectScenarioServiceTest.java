@@ -10,6 +10,7 @@ import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.eqp.EqpRepairTask;
 import com.nori.tc.ui.core.model.UiCommandMessage;
 import com.nori.tc.ui.core.model.UiCommandReply;
+import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.port.db.DemoJobCleanupPort;
 import com.nori.tc.ui.core.port.db.DeployScenarioCatalogMetaPort;
 import com.nori.tc.ui.core.port.db.DeployStorePort;
@@ -416,6 +417,40 @@ class EqpDirectScenarioServiceTest {
                 snapshot.socket() == null ? null : snapshot.socket().socketProtocolType(),
                 null,
                 snapshot.eqp().routePartition(),
+                // RECONNECT_GATEWAY step 은 controlState ∈ {REMOTE, LOCAL} 일 때만 통과한다
+                // (DeployPlanningService#isReconnectStepAllowed). reconnect 통과 케이스를 위해 REMOTE 부여.
+                remoteEquipmentProfile(snapshot)
+        );
+    }
+
+    private UiEquipmentProfileSnapshot remoteEquipmentProfile(final EqpManagementSnapshot snapshot) {
+        return new UiEquipmentProfileSnapshot(
+                snapshot.eqp().eqpKey(),
+                snapshot.eqp().eqpId(),
+                snapshot.eqp().commInterface().name(),
+                snapshot.socket() == null ? null : snapshot.socket().socketProtocolType(),
+                null,
+                snapshot.eqp().eqpIp(),
+                snapshot.eqp().eqpPort(),
+                snapshot.eqp().modelVersionKey(),
+                snapshot.eqp().gatewayJarKey(),
+                snapshot.eqp().businessJarKey(),
+                snapshot.eqp().commMode(),
+                snapshot.eqp().routePartition(),
+                snapshot.eqp().enabled(),
+                null,
+                null,
+                new UiEquipmentProfileSnapshot.CurrentStateSnapshot(
+                        "REMOTE",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null
+                ),
+                null,
+                null,
+                null,
                 null
         );
     }

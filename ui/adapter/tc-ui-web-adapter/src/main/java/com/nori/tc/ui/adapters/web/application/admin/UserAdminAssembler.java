@@ -3,6 +3,7 @@ package com.nori.tc.ui.adapters.web.application.admin;
 import com.nori.tc.ui.adapters.web.dto.request.UserPasswordResetRequest;
 import com.nori.tc.ui.adapters.web.dto.request.UserUpsertRequest;
 import com.nori.tc.ui.adapters.web.dto.response.UserGroupMappingResponse;
+import com.nori.tc.ui.adapters.web.dto.response.UserGroupMembershipResponse;
 import com.nori.tc.ui.adapters.web.dto.response.UserInfoResponse;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.model.PagedResponse;
@@ -10,11 +11,13 @@ import com.nori.tc.ui.core.model.UiUserGroupMemberUpsertCommand;
 import com.nori.tc.ui.core.model.UiUserUpsertCommand;
 import com.nori.tc.ui.domain.auth.UiUserStatus;
 import com.nori.tc.ui.domain.useradmin.UiManagedUser;
+import com.nori.tc.ui.domain.useradmin.UiUserGroup;
 import com.nori.tc.ui.domain.useradmin.UiUserGroupMember;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * User 관리 요청/응답 변환과 입력 정규화를 담당합니다.
@@ -117,6 +120,28 @@ public class UserAdminAssembler {
                 mapping.groupId(),
                 mapping.grantedAt(),
                 mapping.grantedBy()
+        );
+    }
+
+    public PagedResponse<UserGroupMembershipResponse> toUserGroupMembershipPage(
+            final PagedResponse<UiUserGroupMember> page,
+            final Map<Long, UiUserGroup> groupsByGroupId
+    ) {
+        final List<UserGroupMembershipResponse> items = page.items().stream()
+                .map(mapping -> toUserGroupMembershipResponse(mapping, groupsByGroupId.get(mapping.groupId())))
+                .toList();
+        return PagedResponse.of(items, page.offset(), page.limit(), page.count());
+    }
+
+    public UserGroupMembershipResponse toUserGroupMembershipResponse(
+            final UiUserGroupMember mapping,
+            final UiUserGroup group
+    ) {
+        return new UserGroupMembershipResponse(
+                mapping.userPk(),
+                mapping.groupId(),
+                group == null ? null : group.groupCode(),
+                group == null ? null : group.groupName()
         );
     }
 

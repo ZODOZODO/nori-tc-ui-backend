@@ -45,6 +45,15 @@ public interface UserGroupMappingPort {
     PagedResponse<UiUserGroupMember> findAllByUserPk(long userPk, UiPageRequest pageRequest);
 
     /**
+     * 특정 그룹에 속한 사용자 매핑 목록을 페이지 단위로 조회합니다.
+     *
+     * @param groupId 그룹 PK
+     * @param pageRequest offset/limit 기반 페이지 요청
+     * @return 페이지 응답(목록 + 전체 건수)
+     */
+    PagedResponse<UiUserGroupMember> findAllByGroupId(long groupId, UiPageRequest pageRequest);
+
+    /**
      * (userPk, groupId) 유니크 키 기준으로 매핑을 삭제합니다.
      *
      * @param userPk 사용자 PK

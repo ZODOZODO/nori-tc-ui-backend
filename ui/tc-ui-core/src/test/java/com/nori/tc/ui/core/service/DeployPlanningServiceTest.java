@@ -9,6 +9,7 @@ import com.nori.tc.ui.core.deploy.DeployPlanCommand;
 import com.nori.tc.ui.core.deploy.DeployPlanningResult;
 import com.nori.tc.ui.core.deploy.DeployRegisterScenarioPreviewCommand;
 import com.nori.tc.ui.core.deploy.DeployScenarioCatalogMeta;
+import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.port.db.DeployScenarioCatalogMetaPort;
 import com.nori.tc.ui.core.properties.UiDeployProperties;
 import com.nori.tc.ui.core.model.UiCommandEventType;
@@ -61,7 +62,7 @@ class DeployPlanningServiceTest {
                         "TEST01",
                         null,
                         0,
-                        null
+                        remoteEquipmentProfile(eqpId)
                 )),
                 catalogService,
                 objectMapper
@@ -300,6 +301,40 @@ class DeployPlanningServiceTest {
         root.putObject("eqpParams")
                 .put("version", version);
         return root;
+    }
+
+    private UiEquipmentProfileSnapshot remoteEquipmentProfile(final String eqpId) {
+        // RECONNECT_GATEWAY step 은 controlState ∈ {REMOTE, LOCAL} 일 때만 통과한다
+        // (DeployPlanningService#isReconnectStepAllowed). 본 fixture 는 reconnect 통과 경로를 검증한다.
+        return new UiEquipmentProfileSnapshot(
+                1L,
+                eqpId,
+                "SOCKET",
+                "TEST01",
+                null,
+                "10.10.10.1",
+                6000,
+                1001L,
+                3001L,
+                4001L,
+                "ACTIVE",
+                0,
+                true,
+                null,
+                null,
+                new UiEquipmentProfileSnapshot.CurrentStateSnapshot(
+                        "REMOTE",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null
+                ),
+                null,
+                null,
+                null,
+                null
+        );
     }
 
     private UiDeployProperties deployProperties(final Path scenarioDirectory) {

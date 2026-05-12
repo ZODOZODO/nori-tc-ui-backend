@@ -1,5 +1,6 @@
 package com.nori.tc.ui.adapter.db;
 
+import com.nori.tc.common.shard.ShardGroupResolver;
 import com.nori.tc.db.core.eqp.store.TcEqpHsmsStore;
 import com.nori.tc.db.core.eqp.store.TcEqpLogStore;
 import com.nori.tc.db.core.eqp.store.TcEqpParamStore;
@@ -105,6 +106,7 @@ class EqpManagementDbSupportTest {
         private final TcJarBusinessStore jarBusinessStore = mock(TcJarBusinessStore.class);
         private final TcModelStore modelStore = mock(TcModelStore.class);
         private final TcEqpSocketProtocolTypeStore socketProtocolTypeStore = mock(TcEqpSocketProtocolTypeStore.class);
+        private final ShardGroupResolver shardGroupResolver = mock(ShardGroupResolver.class);
         private final EqpManagementDbSupport dbSupport = new EqpManagementDbSupport(
                 eqpStore,
                 eqpHsmsStore,
@@ -118,7 +120,8 @@ class EqpManagementDbSupportTest {
                 jarGatewayStore,
                 jarBusinessStore,
                 modelStore,
-                socketProtocolTypeStore
+                socketProtocolTypeStore,
+                shardGroupResolver
         );
     }
 

@@ -5,6 +5,7 @@ import com.nori.tc.ui.adapters.web.controller.support.UiPageRequestSupport;
 import com.nori.tc.ui.adapters.web.dto.request.GroupUpsertRequest;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.adapters.web.dto.response.GroupInfoResponse;
+import com.nori.tc.ui.adapters.web.dto.response.GroupMemberResponse;
 import com.nori.tc.ui.adapters.web.dto.response.GroupPermissionMappingResponse;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
@@ -38,6 +39,7 @@ import java.util.Objects;
  *   <li>GET /api/group/{groupId}/permission</li>
  *   <li>POST /api/group/{groupId}/permission/{permId}</li>
  *   <li>DELETE /api/group/{groupId}/permission/{permId}</li>
+ *   <li>GET /api/group/{groupId}/user</li>
  * </ul>
  */
 @RestController
@@ -239,5 +241,37 @@ public class GroupController {
         groupAdminFacade.removePermissionMapping(groupId, permId);
         log.info("그룹-권한 매핑 삭제 완료. groupId={}, permId={}", groupId, permId);
         return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    /**
+     * 특정 그룹에 속한 사용자 목록을 페이지 단위로 조회합니다.
+     *
+     * @param groupId 그룹 PK
+     * @param offset 조회 시작 위치(기본값 0)
+     * @param limit 조회 건수(기본값 100, 최대 500)
+     * @return 그룹 멤버 페이지 응답
+     */
+    @GetMapping("/{groupId}/user")
+    public ResponseEntity<ApiResponse<PagedResponse<GroupMemberResponse>>> listUsersByGroup(
+            @PathVariable final long groupId,
+            @RequestParam(name = "offset", required = false) final Integer offset,
+            @RequestParam(name = "limit", required = false) final Integer limit
+    ) {
+        final UiPageRequest pageRequest = UiPageRequestSupport.resolve(offset, limit);
+
+        final var optionalPage = groupAdminFacade.listUsersByGroupId(groupId, pageRequest);
+        if (optionalPage.isEmpty()) {
+            log.warn("그룹 멤버 목록 조회 대상 그룹 없음. groupId={}", groupId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiResponse.error("NOT_FOUND", "그룹을 찾을 수 없습니다."));
+        }
+        final PagedResponse<GroupMemberResponse> responsePage = optionalPage.get();
+
+        if (log.isDebugEnabled()) {
+            log.debug("그룹 멤버 목록 조회 완료. groupId={}, offset={}, limit={}, pageSize={}, totalCount={}",
+                    groupId, responsePage.offset(), responsePage.limit(), responsePage.items().size(), responsePage.count());
+        }
+
+        return ResponseEntity.ok(ApiResponse.success(responsePage));
     }
 }

@@ -2,15 +2,19 @@ package com.nori.tc.ui.adapters.web.application.admin;
 
 import com.nori.tc.ui.adapters.web.dto.request.GroupUpsertRequest;
 import com.nori.tc.ui.adapters.web.dto.response.GroupInfoResponse;
+import com.nori.tc.ui.adapters.web.dto.response.GroupMemberResponse;
 import com.nori.tc.ui.adapters.web.dto.response.GroupPermissionMappingResponse;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiUserGroupPermissionUpsertCommand;
 import com.nori.tc.ui.core.model.UiUserGroupUpsertCommand;
+import com.nori.tc.ui.domain.useradmin.UiManagedUser;
 import com.nori.tc.ui.domain.useradmin.UiUserGroup;
+import com.nori.tc.ui.domain.useradmin.UiUserGroupMember;
 import com.nori.tc.ui.domain.useradmin.UiUserGroupPermission;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Group 관리 요청/응답 변환을 담당합니다.
@@ -83,6 +87,29 @@ public class GroupAdminAssembler {
                 mapping.permId(),
                 mapping.grantedAt(),
                 mapping.grantedBy()
+        );
+    }
+
+    public PagedResponse<GroupMemberResponse> toGroupMemberPage(
+            final PagedResponse<UiUserGroupMember> page,
+            final Map<Long, UiManagedUser> usersByUserPk
+    ) {
+        final List<GroupMemberResponse> items = page.items().stream()
+                .map(mapping -> toGroupMemberResponse(mapping, usersByUserPk.get(mapping.userPk())))
+                .toList();
+        return PagedResponse.of(items, page.offset(), page.limit(), page.count());
+    }
+
+    public GroupMemberResponse toGroupMemberResponse(
+            final UiUserGroupMember mapping,
+            final UiManagedUser user
+    ) {
+        return new GroupMemberResponse(
+                mapping.userPk(),
+                user == null ? null : user.userId(),
+                user == null ? null : user.userName(),
+                user == null ? null : user.company(),
+                user == null ? null : user.department()
         );
     }
 
