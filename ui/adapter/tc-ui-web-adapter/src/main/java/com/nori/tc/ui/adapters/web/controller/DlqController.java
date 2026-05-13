@@ -1,8 +1,10 @@
 package com.nori.tc.ui.adapters.web.controller;
 
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
+import com.nori.tc.ui.adapters.web.dto.response.EqpRepairTaskResponse;
 import com.nori.tc.ui.core.port.redis.BusinessDlqPort;
 import com.nori.tc.ui.core.port.redis.GatewayDlqPort;
+import com.nori.tc.ui.core.service.EqpRepairTaskService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +26,8 @@ import java.util.Objects;
  *   <li>DELETE /api/dlq/gateway/{dlqId}  — Gateway DLQ 항목 삭제</li>
  *   <li>GET    /api/dlq/business         — Business DLQ 항목 전체 조회</li>
  *   <li>DELETE /api/dlq/business/{dlqId} — Business DLQ 항목 삭제</li>
+ *   <li>GET    /api/dlq/quarantine       — Gateway Quarantine(격리 설비) 항목 전체 조회</li>
+ *   <li>GET    /api/dlq/repair-task      — EQP 보상 repair task 전체 조회</li>
  * </ul>
  *
  * <p>DLQ 역할:</p>
@@ -43,19 +47,23 @@ public class DlqController {
 
     private final GatewayDlqPort gatewayDlqPort;
     private final BusinessDlqPort businessDlqPort;
+    private final EqpRepairTaskService eqpRepairTaskService;
 
     /**
      * 필수 의존성을 초기화합니다.
      *
-     * @param gatewayDlqPort  Gateway DLQ 조회·삭제 포트 (Gateway Redis 6379)
-     * @param businessDlqPort Business DLQ 조회·삭제 포트
+     * @param gatewayDlqPort       Gateway DLQ 조회·삭제 포트 (Gateway Redis 6379)
+     * @param businessDlqPort      Business DLQ 조회·삭제 포트
+     * @param eqpRepairTaskService EQP 보상 repair task 조회 서비스
      */
     public DlqController(
             final GatewayDlqPort gatewayDlqPort,
-            final BusinessDlqPort businessDlqPort
+            final BusinessDlqPort businessDlqPort,
+            final EqpRepairTaskService eqpRepairTaskService
     ) {
         this.gatewayDlqPort = Objects.requireNonNull(gatewayDlqPort, "gatewayDlqPort is null");
         this.businessDlqPort = Objects.requireNonNull(businessDlqPort, "businessDlqPort is null");
+        this.eqpRepairTaskService = Objects.requireNonNull(eqpRepairTaskService, "eqpRepairTaskService is null");
     }
 
     // -------------------------------------------------------------------------
@@ -152,5 +160,52 @@ public class DlqController {
         }
 
         return ResponseEntity.ok(ApiResponse.success(deleted));
+    }
+
+    // -------------------------------------------------------------------------
+    // Gateway Quarantine
+    // -------------------------------------------------------------------------
+
+    /**
+     * Gateway Redis 에 저장된 Quarantine(격리 설비) 항목 전체를 조회합니다.
+     *
+     * <p>설비 격리 상태는 Gateway 가 Kafka 처리 단계에서 결정·기록하며,
+     * UI 는 본 endpoint 를 통해 격리 현황을 조회합니다.</p>
+     *
+     * @return 200 OK + Quarantine 항목 목록 (빈 리스트 가능)
+     */
+    @GetMapping("/quarantine")
+    public ResponseEntity<ApiResponse<List<?>>> listGatewayQuarantine() {
+        log.info("Gateway Quarantine 목록 조회 요청.");
+
+        final List<?> entries = gatewayDlqPort.listAllQuarantine();
+
+        log.info("Gateway Quarantine 목록 조회 완료. count={}", entries.size());
+        return ResponseEntity.ok(ApiResponse.success(entries));
+    }
+
+    // -------------------------------------------------------------------------
+    // Repair Task
+    // -------------------------------------------------------------------------
+
+    /**
+     * EQP 보상 실패 후 누적된 repair task 전체를 조회합니다.
+     *
+     * <p>{@link EqpRepairTaskService#findAll()} 결과를 HTTP DTO 로 매핑하여 반환합니다.
+     * 정렬은 저장소(Redis Hash)의 자연 순서이며, 클라이언트가 {@code createdAt} 기준으로
+     * 표시 순서를 결정합니다.</p>
+     *
+     * @return 200 OK + repair task 응답 DTO 목록 (빈 리스트 가능)
+     */
+    @GetMapping("/repair-task")
+    public ResponseEntity<ApiResponse<List<EqpRepairTaskResponse>>> listRepairTasks() {
+        log.info("EQP repair task 목록 조회 요청.");
+
+        final List<EqpRepairTaskResponse> responses = eqpRepairTaskService.findAll().stream()
+                .map(EqpRepairTaskResponse::from)
+                .toList();
+
+        log.info("EQP repair task 목록 조회 완료. count={}", responses.size());
+        return ResponseEntity.ok(ApiResponse.success(responses));
     }
 }

@@ -70,6 +70,12 @@ dependencies {
 
     testImplementation(platform(libs.junit.bom))
     testImplementation("org.junit.jupiter:junit-jupiter")
+    /*
+     * GatewayDlqRedisServiceQuarantineTest 는 RedisTemplate / ValueOperations 를
+     * mock 으로 stub 합니다. spring-boot-starter-test 는 Mockito + AssertJ 를
+     * transitive 로 가져오며, web-adapter 와 동일한 테스트 컨벤션을 공유합니다.
+     */
+    testImplementation(libs.spring.boot.starter.test)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

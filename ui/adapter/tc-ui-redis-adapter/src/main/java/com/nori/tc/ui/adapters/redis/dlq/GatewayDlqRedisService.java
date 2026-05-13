@@ -140,6 +140,7 @@ public class GatewayDlqRedisService implements GatewayDlqPort {
      *
      * @return Quarantine 항목 목록. 항목이 없거나 오류 발생 시 빈 리스트 반환
      */
+    @Override
     public List<RedisQuarantineEntry> listAllQuarantine() {
         if (log.isDebugEnabled()) {
             log.debug("Gateway Quarantine 전체 조회 시작. keyPrefix={}", QUARANTINE_KEY_PREFIX);
