@@ -36,4 +36,14 @@ public interface GatewayDlqPort {
      * @return 삭제 성공 여부 (키가 존재하지 않으면 false)
      */
     boolean deleteDlq(String dlqId);
+
+    /**
+     * Gateway Quarantine(격리 설비)에 저장된 모든 항목을 조회합니다.
+     *
+     * <p>키 패턴 {@code tc:gateway:quarantine:{equipmentId}} 의 항목을 SCAN 으로 수집합니다.
+     * 구현체는 어댑터 고유의 {@code RedisQuarantineEntry} 타입을 반환합니다.</p>
+     *
+     * @return Quarantine 항목 목록 (비어 있을 수 있음, 오류 시 빈 리스트)
+     */
+    List<?> listAllQuarantine();
 }
