@@ -1,12 +1,10 @@
 package com.nori.tc.ui.core.service;
 
-import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
+import com.nori.tc.ui.core.eqp.LiveMapEqpPrefetchRow;
 import com.nori.tc.ui.core.eqp.LiveMapEquipmentView;
-import com.nori.tc.ui.core.model.PagedResponse;
-import com.nori.tc.ui.core.model.UiPageRequest;
-import com.nori.tc.ui.core.port.db.EqpManageQueryPort;
+import com.nori.tc.ui.core.eqp.LiveMapPrefetchSnapshot;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
-import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
+import com.nori.tc.ui.core.port.db.LiveMapPrefetchPort;
 import com.nori.tc.ui.domain.common.eqp.UiCarrierState;
 import com.nori.tc.ui.domain.common.eqp.UiPortType;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
@@ -19,87 +17,56 @@ import org.junit.jupiter.api.Test;
 
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+/**
+ * {@link LiveMapQueryService} 단위 테스트.
+ *
+ * <p>service 는 더 이상 3 port (eqp / manage / model) 에 의존하지 않고 {@link LiveMapPrefetchPort}
+ * 1개에만 의존한다. 본 테스트는 prefetch 결과 row 를 직접 구성하여 매핑 로직 5 시나리오를 검증한다.</p>
+ */
 class LiveMapQueryServiceTest {
 
-    private EqpQueryPort eqpQueryPort;
-    private EqpManageQueryPort eqpManageQueryPort;
-    private ModelDetailQueryPort modelDetailQueryPort;
+    private LiveMapPrefetchPort liveMapPrefetchPort;
     private LiveMapQueryService liveMapQueryService;
 
     @BeforeEach
     void setUp() {
-        eqpQueryPort = mock(EqpQueryPort.class);
-        eqpManageQueryPort = mock(EqpManageQueryPort.class);
-        modelDetailQueryPort = mock(ModelDetailQueryPort.class);
-        liveMapQueryService = new LiveMapQueryService(eqpQueryPort, eqpManageQueryPort, modelDetailQueryPort);
+        liveMapPrefetchPort = mock(LiveMapPrefetchPort.class);
+        liveMapQueryService = new LiveMapQueryService(liveMapPrefetchPort);
     }
 
     @Test
     void getEquipmentViewsUsesEqpProcessTypeBeforeModelProcessType() {
         final UiEqp eqp = createEqp("EQP-01", "v1");
-        when(eqpQueryPort.findAll(any(UiPageRequest.class)))
-                .thenReturn(PagedResponse.of(List.of(eqp), 0, 1000, 1));
-        when(eqpManageQueryPort.findManageSnapshotByEqpId("EQP-01"))
-                .thenReturn(Optional.of(new EqpManagementSnapshot(
-                        eqp,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        "CONNECTED",
-                        List.of(new UiEqpPortStatus(
-                                1L,
-                                1L,
-                                "LP1",
-                                UiPortType.LOAD_PORT,
-                                "load",
-                                "CAR-01",
-                                null,
-                                UiCarrierState.CLAMPED,
-                                OffsetDateTime.now()
-                        )),
-                        List.of(new UiEqpParam(
-                                1L,
-                                1L,
-                                "PROCESS_TYPE",
-                                "v1",
-                                "CVD",
-                                null,
-                                "tester",
-                                OffsetDateTime.now()
-                        ), new UiEqpParam(
-                                2L,
-                                1L,
-                                "WAFER_MODE",
-                                "v1",
-                                "SINGLE",
-                                null,
-                                "tester",
-                                OffsetDateTime.now()
-                        )),
-                        List.of(),
-                        null,
-                        null
-                )));
-        when(modelDetailQueryPort.findParamsByModelVersionKey(101L))
-                .thenReturn(List.of(new UiModelParam(
+        final LiveMapEqpPrefetchRow row = new LiveMapEqpPrefetchRow(
+                eqp,
+                List.of(
+                        new UiEqpParam(1L, 1L, "PROCESS_TYPE", "v1", "CVD", null, "tester", OffsetDateTime.now()),
+                        new UiEqpParam(2L, 1L, "WAFER_MODE", "v1", "SINGLE", null, "tester", OffsetDateTime.now())
+                ),
+                List.of(new UiEqpPortStatus(
                         1L,
-                        101L,
-                        "PROCESS_TYPE",
-                        "CMP",
+                        1L,
+                        "LP1",
+                        UiPortType.LOAD_PORT,
+                        "load",
+                        "CAR-01",
                         null,
+                        UiCarrierState.CLAMPED,
                         OffsetDateTime.now()
-                )));
-        when(eqpQueryPort.findRuntimeStateByEqpId("EQP-01"))
-                .thenReturn(Optional.of(new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED")));
+                )),
+                new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED")
+        );
+        // eqp param 우선이라 modelParam 값은 의도적으로 무시되어야 함을 확인하기 위해 다른 값 주입.
+        final Map<Long, List<UiModelParam>> modelParams = Map.of(
+                101L, List.of(new UiModelParam(1L, 101L, "PROCESS_TYPE", "CMP", null, OffsetDateTime.now()))
+        );
+        when(liveMapPrefetchPort.prefetch()).thenReturn(new LiveMapPrefetchSnapshot(List.of(row), modelParams));
 
         final List<LiveMapEquipmentView> result = liveMapQueryService.getEquipmentViews();
 
@@ -113,51 +80,29 @@ class LiveMapQueryServiceTest {
     @Test
     void getEquipmentViewsFallsBackToModelProcessTypeAndMapsOfflineToDown() {
         final UiEqp eqp = createEqp("EQP-02", "v2");
-        when(eqpQueryPort.findAll(any(UiPageRequest.class)))
-                .thenReturn(PagedResponse.of(List.of(eqp), 0, 1000, 1));
-        when(eqpManageQueryPort.findManageSnapshotByEqpId("EQP-02"))
-                .thenReturn(Optional.of(new EqpManagementSnapshot(
-                        eqp,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        "ENDED",
-                        List.of(new UiEqpPortStatus(
-                                2L,
-                                2L,
-                                "LP2",
-                                UiPortType.LOAD_PORT,
-                                "idle",
-                                null,
-                                null,
-                                UiCarrierState.UNKNOWN,
-                                OffsetDateTime.now()
-                        )),
-                        List.of(),
-                        List.of(),
-                        null,
-                        null
-                )));
-        when(modelDetailQueryPort.findParamsByModelVersionKey(101L))
-                .thenReturn(List.of(new UiModelParam(
+        final LiveMapEqpPrefetchRow row = new LiveMapEqpPrefetchRow(
+                eqp,
+                List.of(),
+                List.of(new UiEqpPortStatus(
                         2L,
-                        101L,
-                        "PROCESS_TYPE",
-                        "PHOTO",
+                        2L,
+                        "LP2",
+                        UiPortType.LOAD_PORT,
+                        "idle",
                         null,
-                        OffsetDateTime.now()
-                ), new UiModelParam(
-                        3L,
-                        101L,
-                        "WAFER_MODE",
-                        "BATCH",
                         null,
+                        UiCarrierState.UNKNOWN,
                         OffsetDateTime.now()
-                )));
-        when(eqpQueryPort.findRuntimeStateByEqpId("EQP-02"))
-                .thenReturn(Optional.of(new EqpQueryPort.EqpRuntimeStateView("OFFLINE", "IDLE", "ENDED")));
+                )),
+                new EqpQueryPort.EqpRuntimeStateView("OFFLINE", "IDLE", "ENDED")
+        );
+        final Map<Long, List<UiModelParam>> modelParams = Map.of(
+                101L, List.of(
+                        new UiModelParam(2L, 101L, "PROCESS_TYPE", "PHOTO", null, OffsetDateTime.now()),
+                        new UiModelParam(3L, 101L, "WAFER_MODE", "BATCH", null, OffsetDateTime.now())
+                )
+        );
+        when(liveMapPrefetchPort.prefetch()).thenReturn(new LiveMapPrefetchSnapshot(List.of(row), modelParams));
 
         final List<LiveMapEquipmentView> result = liveMapQueryService.getEquipmentViews();
 
@@ -170,36 +115,13 @@ class LiveMapQueryServiceTest {
     @Test
     void getEquipmentViewsMapsMaintenanceToError() {
         final UiEqp eqp = createEqp("EQP-03", "v3");
-        when(eqpQueryPort.findAll(any(UiPageRequest.class)))
-                .thenReturn(PagedResponse.of(List.of(eqp), 0, 1000, 1));
-        when(eqpManageQueryPort.findManageSnapshotByEqpId("EQP-03"))
-                .thenReturn(Optional.of(new EqpManagementSnapshot(
-                        eqp,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        "CONNECTED",
-                        List.of(),
-                        List.of(new UiEqpParam(
-                                3L,
-                                1L,
-                                "PROCESS_TYPE",
-                                "v3",
-                                "CMP",
-                                null,
-                                "tester",
-                                OffsetDateTime.now()
-                        )),
-                        List.of(),
-                        null,
-                        null
-                )));
-        when(modelDetailQueryPort.findParamsByModelVersionKey(101L))
-                .thenReturn(List.of());
-        when(eqpQueryPort.findRuntimeStateByEqpId("EQP-03"))
-                .thenReturn(Optional.of(new EqpQueryPort.EqpRuntimeStateView("LOCAL", "MAINTENANCE", "CONNECTED")));
+        final LiveMapEqpPrefetchRow row = new LiveMapEqpPrefetchRow(
+                eqp,
+                List.of(new UiEqpParam(3L, 1L, "PROCESS_TYPE", "v3", "CMP", null, "tester", OffsetDateTime.now())),
+                List.of(),
+                new EqpQueryPort.EqpRuntimeStateView("LOCAL", "MAINTENANCE", "CONNECTED")
+        );
+        when(liveMapPrefetchPort.prefetch()).thenReturn(new LiveMapPrefetchSnapshot(List.of(row), Map.of()));
 
         final List<LiveMapEquipmentView> result = liveMapQueryService.getEquipmentViews();
 
@@ -209,36 +131,13 @@ class LiveMapQueryServiceTest {
     @Test
     void getEquipmentViewsMapsServiceUnavailableToDownWhenControlStateIsRemote() {
         final UiEqp eqp = createEqp("EQP-04", "v4");
-        when(eqpQueryPort.findAll(any(UiPageRequest.class)))
-                .thenReturn(PagedResponse.of(List.of(eqp), 0, 1000, 1));
-        when(eqpManageQueryPort.findManageSnapshotByEqpId("EQP-04"))
-                .thenReturn(Optional.of(new EqpManagementSnapshot(
-                        eqp,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        "CONNECTED",
-                        List.of(),
-                        List.of(new UiEqpParam(
-                                4L,
-                                1L,
-                                "PROCESS_TYPE",
-                                "v4",
-                                "ETCH",
-                                null,
-                                "tester",
-                                OffsetDateTime.now()
-                        )),
-                        List.of(),
-                        null,
-                        null
-                )));
-        when(modelDetailQueryPort.findParamsByModelVersionKey(101L))
-                .thenReturn(List.of());
-        when(eqpQueryPort.findRuntimeStateByEqpId("EQP-04"))
-                .thenReturn(Optional.of(new EqpQueryPort.EqpRuntimeStateView("REMOTE", "SERVICE_UNAVAILABLE", "CONNECTED")));
+        final LiveMapEqpPrefetchRow row = new LiveMapEqpPrefetchRow(
+                eqp,
+                List.of(new UiEqpParam(4L, 1L, "PROCESS_TYPE", "v4", "ETCH", null, "tester", OffsetDateTime.now())),
+                List.of(),
+                new EqpQueryPort.EqpRuntimeStateView("REMOTE", "SERVICE_UNAVAILABLE", "CONNECTED")
+        );
+        when(liveMapPrefetchPort.prefetch()).thenReturn(new LiveMapPrefetchSnapshot(List.of(row), Map.of()));
 
         final List<LiveMapEquipmentView> result = liveMapQueryService.getEquipmentViews();
 
@@ -248,36 +147,13 @@ class LiveMapQueryServiceTest {
     @Test
     void getEquipmentViewsMapsClnProcessTypeToWetCluster() {
         final UiEqp eqp = createEqp("EQP-05", "v5");
-        when(eqpQueryPort.findAll(any(UiPageRequest.class)))
-                .thenReturn(PagedResponse.of(List.of(eqp), 0, 1000, 1));
-        when(eqpManageQueryPort.findManageSnapshotByEqpId("EQP-05"))
-                .thenReturn(Optional.of(new EqpManagementSnapshot(
-                        eqp,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        "CONNECTED",
-                        List.of(),
-                        List.of(new UiEqpParam(
-                                5L,
-                                1L,
-                                "PROCESS_TYPE",
-                                "v5",
-                                "CLN",
-                                null,
-                                "tester",
-                                OffsetDateTime.now()
-                        )),
-                        List.of(),
-                        null,
-                        null
-                )));
-        when(modelDetailQueryPort.findParamsByModelVersionKey(101L))
-                .thenReturn(List.of());
-        when(eqpQueryPort.findRuntimeStateByEqpId("EQP-05"))
-                .thenReturn(Optional.of(new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED")));
+        final LiveMapEqpPrefetchRow row = new LiveMapEqpPrefetchRow(
+                eqp,
+                List.of(new UiEqpParam(5L, 1L, "PROCESS_TYPE", "v5", "CLN", null, "tester", OffsetDateTime.now())),
+                List.of(),
+                new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED")
+        );
+        when(liveMapPrefetchPort.prefetch()).thenReturn(new LiveMapPrefetchSnapshot(List.of(row), Map.of()));
 
         final List<LiveMapEquipmentView> result = liveMapQueryService.getEquipmentViews();
 
