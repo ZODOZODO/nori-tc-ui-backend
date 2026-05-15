@@ -123,6 +123,9 @@ public class UiSecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/actuator/health", "/api/actuator/health/**").permitAll()
+                        // [TEMP perf measurement 2026-05-14] Actuator metrics / prometheus 측정용. 측정 종료 후 revert.
+                        .requestMatchers(HttpMethod.GET, "/api/actuator/metrics", "/api/actuator/metrics/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/actuator/prometheus").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/internal/demo/**").permitAll()
                         // demo-tester 내부 호출은 internal-header 인증으로 별도 보호됨
                         .requestMatchers(HttpMethod.POST, "/api/internal/demo/**").permitAll()
