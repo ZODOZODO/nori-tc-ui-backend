@@ -24,7 +24,7 @@ public class DemoJobJdbcCleanupPort implements DemoJobCleanupPort {
              WHERE eqp_key = :eqpKey
                AND job_state IN (
                    'QUEUED','PREPARING','SYNCING_SPEC','CONNECTING',
-                   'RUNNING','CLEANING_UP','CANCEL_REQUESTED'
+                   'AWAITING_TRIGGER','RUNNING','CLEANING_UP','CANCEL_REQUESTED'
                )
              ORDER BY requested_at ASC
             """;
