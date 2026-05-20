@@ -28,6 +28,8 @@ import org.springframework.context.annotation.Import;
         JpaModelCrudPort.class,
         JpaModelDetailCommandPort.class,
         JpaModelDetailQueryPort.class,
+        JpaModelFlowCommandPort.class,
+        JpaModelFlowQueryPort.class,
         JpaModelManagementPort.class,
         JpaPermissionCrudPort.class,
         JpaPermissionPort.class,
