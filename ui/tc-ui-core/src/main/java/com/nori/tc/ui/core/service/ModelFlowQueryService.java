@@ -1,0 +1,79 @@
+package com.nori.tc.ui.core.service;
+
+import com.nori.tc.ui.core.exception.UiNotFoundException;
+import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
+import com.nori.tc.ui.core.port.db.ModelFlowQueryPort;
+import com.nori.tc.ui.domain.model.UiMessageFlow;
+import com.nori.tc.ui.domain.model.UiMessageFlowSummary;
+import com.nori.tc.ui.domain.model.UiModelDcopItem;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.Objects;
+
+/**
+ * Message Flow 조회 서비스입니다.
+ *
+ * <p>FlowCard 기반 Model 상세 화면 (좌측 트리 + 4 섹션 detail) 의 read-side aggregator 입니다.
+ * Trigger 영역 (eventId / transactionId / workflowFilter) 의 Socket vs SECS 분기는
+ * port adapter 가 record 채움으로 표현하고, 서비스는 record 를 그대로 전달합니다.</p>
+ *
+ * <p>workflow_name=NULL 인 DCOP item 은 어느 Flow 의 Collect 섹션에도 포함되지 않고,
+ * Reference 영역 "Unassigned DCOPs" 로 분리해 노출합니다. 별도 port 메서드 추가 대신
+ * {@link ModelDetailQueryPort#findDcopItemsByModelVersionKey} 응답을 stream filter
+ * 하는 형태로 처리합니다 — 사용처 1 곳, premature abstraction 회피.</p>
+ */
+@Service
+public class ModelFlowQueryService {
+
+    private final ModelFlowQueryPort modelFlowQueryPort;
+    private final ModelDetailQueryPort modelDetailQueryPort;
+
+    public ModelFlowQueryService(
+            final ModelFlowQueryPort modelFlowQueryPort,
+            final ModelDetailQueryPort modelDetailQueryPort
+    ) {
+        this.modelFlowQueryPort = Objects.requireNonNull(modelFlowQueryPort, "modelFlowQueryPort is null");
+        this.modelDetailQueryPort = Objects.requireNonNull(modelDetailQueryPort, "modelDetailQueryPort is null");
+    }
+
+    /**
+     * model_version_key 기준 Flow 요약 목록을 조회합니다.
+     *
+     * <p>정렬 / 트리 그룹화 책임은 각각 port (workflow_key ASC) 와 호출 측 FE 에 위임 — 서비스는
+     * 변형 없이 그대로 전달합니다.</p>
+     *
+     * @param modelVersionKey 대상 모델 버전 키
+     * @return 평탄(flat) Flow 요약 목록
+     */
+    public List<UiMessageFlowSummary> findFlowSummaries(final long modelVersionKey) {
+        return modelFlowQueryPort.findFlowSummaries(modelVersionKey);
+    }
+
+    /**
+     * model_version_key + flowId 기준 Flow 상세 aggregate 를 조회합니다.
+     *
+     * @param modelVersionKey 대상 모델 버전 키
+     * @param flowId          Workflow PK (= tc_model_workflow.workflow_key)
+     * @return 4 섹션 aggregate
+     * @throws UiNotFoundException flowId 가 해당 model_version 에 존재하지 않을 때
+     */
+    public UiMessageFlow findFlowDetail(final long modelVersionKey, final long flowId) {
+        return modelFlowQueryPort.findFlowByWorkflowKey(modelVersionKey, flowId)
+                .orElseThrow(() -> new UiNotFoundException(
+                        "Flow를 찾을 수 없습니다. modelVersionKey=" + modelVersionKey + ", flowId=" + flowId
+                ));
+    }
+
+    /**
+     * workflow_name=NULL 인 DCOP item 목록을 조회합니다 (어느 Flow 의 Collect 에도 속하지 않음).
+     *
+     * @param modelVersionKey 대상 모델 버전 키
+     * @return Unassigned DCOP item 목록 (workflow_name 이 null 인 row 만)
+     */
+    public List<UiModelDcopItem> findUnassignedDcopItems(final long modelVersionKey) {
+        return modelDetailQueryPort.findDcopItemsByModelVersionKey(modelVersionKey).stream()
+                .filter(item -> item.workflowName() == null)
+                .toList();
+    }
+}
