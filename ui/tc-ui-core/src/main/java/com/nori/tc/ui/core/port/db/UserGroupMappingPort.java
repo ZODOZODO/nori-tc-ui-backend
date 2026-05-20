@@ -5,6 +5,8 @@ import com.nori.tc.ui.core.model.UiPageRequest;
 import com.nori.tc.ui.core.model.UiUserGroupMemberUpsertCommand;
 import com.nori.tc.ui.domain.useradmin.UiUserGroupMember;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -43,6 +45,16 @@ public interface UserGroupMappingPort {
      * @return 페이지 응답(목록 + 전체 건수)
      */
     PagedResponse<UiUserGroupMember> findAllByUserPk(long userPk, UiPageRequest pageRequest);
+
+    /**
+     * 여러 사용자 PK 에 매핑된 그룹 멤버를 IN 절로 한 번에 조회합니다.
+     *
+     * <p>사용자 목록 화면에서 페이지당 사용자들의 소속 그룹을 N+1 없이 받아오기 위해 사용합니다.</p>
+     *
+     * @param userPks 조회할 사용자 PK 컬렉션 (null/empty 면 빈 리스트 반환)
+     * @return 해당 사용자들의 그룹 매핑 목록 (페이징 없음)
+     */
+    List<UiUserGroupMember> findAllByUserPkIn(Collection<Long> userPks);
 
     /**
      * 특정 그룹에 속한 사용자 매핑 목록을 페이지 단위로 조회합니다.

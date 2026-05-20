@@ -8,6 +8,7 @@ import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.adapters.web.dto.response.UserGroupMappingResponse;
 import com.nori.tc.ui.adapters.web.dto.response.UserGroupMembershipResponse;
 import com.nori.tc.ui.adapters.web.dto.response.UserInfoResponse;
+import com.nori.tc.ui.adapters.web.dto.response.UserListItemResponse;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
 import jakarta.validation.Valid;
@@ -70,7 +71,7 @@ public class UserController {
      * @return 목록 페이지 응답
      */
     @GetMapping
-    public ResponseEntity<ApiResponse<PagedResponse<UserInfoResponse>>> list(
+    public ResponseEntity<ApiResponse<PagedResponse<UserListItemResponse>>> list(
             @RequestParam(name = "offset", required = false) final Integer offset,
             @RequestParam(name = "limit", required = false) final Integer limit
     ) {
@@ -80,7 +81,7 @@ public class UserController {
             log.debug("사용자 목록 조회 요청. offset={}, limit={}", pageRequest.offset(), pageRequest.limit());
         }
 
-        final PagedResponse<UserInfoResponse> responsePage = userAdminFacade.list(pageRequest);
+        final PagedResponse<UserListItemResponse> responsePage = userAdminFacade.list(pageRequest);
 
         if (log.isDebugEnabled()) {
             log.debug("사용자 목록 조회 완료. offset={}, limit={}, pageSize={}, totalCount={}",
