@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -174,6 +175,42 @@ public class JpaUserGroupMappingPort implements UserGroupMappingPort {
             }
             log.error("사용자-그룹 매핑 목록 조회 실패. userPk={}, offset={}, limit={}",
                     userPk, effectivePage.offset(), effectivePage.limit(), e);
+            throw e;
+        }
+    }
+
+    /**
+     * 여러 사용자 PK 에 매핑된 그룹 멤버를 IN 절로 한 번에 조회합니다.
+     *
+     * <p>N+1 회피용 batch — null/empty 입력 시 빈 리스트를 즉시 반환합니다.</p>
+     *
+     * @param userPks 조회 대상 사용자 PK 컬렉션
+     * @return 그룹 매핑 목록 (페이징 없음)
+     */
+    @Override
+    public List<UiUserGroupMember> findAllByUserPkIn(final Collection<Long> userPks) {
+        if (userPks == null || userPks.isEmpty()) {
+            return List.of();
+        }
+        if (log.isDebugEnabled()) {
+            log.debug("사용자-그룹 매핑 batch 조회 시작. userPkCount={}", userPks.size());
+        }
+        try {
+            final List<UiUserGroupMember> items = userGroupMemberStore.findAllByUserPkIn(userPks).stream()
+                    .map(UiUserAdminDbMapper::toDomain)
+                    .toList();
+            if (log.isDebugEnabled()) {
+                log.debug("사용자-그룹 매핑 batch 조회 완료. userPkCount={}, mappingCount={}",
+                        userPks.size(), items.size());
+            }
+            return items;
+        } catch (RuntimeException e) {
+            if (UiDbAdapterExceptionSupport.isBadRequest(e)) {
+                log.warn("사용자-그룹 매핑 batch 조회 요청 거부 - 잘못된 입력. userPkCount={}, reason={}",
+                        userPks.size(), UiDbAdapterExceptionSupport.resolveMessage(e, "invalid userPks"));
+                throw new UiBadRequestException("사용자-그룹 매핑 batch 조회 입력이 올바르지 않습니다.", e);
+            }
+            log.error("사용자-그룹 매핑 batch 조회 실패. userPkCount={}", userPks.size(), e);
             throw e;
         }
     }

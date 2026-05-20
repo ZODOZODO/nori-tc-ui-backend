@@ -5,6 +5,7 @@ import com.nori.tc.ui.adapters.web.dto.request.UserUpsertRequest;
 import com.nori.tc.ui.adapters.web.dto.response.UserGroupMappingResponse;
 import com.nori.tc.ui.adapters.web.dto.response.UserGroupMembershipResponse;
 import com.nori.tc.ui.adapters.web.dto.response.UserInfoResponse;
+import com.nori.tc.ui.adapters.web.dto.response.UserListItemResponse;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiUserGroupMemberUpsertCommand;
@@ -94,6 +95,55 @@ public class UserAdminAssembler {
                 .map(this::toUserInfoResponse)
                 .toList();
         return PagedResponse.of(items, page.offset(), page.limit(), page.count());
+    }
+
+    /**
+     * 사용자 페이지 + 사용자별 그룹 매핑을 머지하여 목록 응답 페이지로 변환합니다.
+     *
+     * @param page             사용자 도메인 페이지
+     * @param groupsByUserPk   사용자 PK 별 그룹 요약 목록 (매핑 없으면 키 미존재 가능)
+     * @return 그룹 요약이 포함된 목록 응답 페이지
+     */
+    public PagedResponse<UserListItemResponse> toUserListItemPage(
+            final PagedResponse<UiManagedUser> page,
+            final Map<Long, List<UserListItemResponse.GroupSummary>> groupsByUserPk
+    ) {
+        final List<UserListItemResponse> items = page.items().stream()
+                .map(user -> toUserListItemResponse(
+                        user,
+                        groupsByUserPk.getOrDefault(user.userPk(), List.of())
+                ))
+                .toList();
+        return PagedResponse.of(items, page.offset(), page.limit(), page.count());
+    }
+
+    public UserListItemResponse toUserListItemResponse(
+            final UiManagedUser user,
+            final List<UserListItemResponse.GroupSummary> groups
+    ) {
+        return new UserListItemResponse(
+                user.userPk(),
+                user.company(),
+                user.department(),
+                user.userName(),
+                user.userId(),
+                user.userIdNorm(),
+                user.email(),
+                user.status(),
+                user.createdAt(),
+                user.updatedAt(),
+                user.createdBy(),
+                user.updatedBy(),
+                groups
+        );
+    }
+
+    public UserListItemResponse.GroupSummary toGroupSummary(final UiUserGroup group) {
+        return new UserListItemResponse.GroupSummary(
+                group.groupId(),
+                group.groupCode(),
+                group.groupName()
+        );
     }
 
     public UserInfoResponse toUserInfoResponse(final UiManagedUser user) {

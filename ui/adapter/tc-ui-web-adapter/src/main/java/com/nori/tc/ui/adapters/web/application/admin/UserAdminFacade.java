@@ -5,6 +5,7 @@ import com.nori.tc.ui.adapters.web.dto.request.UserUpsertRequest;
 import com.nori.tc.ui.adapters.web.dto.response.UserGroupMappingResponse;
 import com.nori.tc.ui.adapters.web.dto.response.UserGroupMembershipResponse;
 import com.nori.tc.ui.adapters.web.dto.response.UserInfoResponse;
+import com.nori.tc.ui.adapters.web.dto.response.UserListItemResponse;
 import com.nori.tc.ui.adapters.web.security.UiPasswordPolicyService;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
@@ -16,6 +17,9 @@ import com.nori.tc.ui.domain.useradmin.UiUserGroup;
 import com.nori.tc.ui.domain.useradmin.UiUserGroupMember;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -50,8 +54,33 @@ public class UserAdminFacade {
         this.assembler = Objects.requireNonNull(assembler, "assembler is null");
     }
 
-    public PagedResponse<UserInfoResponse> list(final UiPageRequest pageRequest) {
-        return assembler.toUserPage(userCrudPort.findAll(pageRequest));
+    public PagedResponse<UserListItemResponse> list(final UiPageRequest pageRequest) {
+        final PagedResponse<UiManagedUser> userPage = userCrudPort.findAll(pageRequest);
+
+        final List<Long> userPks = userPage.items().stream()
+                .map(UiManagedUser::userPk)
+                .toList();
+        final List<UiUserGroupMember> mappings = userGroupMappingPort.findAllByUserPkIn(userPks);
+
+        final Map<Long, UiUserGroup> groupsByGroupId = mappings.stream()
+                .map(UiUserGroupMember::groupId)
+                .distinct()
+                .map(groupCrudPort::findByGroupId)
+                .flatMap(Optional::stream)
+                .collect(Collectors.toMap(UiUserGroup::groupId, Function.identity()));
+
+        final Map<Long, List<UserListItemResponse.GroupSummary>> groupsByUserPk = new HashMap<>();
+        for (UiUserGroupMember mapping : mappings) {
+            final UiUserGroup group = groupsByGroupId.get(mapping.groupId());
+            if (group == null) {
+                continue;
+            }
+            groupsByUserPk
+                    .computeIfAbsent(mapping.userPk(), key -> new ArrayList<>())
+                    .add(assembler.toGroupSummary(group));
+        }
+
+        return assembler.toUserListItemPage(userPage, groupsByUserPk);
     }
 
     public Optional<UserInfoResponse> findByUserPk(final long userPk) {
