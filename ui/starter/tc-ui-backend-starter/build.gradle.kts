@@ -72,6 +72,13 @@ dependencies {
      * annotation jar를 test 스코프에 명시적으로 포함합니다.
      */
     testImplementation(libs.jackson.annotations)
+    /*
+     * ModelFlowStarterMockMvcTest 가 MockMvc 로 4 endpoint 의 HTTP 응답을 검증합니다.
+     * spring-boot-starter-webmvc-test 는 spring-web (MediaType, MockMvcBuilders 등)
+     * 의 컴파일/런타임 의존을 testCompileClasspath 에 전파합니다 — main 의 web-adapter
+     * 는 implementation 스코프이므로 spring-web 이 test 스코프로 자동 노출되지 않습니다.
+     */
+    testImplementation(libs.spring.boot.starter.webmvc.test)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
