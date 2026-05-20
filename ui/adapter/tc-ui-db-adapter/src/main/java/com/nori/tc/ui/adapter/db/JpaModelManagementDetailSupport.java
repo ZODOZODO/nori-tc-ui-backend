@@ -157,6 +157,7 @@ final class JpaModelManagementDetailSupport {
                 mdf.mdfFile()
         )));
         snapshot.dcopItems().forEach(dcopItem -> modelDcopItemStore.upsert(new UpsertTcModelDcopItem(
+                null,
                 targetModelVersionKey,
                 dcopItem.dcopItemName(),
                 dcopItem.workflowName(),

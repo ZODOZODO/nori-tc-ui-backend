@@ -24,6 +24,7 @@ import com.nori.tc.db.core.model.upsert.UpsertTcModelVariableId;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelWorkflow;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
 import com.nori.tc.db.domain.model.TcModelMdf;
+import com.nori.tc.db.domain.model.TcModelWorkflow;
 import com.nori.tc.ui.adapter.db.mapper.UiDomainEnumMapper;
 import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
@@ -50,10 +51,15 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * {@link ModelDetailCommandPort}의 DB Store 기반 구현체입니다.
@@ -288,52 +294,119 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
     }
 
     /**
-     * workflow node를 교체 저장합니다.
+     * workflow node를 id-aware upsert 방식으로 저장합니다.
+     *
+     * <p>요청 row 의 id 가 비어 있으면 새 row 로 INSERT, 기존 PK 와 일치하면
+     * 그 PK 기반으로 UPDATE, 응답에 포함되지 않은 기존 row 는 DELETE 한다.
+     * flowId = workflow_key anchor stability 를 보장하기 위한 정책이다.</p>
      */
     private void replaceWorkflows(final long modelVersionKey, final List<DetailRowCommand> rows) {
-        loadAllByModelVersionKey(modelVersionKey, modelWorkflowStore::findAllByModelVersionKey)
-                .forEach(workflow -> modelWorkflowStore.deleteByWorkflowKey(workflow.workflowKey()));
+        final Map<Long, TcModelWorkflow> existingByKey =
+                loadAllByModelVersionKey(modelVersionKey, modelWorkflowStore::findAllByModelVersionKey)
+                        .stream()
+                        .collect(Collectors.toMap(TcModelWorkflow::workflowKey, Function.identity()));
 
-        rows.forEach(row -> modelWorkflowStore.upsert(new UpsertTcModelWorkflow(
-                null,
-                modelVersionKey,
-                requiredCell(row, 0, "workflowName"),
-                requiredCell(row, 1, "messageName"),
-                optionalCell(row, 2),
-                optionalCell(row, 3),
-                optionalCell(row, 4),
-                requiredCell(row, 5, "actionName"),
-                optionalCell(row, 6)
-        )));
+        final Set<Long> retainedKeys = new HashSet<>();
+        for (final DetailRowCommand row : rows) {
+            final Long workflowKey = resolveExistingKey(row, existingByKey.keySet(), "workflow");
+            if (workflowKey != null) {
+                retainedKeys.add(workflowKey);
+            }
+            modelWorkflowStore.upsert(new UpsertTcModelWorkflow(
+                    workflowKey,
+                    modelVersionKey,
+                    requiredCell(row, 0, "workflowName"),
+                    requiredCell(row, 1, "messageName"),
+                    optionalCell(row, 2),
+                    optionalCell(row, 3),
+                    optionalCell(row, 4),
+                    requiredCell(row, 5, "actionName"),
+                    optionalCell(row, 6)
+            ));
+        }
+
+        existingByKey.keySet().stream()
+                .filter(key -> !retainedKeys.contains(key))
+                .forEach(modelWorkflowStore::deleteByWorkflowKey);
     }
 
     /**
-     * dcop item node를 교체 저장합니다.
+     * dcop item node를 id-aware upsert 방식으로 저장합니다.
      *
      * <p>Controller 계층에서 SOCKET 모델의 경우 6개 values를 7개(SECS 기준)로 확장한 후
      * 이 메서드에 전달하므로, 항상 SECS 기준 인덱스를 사용합니다.</p>
+     *
+     * <p>요청 row 의 id 가 비어 있으면 새 row 로 INSERT, 기존 PK 와 일치하면
+     * 그 PK 기반으로 UPDATE, 응답에 포함되지 않은 기존 row 는 DELETE 한다.
+     * dcop_item_key anchor stability 를 보장하기 위한 정책이다.</p>
      *
      * <p>컬럼 인덱스 (확장 후 공통):
      * [0]=dcopItemName, [1]=workflowName, [2]=eventId, [3]=variableId,
      * [4]=collectionRule, [5]=calculationRule, [6]=orderRule</p>
      */
     private void replaceDcopItems(final long modelVersionKey, final List<DetailRowCommand> rows) {
-        final List<TcModelDcopItem> existingItems =
-                loadAllByModelVersionKey(modelVersionKey, modelDcopItemStore::findAllByModelVersionKey);
-        existingItems.forEach(item -> modelDcopItemStore.deleteByModelVersionKeyAndName(modelVersionKey, item.dcopItemName()));
+        final Map<Long, TcModelDcopItem> existingByKey =
+                loadAllByModelVersionKey(modelVersionKey, modelDcopItemStore::findAllByModelVersionKey)
+                        .stream()
+                        .collect(Collectors.toMap(TcModelDcopItem::dcopItemKey, Function.identity()));
 
-        rows.forEach(row -> modelDcopItemStore.upsert(new UpsertTcModelDcopItem(
-                modelVersionKey,
-                requiredCell(row, 0, "dcopItemName"),
-                optionalCell(row, 1),    // workflowName
-                optionalCell(row, 2),    // eventId
-                optionalCell(row, 3),    // variableId
-                UiDomainEnumMapper.toDbDcopCollectionRule(
-                        parseOptionalEnum(optionalCell(row, 4), UiDcopCollectionRule.class, "collectionRule")
-                ),
-                optionalCell(row, 5),    // calculationRule (자유 텍스트)
-                parseOptionalInteger(optionalCell(row, 6), "orderRule")
-        )));
+        final Set<Long> retainedKeys = new HashSet<>();
+        for (final DetailRowCommand row : rows) {
+            final Long dcopItemKey = resolveExistingKey(row, existingByKey.keySet(), "dcop");
+            if (dcopItemKey != null) {
+                retainedKeys.add(dcopItemKey);
+            }
+            modelDcopItemStore.upsert(new UpsertTcModelDcopItem(
+                    dcopItemKey,
+                    modelVersionKey,
+                    requiredCell(row, 0, "dcopItemName"),
+                    optionalCell(row, 1),    // workflowName
+                    optionalCell(row, 2),    // eventId
+                    optionalCell(row, 3),    // variableId
+                    UiDomainEnumMapper.toDbDcopCollectionRule(
+                            parseOptionalEnum(optionalCell(row, 4), UiDcopCollectionRule.class, "collectionRule")
+                    ),
+                    optionalCell(row, 5),    // calculationRule (자유 텍스트)
+                    parseOptionalInteger(optionalCell(row, 6), "orderRule")
+            ));
+        }
+
+        existingByKey.keySet().stream()
+                .filter(key -> !retainedKeys.contains(key))
+                .forEach(modelDcopItemStore::deleteByDcopItemKey);
+    }
+
+    /**
+     * 요청 row 의 id 를 기존 PK 집합 안에서 해석한다.
+     *
+     * <p>id 가 null/blank 이면 신규 INSERT 로 간주해 null 반환. 숫자 파싱 실패 시 400,
+     * 존재하지 않는 PK 참조 시에도 400 으로 거부한다.</p>
+     *
+     * @param row 요청 row
+     * @param existingKeys 현재 model_version 의 기존 PK 집합
+     * @param nodeLabel 에러 메시지에 사용할 노드 식별자 (예: "workflow", "dcop")
+     * @return 매칭된 기존 PK, 혹은 신규 INSERT 인 경우 null
+     */
+    private static Long resolveExistingKey(
+            final DetailRowCommand row,
+            final Set<Long> existingKeys,
+            final String nodeLabel
+    ) {
+        final String rawId = row == null ? null : row.id();
+        final String normalized = normalizeOptionalText(rawId);
+        if (normalized == null) {
+            return null;
+        }
+        final long parsed;
+        try {
+            parsed = Long.parseLong(normalized);
+        } catch (NumberFormatException e) {
+            throw new UiBadRequestException(nodeLabel + " row id 형식이 올바르지 않습니다.", e);
+        }
+        if (!existingKeys.contains(parsed)) {
+            throw new UiBadRequestException("존재하지 않는 " + nodeLabel + " row id 입니다.");
+        }
+        return parsed;
     }
 
     /**
