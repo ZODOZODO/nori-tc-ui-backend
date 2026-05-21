@@ -6,7 +6,7 @@ import java.util.List;
  * UI Backend 내부에서 사용하는 Message Flow 상세 aggregate 입니다.
  *
  * <p>FlowCard 의 4 섹션 (Identity / Trigger / Action / Collect) 을 1 개의 aggregate 로 묶습니다.
- * {@code flowId} 는 {@code tc_model_workflow.workflow_key} 와 동일합니다.</p>
+ * {@code flowId} 는 {@code tc_model_message_flow.message_flow_key} 와 동일합니다.</p>
  *
  * <p>Trigger 섹션은 SECS only — Socket 프로토콜인 경우 {@code eventId},
  * {@code transactionId}, {@code workflowFilter} 모두 {@code null} 입니다.</p>
@@ -21,7 +21,7 @@ import java.util.List;
  *     배열 (PUT round-trip 입력). 응답 시에도 {@code dcopItems} 의 키 집합과 일치하도록 채워진다.</li>
  * </ul>
  *
- * @param flowId           Workflow PK (= tc_model_workflow.workflow_key)
+ * @param flowId           Message Flow PK (= tc_model_message_flow.message_flow_key)
  * @param workflowName     Identity 섹션 — Workflow 명
  * @param messageName      Identity 섹션 — Message 명
  * @param eventId          Trigger 섹션 — SECS event ID (Socket 일 때 null)

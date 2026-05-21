@@ -66,7 +66,7 @@ class JpaModelFlowCommandPortTest {
     void insertFlowThrowsConflictOnDuplicateKey() {
         final Fixture fixture = new Fixture();
         when(fixture.modelMessageFlowStore.upsert(any()))
-                .thenThrow(new DbDuplicateKeyException("uk_tc_model_workflow violated", new RuntimeException("dup")));
+                .thenThrow(new DbDuplicateKeyException("uk_tc_model_message_flow violated", new RuntimeException("dup")));
 
         assertThrows(UiConflictException.class,
                 () -> fixture.port.insertFlow(101L, "WF_NEW", "S6F11"));
@@ -217,7 +217,7 @@ class JpaModelFlowCommandPortTest {
         when(fixture.modelMessageFlowStore.findByMessageFlowKey(77L))
                 .thenReturn(Optional.of(workflow(77L, 101L, "WF_OLD", "S6F11", "actOld")));
         when(fixture.modelMessageFlowStore.upsert(any()))
-                .thenThrow(new DbDuplicateKeyException("uk_tc_model_workflow violated", new RuntimeException("dup")));
+                .thenThrow(new DbDuplicateKeyException("uk_tc_model_message_flow violated", new RuntimeException("dup")));
 
         final UiMessageFlow request = new UiMessageFlow(
                 77L, "WF_DUP", "S6F13", null, null, null, "actNew", null, List.of(), null
