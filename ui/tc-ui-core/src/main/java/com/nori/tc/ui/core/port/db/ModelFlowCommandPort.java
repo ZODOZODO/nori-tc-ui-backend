@@ -26,14 +26,14 @@ public interface ModelFlowCommandPort {
      * @param modelVersionKey 대상 모델 버전 키
      * @param workflowName    Workflow 명 (blank 금지 — 호출 측 service 검증)
      * @param messageName     Message 명 (blank 금지 — 호출 측 service 검증)
-     * @return 생성된 Workflow PK (= flowId)
+     * @return 생성된 Message Flow PK (= flowId)
      */
     long insertFlow(long modelVersionKey, String workflowName, String messageName);
 
     /**
      * 단일 Flow 의 Identity + Trigger + Action 섹션을 통합 UPDATE 합니다.
      *
-     * <p>대상은 {@code tc_model_workflow} row 1 개. Collect 섹션 (DCOP item) 은 본 메서드 범위
+     * <p>대상은 {@code tc_model_message_flow} row 1 개. Collect 섹션 (DCOP item) 은 본 메서드 범위
      * 밖이며, 호출 측에서 기존 {@code PUT /details/dcop-itemes} 흐름으로 별도 처리합니다.</p>
      *
      * <p>메서드명은 Plan 의 {@code updateFlowIdentitySection} 대신 {@code updateFlow} 로 단순화 —
@@ -43,7 +43,7 @@ public interface ModelFlowCommandPort {
      * 본 javadoc 으로 명확화합니다.</p>
      *
      * @param modelVersionKey 대상 모델 버전 키
-     * @param flowId          Workflow PK (= tc_model_workflow.workflow_key)
+     * @param flowId          Message Flow PK (= tc_model_message_flow.message_flow_key)
      * @param request         갱신할 Flow aggregate (dcopItems 필드는 무시)
      */
     void updateFlow(long modelVersionKey, long flowId, UiMessageFlow request);

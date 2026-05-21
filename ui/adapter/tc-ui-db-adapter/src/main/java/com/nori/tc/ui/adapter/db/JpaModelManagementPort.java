@@ -10,8 +10,8 @@ import com.nori.tc.db.core.model.store.TcModelReportIdStore;
 import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
-import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModel;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMdf;
 import com.nori.tc.db.domain.common.model.ModelStatus;
@@ -82,7 +82,7 @@ public class JpaModelManagementPort implements ModelRootCommandPort, ModelBranch
             final TcModelVariableIdStore modelVariableIdStore,
             final TcModelReportIdStore modelReportIdStore,
             final TcModelEventIdStore modelEventIdStore,
-            final TcModelWorkflowStore modelWorkflowStore,
+            final TcModelMessageFlowStore modelMessageFlowStore,
             final TcModelMdfStore modelMdfStore,
             final TcModelDcopItemStore modelDcopItemStore
     ) {
@@ -98,7 +98,7 @@ public class JpaModelManagementPort implements ModelRootCommandPort, ModelBranch
                 modelVariableIdStore,
                 modelReportIdStore,
                 modelEventIdStore,
-                modelWorkflowStore,
+                modelMessageFlowStore,
                 modelMdfStore,
                 modelDcopItemStore
         );

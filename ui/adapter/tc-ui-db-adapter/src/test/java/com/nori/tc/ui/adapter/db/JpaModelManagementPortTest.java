@@ -12,7 +12,7 @@ import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
-import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModel;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMdf;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelParam;
@@ -30,7 +30,7 @@ import com.nori.tc.db.domain.model.TcModelReportId;
 import com.nori.tc.db.domain.model.TcModelSecsMessage;
 import com.nori.tc.db.domain.model.TcModelSocketMessage;
 import com.nori.tc.db.domain.model.TcModelVariableId;
-import com.nori.tc.db.domain.model.TcModelWorkflow;
+import com.nori.tc.db.domain.model.TcModelMessageFlow;
 import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
 import com.nori.tc.ui.core.port.db.ModelBranchCommandPort;
 import com.nori.tc.ui.core.port.db.ModelParentCommitPort;
@@ -171,7 +171,7 @@ class JpaModelManagementPortTest {
         fixture.variableIdsByVersion.put(parentLatest.modelVersionKey(), List.of(variable(parentLatest.modelVersionKey(), "VID_TEMP")));
         fixture.reportIdsByVersion.put(parentLatest.modelVersionKey(), List.of(report(parentLatest.modelVersionKey(), "RPT_01")));
         fixture.eventIdsByVersion.put(parentLatest.modelVersionKey(), List.of(event(parentLatest.modelVersionKey(), "EVT_01")));
-        fixture.workflowsByVersion.put(parentLatest.modelVersionKey(), List.of(workflow(parentLatest.modelVersionKey(), "FLOW_01", "S1F1")));
+        fixture.messageFlowsByVersion.put(parentLatest.modelVersionKey(), List.of(workflow(parentLatest.modelVersionKey(), "FLOW_01", "S1F1")));
         fixture.mdfsByVersion.put(parentLatest.modelVersionKey(), List.of(mdf(parentLatest.modelVersionKey(), "ROOT_XML")));
         fixture.dcopItemsByVersion.put(parentLatest.modelVersionKey(), List.of(dcop(parentLatest.modelVersionKey(), "TEMP")));
 
@@ -199,7 +199,7 @@ class JpaModelManagementPortTest {
         verify(fixture.modelVariableIdStore, times(1)).upsert(any());
         verify(fixture.modelReportIdStore, times(1)).upsert(any());
         verify(fixture.modelEventIdStore, times(1)).upsert(any());
-        verify(fixture.modelWorkflowStore, times(1)).upsert(any());
+        verify(fixture.modelMessageFlowStore, times(1)).upsert(any());
         verify(fixture.modelMdfStore, times(1)).upsert(any());
         verify(fixture.modelDcopItemStore, times(1)).upsert(any());
     }
@@ -585,8 +585,8 @@ class JpaModelManagementPortTest {
         return new TcModelEventId(1L, modelVersionKey, eventId, "RPT_01", true, "desc", OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
     }
 
-    private static TcModelWorkflow workflow(final long modelVersionKey, final String workflowName, final String messageName) {
-        return new TcModelWorkflow(1L, modelVersionKey, workflowName, messageName, "EVT_01", "TX_01", "filter", "action", "idx", OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
+    private static TcModelMessageFlow workflow(final long modelVersionKey, final String workflowName, final String messageName) {
+        return new TcModelMessageFlow(1L, modelVersionKey, workflowName, messageName, "EVT_01", "TX_01", "filter", "action", "idx", OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
     }
 
     private static TcModelMdf mdf(final long modelVersionKey, final String name) {
@@ -638,7 +638,7 @@ class JpaModelManagementPortTest {
         private final TcModelVariableIdStore modelVariableIdStore = mock(TcModelVariableIdStore.class);
         private final TcModelReportIdStore modelReportIdStore = mock(TcModelReportIdStore.class);
         private final TcModelEventIdStore modelEventIdStore = mock(TcModelEventIdStore.class);
-        private final TcModelWorkflowStore modelWorkflowStore = mock(TcModelWorkflowStore.class);
+        private final TcModelMessageFlowStore modelMessageFlowStore = mock(TcModelMessageFlowStore.class);
         private final TcModelMdfStore modelMdfStore = mock(TcModelMdfStore.class);
         private final TcModelDcopItemStore modelDcopItemStore = mock(TcModelDcopItemStore.class);
 
@@ -651,7 +651,7 @@ class JpaModelManagementPortTest {
         private final Map<Long, List<TcModelVariableId>> variableIdsByVersion = new HashMap<>();
         private final Map<Long, List<TcModelReportId>> reportIdsByVersion = new HashMap<>();
         private final Map<Long, List<TcModelEventId>> eventIdsByVersion = new HashMap<>();
-        private final Map<Long, List<TcModelWorkflow>> workflowsByVersion = new HashMap<>();
+        private final Map<Long, List<TcModelMessageFlow>> messageFlowsByVersion = new HashMap<>();
         private final Map<Long, List<TcModelMdf>> mdfsByVersion = new HashMap<>();
         private final Map<Long, List<TcModelDcopItem>> dcopItemsByVersion = new HashMap<>();
 
@@ -665,7 +665,7 @@ class JpaModelManagementPortTest {
                 modelVariableIdStore,
                 modelReportIdStore,
                 modelEventIdStore,
-                modelWorkflowStore,
+                modelMessageFlowStore,
                 modelMdfStore,
                 modelDcopItemStore
         ) {
@@ -701,8 +701,8 @@ class JpaModelManagementPortTest {
             when(modelEventIdStore.findAllByModelVersionKey(anyLong(), any())).thenAnswer(invocation ->
                     paginate(eventIdsByVersion.getOrDefault(invocation.getArgument(0), List.of()), invocation.getArgument(1))
             );
-            when(modelWorkflowStore.findAllByModelVersionKey(anyLong(), any())).thenAnswer(invocation ->
-                    paginate(workflowsByVersion.getOrDefault(invocation.getArgument(0), List.of()), invocation.getArgument(1))
+            when(modelMessageFlowStore.findAllByModelVersionKey(anyLong(), any())).thenAnswer(invocation ->
+                    paginate(messageFlowsByVersion.getOrDefault(invocation.getArgument(0), List.of()), invocation.getArgument(1))
             );
             when(modelMdfStore.findAllByModelVersionKey(anyLong(), any())).thenAnswer(invocation ->
                     paginate(mdfsByVersion.getOrDefault(invocation.getArgument(0), List.of()), invocation.getArgument(1))

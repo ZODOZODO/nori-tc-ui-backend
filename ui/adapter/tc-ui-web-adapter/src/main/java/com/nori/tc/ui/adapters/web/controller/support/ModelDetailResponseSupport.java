@@ -20,7 +20,7 @@ import com.nori.tc.ui.domain.model.UiModelReportId;
 import com.nori.tc.ui.domain.model.UiModelSecsMessage;
 import com.nori.tc.ui.domain.model.UiModelSocketMessage;
 import com.nori.tc.ui.domain.model.UiModelVariableId;
-import com.nori.tc.ui.domain.model.UiModelWorkflow;
+import com.nori.tc.ui.domain.model.UiModelMessageFlow;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -164,8 +164,8 @@ public final class ModelDetailResponseSupport {
                 final List<String> workflowColumns = socketModel ? SOCKET_WORKFLOW_COLUMNS : SECS_WORKFLOW_COLUMNS;
                 yield new ModelDetailDataResponse(
                         workflowColumns,
-                        modelDetailQueryPort.findWorkflowsByModelVersionKey(modelVersionKey).stream()
-                                .map(workflow -> toWorkflowRow(workflow, socketModel))
+                        modelDetailQueryPort.findMessageFlowsByModelVersionKey(modelVersionKey).stream()
+                                .map(messageFlow -> toWorkflowRow(messageFlow, socketModel))
                                 .toList(),
                         List.of()
                 );
@@ -326,31 +326,31 @@ public final class ModelDetailResponseSupport {
         ));
     }
 
-    private static ModelDetailRowResponse toWorkflowRow(final UiModelWorkflow workflow, final boolean excludeEventFields) {
+    private static ModelDetailRowResponse toWorkflowRow(final UiModelMessageFlow messageFlow, final boolean excludeEventFields) {
         final List<String> values;
         if (excludeEventFields) {
             values = List.of(
-                    nullToEmpty(workflow.workflowName()),
-                    nullToEmpty(workflow.messageName()),
-                    nullToEmpty(workflow.workflowFilter()),
-                    nullToEmpty(workflow.actionName()),
-                    nullToEmpty(workflow.actionDataIndex())
+                    nullToEmpty(messageFlow.workflowName()),
+                    nullToEmpty(messageFlow.messageName()),
+                    nullToEmpty(messageFlow.workflowFilter()),
+                    nullToEmpty(messageFlow.actionName()),
+                    nullToEmpty(messageFlow.actionDataIndex())
             );
         } else {
             values = List.of(
-                    nullToEmpty(workflow.workflowName()),
-                    nullToEmpty(workflow.messageName()),
-                    nullToEmpty(workflow.eventId()),
-                    nullToEmpty(workflow.transactionId()),
-                    nullToEmpty(workflow.workflowFilter()),
-                    nullToEmpty(workflow.actionName()),
-                    nullToEmpty(workflow.actionDataIndex())
+                    nullToEmpty(messageFlow.workflowName()),
+                    nullToEmpty(messageFlow.messageName()),
+                    nullToEmpty(messageFlow.eventId()),
+                    nullToEmpty(messageFlow.transactionId()),
+                    nullToEmpty(messageFlow.workflowFilter()),
+                    nullToEmpty(messageFlow.actionName()),
+                    nullToEmpty(messageFlow.actionDataIndex())
             );
         }
         return new ModelDetailRowResponse(
-                modelRowId("workflow", workflow.workflowKey()),
+                modelRowId("workflow", messageFlow.messageFlowKey()),
                 values,
-                ModelDetailPreviewSupport.buildWorkflowPreviewValues(workflow)
+                ModelDetailPreviewSupport.buildWorkflowPreviewValues(messageFlow)
         );
     }
 

@@ -66,7 +66,7 @@ class ModelFlowQueryServiceTest {
                 List.of(),
                 List.of()
         );
-        when(modelFlowQueryPort.findFlowByWorkflowKey(MODEL_VERSION_KEY, 11L))
+        when(modelFlowQueryPort.findFlowByMessageFlowKey(MODEL_VERSION_KEY, 11L))
                 .thenReturn(Optional.of(aggregate));
 
         final UiMessageFlow result = modelFlowQueryService.findFlowDetail(MODEL_VERSION_KEY, 11L);
@@ -76,7 +76,7 @@ class ModelFlowQueryServiceTest {
 
     @Test
     void findFlowDetailThrowsUiNotFoundWhenPortEmpty() {
-        when(modelFlowQueryPort.findFlowByWorkflowKey(MODEL_VERSION_KEY, 999L))
+        when(modelFlowQueryPort.findFlowByMessageFlowKey(MODEL_VERSION_KEY, 999L))
                 .thenReturn(Optional.empty());
 
         final UiNotFoundException exception = assertThrows(
@@ -105,7 +105,7 @@ class ModelFlowQueryServiceTest {
                 List.of(),
                 List.of()
         );
-        when(modelFlowQueryPort.findFlowByWorkflowKey(MODEL_VERSION_KEY, 21L))
+        when(modelFlowQueryPort.findFlowByMessageFlowKey(MODEL_VERSION_KEY, 21L))
                 .thenReturn(Optional.of(socketAggregate));
 
         final UiMessageFlow result = modelFlowQueryService.findFlowDetail(MODEL_VERSION_KEY, 21L);

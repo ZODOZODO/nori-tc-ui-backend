@@ -2,11 +2,11 @@ package com.nori.tc.ui.adapter.db;
 
 import com.nori.tc.db.core.exception.DbDuplicateKeyException;
 import com.nori.tc.db.core.model.store.TcModelMessageFlowDcopItemStore;
-import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMessageFlowDcopItem;
-import com.nori.tc.db.core.model.upsert.UpsertTcModelWorkflow;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelMessageFlow;
 import com.nori.tc.db.domain.model.TcModelMessageFlowDcopItem;
-import com.nori.tc.db.domain.model.TcModelWorkflow;
+import com.nori.tc.db.domain.model.TcModelMessageFlow;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.domain.model.UiMessageFlow;
@@ -41,15 +41,15 @@ class JpaModelFlowCommandPortTest {
     @DisplayName("insertFlow는 workflowKey=null로 upsert를 호출하고 생성된 workflow_key를 반환한다")
     void insertFlowDelegatesUpsertAndReturnsGeneratedKey() {
         final Fixture fixture = new Fixture();
-        when(fixture.modelWorkflowStore.upsert(any()))
+        when(fixture.modelMessageFlowStore.upsert(any()))
                 .thenReturn(workflow(123L, 101L, "WF_NEW", "S6F11", "TODO"));
 
         final long flowId = fixture.port.insertFlow(101L, "WF_NEW", "S6F11");
 
         assertEquals(123L, flowId);
-        final ArgumentCaptor<UpsertTcModelWorkflow> captor = ArgumentCaptor.forClass(UpsertTcModelWorkflow.class);
-        verify(fixture.modelWorkflowStore).upsert(captor.capture());
-        assertNull(captor.getValue().workflowKey());
+        final ArgumentCaptor<UpsertTcModelMessageFlow> captor = ArgumentCaptor.forClass(UpsertTcModelMessageFlow.class);
+        verify(fixture.modelMessageFlowStore).upsert(captor.capture());
+        assertNull(captor.getValue().messageFlowKey());
         assertEquals(101L, captor.getValue().modelVersionKey());
         assertEquals("WF_NEW", captor.getValue().workflowName());
         assertEquals("S6F11", captor.getValue().messageName());
@@ -65,7 +65,7 @@ class JpaModelFlowCommandPortTest {
     @DisplayName("insertFlow에서 DbDuplicateKeyException이 발생하면 UiConflictException으로 변환된다")
     void insertFlowThrowsConflictOnDuplicateKey() {
         final Fixture fixture = new Fixture();
-        when(fixture.modelWorkflowStore.upsert(any()))
+        when(fixture.modelMessageFlowStore.upsert(any()))
                 .thenThrow(new DbDuplicateKeyException("uk_tc_model_workflow violated", new RuntimeException("dup")));
 
         assertThrows(UiConflictException.class,
@@ -76,9 +76,9 @@ class JpaModelFlowCommandPortTest {
     @DisplayName("updateFlow는 flowId로 upsert를 호출하고 4섹션 모든 필드를 전달한다")
     void updateFlowDelegatesUpsertWithFullFields() {
         final Fixture fixture = new Fixture();
-        when(fixture.modelWorkflowStore.findByWorkflowKey(77L))
+        when(fixture.modelMessageFlowStore.findByMessageFlowKey(77L))
                 .thenReturn(Optional.of(workflow(77L, 101L, "WF_OLD", "S6F11", "actOld")));
-        when(fixture.modelWorkflowStore.upsert(any()))
+        when(fixture.modelMessageFlowStore.upsert(any()))
                 .thenReturn(workflow(77L, 101L, "WF_NEW", "S6F11", "actNew"));
 
         final UiMessageFlow request = new UiMessageFlow(
@@ -96,9 +96,9 @@ class JpaModelFlowCommandPortTest {
 
         fixture.port.updateFlow(101L, 77L, request);
 
-        final ArgumentCaptor<UpsertTcModelWorkflow> captor = ArgumentCaptor.forClass(UpsertTcModelWorkflow.class);
-        verify(fixture.modelWorkflowStore).upsert(captor.capture());
-        assertEquals(77L, captor.getValue().workflowKey());
+        final ArgumentCaptor<UpsertTcModelMessageFlow> captor = ArgumentCaptor.forClass(UpsertTcModelMessageFlow.class);
+        verify(fixture.modelMessageFlowStore).upsert(captor.capture());
+        assertEquals(77L, captor.getValue().messageFlowKey());
         assertEquals("WF_NEW", captor.getValue().workflowName());
         assertEquals("EVT_1", captor.getValue().eventId());
         assertEquals("TX_1", captor.getValue().transactionId());
@@ -106,22 +106,22 @@ class JpaModelFlowCommandPortTest {
         assertEquals("actNew", captor.getValue().actionName());
         assertEquals("{\"mdfTemplateName\":\"REQ\"}", captor.getValue().actionDataIndex());
         // dcopItemKeys == null 이면 Collect 미갱신 — join store 비호출.
-        verify(fixture.modelMessageFlowDcopItemStore, never()).findAllByWorkflowKey(anyLong());
+        verify(fixture.modelMessageFlowDcopItemStore, never()).findAllByMessageFlowKey(anyLong());
         verify(fixture.modelMessageFlowDcopItemStore, never()).upsert(any());
         verify(fixture.modelMessageFlowDcopItemStore, never())
-                .deleteByWorkflowKeyAndDcopItemKey(anyLong(), anyLong());
+                .deleteByMessageFlowKeyAndDcopItemKey(anyLong(), anyLong());
     }
 
     @Test
     @DisplayName("updateFlow Collect — toAdd / toRemove / toKeep diff 가 올바르게 처리된다")
     void updateFlow_CollectDiffUpsert() {
         final Fixture fixture = new Fixture();
-        when(fixture.modelWorkflowStore.findByWorkflowKey(77L))
+        when(fixture.modelMessageFlowStore.findByMessageFlowKey(77L))
                 .thenReturn(Optional.of(workflow(77L, 101L, "WF_OLD", "S6F11", "actOld")));
-        when(fixture.modelWorkflowStore.upsert(any()))
+        when(fixture.modelMessageFlowStore.upsert(any()))
                 .thenReturn(workflow(77L, 101L, "WF_OLD", "S6F11", "actOld"));
         // 기존 binding: 11, 22 → 신규 요청: 22, 33 → toAdd={33}, toRemove={11}, toKeep={22}
-        when(fixture.modelMessageFlowDcopItemStore.findAllByWorkflowKey(77L)).thenReturn(List.of(
+        when(fixture.modelMessageFlowDcopItemStore.findAllByMessageFlowKey(77L)).thenReturn(List.of(
                 new TcModelMessageFlowDcopItem(801L, 77L, 11L, 101L, NOW),
                 new TcModelMessageFlowDcopItem(802L, 77L, 22L, 101L, NOW)
         ));
@@ -144,24 +144,24 @@ class JpaModelFlowCommandPortTest {
                 ArgumentCaptor.forClass(UpsertTcModelMessageFlowDcopItem.class);
         verify(fixture.modelMessageFlowDcopItemStore).upsert(upsertCaptor.capture());
         assertNull(upsertCaptor.getValue().mfdiKey());
-        assertEquals(77L, upsertCaptor.getValue().workflowKey());
+        assertEquals(77L, upsertCaptor.getValue().messageFlowKey());
         assertEquals(33L, upsertCaptor.getValue().dcopItemKey());
         assertEquals(101L, upsertCaptor.getValue().modelVersionKey());
         // toRemove = {11}
-        verify(fixture.modelMessageFlowDcopItemStore).deleteByWorkflowKeyAndDcopItemKey(77L, 11L);
+        verify(fixture.modelMessageFlowDcopItemStore).deleteByMessageFlowKeyAndDcopItemKey(77L, 11L);
         // toKeep = {22} — delete 호출 없음
-        verify(fixture.modelMessageFlowDcopItemStore, never()).deleteByWorkflowKeyAndDcopItemKey(77L, 22L);
+        verify(fixture.modelMessageFlowDcopItemStore, never()).deleteByMessageFlowKeyAndDcopItemKey(77L, 22L);
     }
 
     @Test
     @DisplayName("updateFlow Collect — 빈 배열 요청은 기존 binding 전부 정리")
     void updateFlow_CollectEmpty_ClearsAllBindings() {
         final Fixture fixture = new Fixture();
-        when(fixture.modelWorkflowStore.findByWorkflowKey(77L))
+        when(fixture.modelMessageFlowStore.findByMessageFlowKey(77L))
                 .thenReturn(Optional.of(workflow(77L, 101L, "WF_OLD", "S6F11", "actOld")));
-        when(fixture.modelWorkflowStore.upsert(any()))
+        when(fixture.modelMessageFlowStore.upsert(any()))
                 .thenReturn(workflow(77L, 101L, "WF_OLD", "S6F11", "actOld"));
-        when(fixture.modelMessageFlowDcopItemStore.findAllByWorkflowKey(77L)).thenReturn(List.of(
+        when(fixture.modelMessageFlowDcopItemStore.findAllByMessageFlowKey(77L)).thenReturn(List.of(
                 new TcModelMessageFlowDcopItem(801L, 77L, 11L, 101L, NOW),
                 new TcModelMessageFlowDcopItem(802L, 77L, 22L, 101L, NOW)
         ));
@@ -173,15 +173,15 @@ class JpaModelFlowCommandPortTest {
         fixture.port.updateFlow(101L, 77L, request);
 
         verify(fixture.modelMessageFlowDcopItemStore, never()).upsert(any());
-        verify(fixture.modelMessageFlowDcopItemStore).deleteByWorkflowKeyAndDcopItemKey(77L, 11L);
-        verify(fixture.modelMessageFlowDcopItemStore).deleteByWorkflowKeyAndDcopItemKey(77L, 22L);
+        verify(fixture.modelMessageFlowDcopItemStore).deleteByMessageFlowKeyAndDcopItemKey(77L, 11L);
+        verify(fixture.modelMessageFlowDcopItemStore).deleteByMessageFlowKeyAndDcopItemKey(77L, 22L);
     }
 
     @Test
     @DisplayName("updateFlow는 flowId가 존재하지 않으면 UiNotFoundException")
     void updateFlowThrowsNotFoundWhenFlowMissing() {
         final Fixture fixture = new Fixture();
-        when(fixture.modelWorkflowStore.findByWorkflowKey(9999L)).thenReturn(Optional.empty());
+        when(fixture.modelMessageFlowStore.findByMessageFlowKey(9999L)).thenReturn(Optional.empty());
 
         final UiMessageFlow request = new UiMessageFlow(
                 9999L, "WF_X", "S6F11", null, null, null, "actX", null, List.of(), null
@@ -190,14 +190,14 @@ class JpaModelFlowCommandPortTest {
         assertThrows(UiNotFoundException.class,
                 () -> fixture.port.updateFlow(101L, 9999L, request));
 
-        verify(fixture.modelWorkflowStore, never()).upsert(any());
+        verify(fixture.modelMessageFlowStore, never()).upsert(any());
     }
 
     @Test
     @DisplayName("updateFlow는 workflow.modelVersionKey가 path 인자와 다르면 UiNotFoundException (다른 모델 row 보호)")
     void updateFlowThrowsNotFoundWhenModelVersionMismatch() {
         final Fixture fixture = new Fixture();
-        when(fixture.modelWorkflowStore.findByWorkflowKey(77L))
+        when(fixture.modelMessageFlowStore.findByMessageFlowKey(77L))
                 .thenReturn(Optional.of(workflow(77L, 999L, "WF_OTHER", "S6F11", "actX")));
 
         final UiMessageFlow request = new UiMessageFlow(
@@ -207,16 +207,16 @@ class JpaModelFlowCommandPortTest {
         assertThrows(UiNotFoundException.class,
                 () -> fixture.port.updateFlow(101L, 77L, request));
 
-        verify(fixture.modelWorkflowStore, never()).upsert(any());
+        verify(fixture.modelMessageFlowStore, never()).upsert(any());
     }
 
     @Test
     @DisplayName("updateFlow에서 unique 위반시 UiConflictException으로 변환된다")
     void updateFlowThrowsConflictOnDuplicateKey() {
         final Fixture fixture = new Fixture();
-        when(fixture.modelWorkflowStore.findByWorkflowKey(77L))
+        when(fixture.modelMessageFlowStore.findByMessageFlowKey(77L))
                 .thenReturn(Optional.of(workflow(77L, 101L, "WF_OLD", "S6F11", "actOld")));
-        when(fixture.modelWorkflowStore.upsert(any()))
+        when(fixture.modelMessageFlowStore.upsert(any()))
                 .thenThrow(new DbDuplicateKeyException("uk_tc_model_workflow violated", new RuntimeException("dup")));
 
         final UiMessageFlow request = new UiMessageFlow(
@@ -237,18 +237,18 @@ class JpaModelFlowCommandPortTest {
         assertThrows(com.nori.tc.ui.core.exception.UiBadRequestException.class,
                 () -> fixture.port.updateFlow(0L, 77L,
                         new UiMessageFlow(77L, "WF", "MSG", null, null, null, "act", null, List.of(), null)));
-        verify(fixture.modelWorkflowStore, never()).upsert(any());
-        verify(fixture.modelWorkflowStore, never()).findByWorkflowKey(anyLong());
+        verify(fixture.modelMessageFlowStore, never()).upsert(any());
+        verify(fixture.modelMessageFlowStore, never()).findByMessageFlowKey(anyLong());
     }
 
-    private static TcModelWorkflow workflow(
+    private static TcModelMessageFlow workflow(
             final long workflowKey,
             final long modelVersionKey,
             final String workflowName,
             final String messageName,
             final String actionName
     ) {
-        return new TcModelWorkflow(
+        return new TcModelMessageFlow(
                 workflowKey,
                 modelVersionKey,
                 workflowName,
@@ -264,11 +264,11 @@ class JpaModelFlowCommandPortTest {
 
     private static final class Fixture {
 
-        private final TcModelWorkflowStore modelWorkflowStore = mock(TcModelWorkflowStore.class);
+        private final TcModelMessageFlowStore modelMessageFlowStore = mock(TcModelMessageFlowStore.class);
         private final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore =
                 mock(TcModelMessageFlowDcopItemStore.class);
         private final JpaModelFlowCommandPort port = new JpaModelFlowCommandPort(
-                modelWorkflowStore,
+                modelMessageFlowStore,
                 modelMessageFlowDcopItemStore
         );
     }

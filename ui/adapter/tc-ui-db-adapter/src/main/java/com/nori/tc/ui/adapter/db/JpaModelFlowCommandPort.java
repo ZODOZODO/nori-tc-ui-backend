@@ -2,11 +2,11 @@ package com.nori.tc.ui.adapter.db;
 
 import com.nori.tc.db.core.exception.DbDuplicateKeyException;
 import com.nori.tc.db.core.model.store.TcModelMessageFlowDcopItemStore;
-import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelMessageFlow;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMessageFlowDcopItem;
-import com.nori.tc.db.core.model.upsert.UpsertTcModelWorkflow;
+import com.nori.tc.db.domain.model.TcModelMessageFlow;
 import com.nori.tc.db.domain.model.TcModelMessageFlowDcopItem;
-import com.nori.tc.db.domain.model.TcModelWorkflow;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
@@ -27,7 +27,7 @@ import java.util.Set;
 /**
  * {@link ModelFlowCommandPort} 의 DB Store 기반 구현체입니다.
  *
- * <p>workflow row 1 개 = Flow 1 개. INSERT / UPDATE 는 단일 row 트랜잭션이며, UPDATE 시점에
+ * <p>message flow row 1 개 = Flow 1 개. INSERT / UPDATE 는 단일 row 트랜잭션이며, UPDATE 시점에
  * Collect 섹션 (DCOP item 바인딩) 도 {@code tc_model_message_flow_dcop_item} join table 에
  * id-aware diff (toAdd / toRemove / toKeep) 로 함께 갱신합니다.</p>
  */
@@ -39,24 +39,24 @@ public class JpaModelFlowCommandPort implements ModelFlowCommandPort {
     /**
      * 신규 Flow INSERT 시 사용하는 action_name placeholder.
      *
-     * <p>{@code tc_model_workflow.action_name} 은 NOT NULL 이므로 빈 문자열을 허용하지 않는다.
+     * <p>{@code tc_model_message_flow.action_name} 은 NOT NULL 이므로 빈 문자열을 허용하지 않는다.
      * SPEC 의 "신규 Flow 는 4 섹션 모두 빈 상태" 요건은 UI 상태 의미이며 DB 컬럼 비어있음은 별개다.
      * 사용자가 후속 PUT 으로 실제 actionName 을 채울 때까지의 임시 값으로 {@code "TODO"} 를 사용한다.
      * {@code action_name} VARCHAR(200) 안에서 안전하다.</p>
      */
     private static final String NEW_FLOW_ACTION_NAME_PLACEHOLDER = "TODO";
 
-    private final TcModelWorkflowStore modelWorkflowStore;
+    private final TcModelMessageFlowStore modelMessageFlowStore;
     private final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore;
 
     /**
      * 필수 의존성을 초기화합니다.
      */
     public JpaModelFlowCommandPort(
-            final TcModelWorkflowStore modelWorkflowStore,
+            final TcModelMessageFlowStore modelMessageFlowStore,
             final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore
     ) {
-        this.modelWorkflowStore = Objects.requireNonNull(modelWorkflowStore, "modelWorkflowStore is null");
+        this.modelMessageFlowStore = Objects.requireNonNull(modelMessageFlowStore, "modelMessageFlowStore is null");
         this.modelMessageFlowDcopItemStore = Objects.requireNonNull(
                 modelMessageFlowDcopItemStore, "modelMessageFlowDcopItemStore is null");
         log.info("JpaModelFlowCommandPort initialized.");
@@ -67,7 +67,7 @@ public class JpaModelFlowCommandPort implements ModelFlowCommandPort {
     public long insertFlow(final long modelVersionKey, final String workflowName, final String messageName) {
         validateModelVersionKey(modelVersionKey);
 
-        final UpsertTcModelWorkflow command = new UpsertTcModelWorkflow(
+        final UpsertTcModelMessageFlow command = new UpsertTcModelMessageFlow(
                 null,
                 modelVersionKey,
                 workflowName,
@@ -79,9 +79,9 @@ public class JpaModelFlowCommandPort implements ModelFlowCommandPort {
                 null
         );
 
-        final TcModelWorkflow saved;
+        final TcModelMessageFlow saved;
         try {
-            saved = modelWorkflowStore.upsert(command);
+            saved = modelMessageFlowStore.upsert(command);
         } catch (DbDuplicateKeyException e) {
             throw new UiConflictException("이미 동일한 (workflowName, messageName) Flow가 존재합니다.", e);
         } catch (RuntimeException e) {
@@ -92,8 +92,8 @@ public class JpaModelFlowCommandPort implements ModelFlowCommandPort {
         }
 
         log.info("Flow INSERT 완료. modelVersionKey={}, flowId={}, workflowName={}, messageName={}",
-                modelVersionKey, saved.workflowKey(), saved.workflowName(), saved.messageName());
-        return saved.workflowKey();
+                modelVersionKey, saved.messageFlowKey(), saved.workflowName(), saved.messageName());
+        return saved.messageFlowKey();
     }
 
     @Override
@@ -105,13 +105,13 @@ public class JpaModelFlowCommandPort implements ModelFlowCommandPort {
         }
         Objects.requireNonNull(request, "request is null");
 
-        final Optional<TcModelWorkflow> existing = modelWorkflowStore.findByWorkflowKey(flowId);
+        final Optional<TcModelMessageFlow> existing = modelMessageFlowStore.findByMessageFlowKey(flowId);
         if (existing.isEmpty() || existing.get().modelVersionKey() != modelVersionKey) {
             throw new UiNotFoundException("Flow를 찾을 수 없습니다. modelVersionKey=" + modelVersionKey
                     + ", flowId=" + flowId);
         }
 
-        final UpsertTcModelWorkflow command = new UpsertTcModelWorkflow(
+        final UpsertTcModelMessageFlow command = new UpsertTcModelMessageFlow(
                 flowId,
                 modelVersionKey,
                 request.workflowName(),
@@ -124,7 +124,7 @@ public class JpaModelFlowCommandPort implements ModelFlowCommandPort {
         );
 
         try {
-            modelWorkflowStore.upsert(command);
+            modelMessageFlowStore.upsert(command);
         } catch (DbDuplicateKeyException e) {
             throw new UiConflictException("이미 동일한 (workflowName, messageName) Flow가 존재합니다.", e);
         } catch (RuntimeException e) {
@@ -147,12 +147,12 @@ public class JpaModelFlowCommandPort implements ModelFlowCommandPort {
      * <p>id-aware diff:</p>
      * <ul>
      *   <li>{@code toAdd = next - current} → {@code upsert} 로 신규 join row INSERT</li>
-     *   <li>{@code toRemove = current - next} → {@code deleteByWorkflowKeyAndDcopItemKey} 로 정리</li>
+     *   <li>{@code toRemove = current - next} → {@code deleteByMessageFlowKeyAndDcopItemKey} 로 정리</li>
      *   <li>{@code toKeep = next ∩ current} → no-op (audit churn 방지)</li>
      * </ul>
      */
     private void replaceFlowDcopBindings(
-            final long workflowKey,
+            final long messageFlowKey,
             final long modelVersionKey,
             final List<Long> nextDcopItemKeys
     ) {
@@ -165,7 +165,7 @@ public class JpaModelFlowCommandPort implements ModelFlowCommandPort {
         }
 
         final Set<Long> current = modelMessageFlowDcopItemStore
-                .findAllByWorkflowKey(workflowKey)
+                .findAllByMessageFlowKey(messageFlowKey)
                 .stream()
                 .map(TcModelMessageFlowDcopItem::dcopItemKey)
                 .collect(java.util.stream.Collectors.toCollection(HashSet::new));
@@ -179,13 +179,13 @@ public class JpaModelFlowCommandPort implements ModelFlowCommandPort {
         for (final Long dcopItemKey : toAdd) {
             modelMessageFlowDcopItemStore.upsert(new UpsertTcModelMessageFlowDcopItem(
                     null,
-                    workflowKey,
+                    messageFlowKey,
                     dcopItemKey,
                     modelVersionKey
             ));
         }
         for (final Long dcopItemKey : toRemove) {
-            modelMessageFlowDcopItemStore.deleteByWorkflowKeyAndDcopItemKey(workflowKey, dcopItemKey);
+            modelMessageFlowDcopItemStore.deleteByMessageFlowKeyAndDcopItemKey(messageFlowKey, dcopItemKey);
         }
     }
 

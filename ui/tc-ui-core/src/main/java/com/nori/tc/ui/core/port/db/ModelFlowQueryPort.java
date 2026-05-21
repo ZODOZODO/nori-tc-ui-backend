@@ -20,7 +20,7 @@ public interface ModelFlowQueryPort {
     /**
      * model_version_key 기준 Flow 요약 목록을 조회합니다.
      *
-     * <p>정렬은 workflow_key 오름차순 — 신규 생성된 Flow 가 목록 끝에 오도록 합니다.
+     * <p>정렬은 message_flow_key 오름차순 — 신규 생성된 Flow 가 목록 끝에 오도록 합니다.
      * 트리 그룹화 (workflowName 별 묶기) 는 호출 측 FE 에서 수행합니다.</p>
      *
      * @param modelVersionKey 대상 모델 버전 키
@@ -32,8 +32,8 @@ public interface ModelFlowQueryPort {
      * model_version_key + flowId 기준 Flow 상세 aggregate 를 조회합니다.
      *
      * @param modelVersionKey 대상 모델 버전 키
-     * @param flowId          Workflow PK (= tc_model_workflow.workflow_key)
+     * @param flowId          Message Flow PK (= tc_model_message_flow.message_flow_key)
      * @return 4 섹션 aggregate, 미존재 시 빈 Optional
      */
-    Optional<UiMessageFlow> findFlowByWorkflowKey(long modelVersionKey, long flowId);
+    Optional<UiMessageFlow> findFlowByMessageFlowKey(long modelVersionKey, long flowId);
 }

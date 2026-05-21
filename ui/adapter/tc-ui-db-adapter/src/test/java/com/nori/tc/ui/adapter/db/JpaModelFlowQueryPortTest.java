@@ -3,11 +3,11 @@ package com.nori.tc.ui.adapter.db;
 import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.model.store.TcModelDcopItemStore;
 import com.nori.tc.db.core.model.store.TcModelMessageFlowDcopItemStore;
-import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
 import com.nori.tc.db.domain.common.model.DcopCollectionRule;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
 import com.nori.tc.db.domain.model.TcModelMessageFlowDcopItem;
-import com.nori.tc.db.domain.model.TcModelWorkflow;
+import com.nori.tc.db.domain.model.TcModelMessageFlow;
 import com.nori.tc.ui.domain.model.UiMessageFlow;
 import com.nori.tc.ui.domain.model.UiMessageFlowSummary;
 import org.junit.jupiter.api.DisplayName;
@@ -41,7 +41,7 @@ class JpaModelFlowQueryPortTest {
     @DisplayName("findFlowSummaries는 workflow row를 workflow_key ASC로 정렬해 요약을 반환한다")
     void findFlowSummariesReturnsSortedByWorkflowKeyAsc() {
         final Fixture fixture = new Fixture();
-        when(fixture.modelWorkflowStore.findAllByModelVersionKey(eq(101L), any(PageRequest.class)))
+        when(fixture.modelMessageFlowStore.findAllByModelVersionKey(eq(101L), any(PageRequest.class)))
                 .thenReturn(List.of(
                         workflow(33L, 101L, "WF_B", "S6F11", "actB", null, null, null),
                         workflow(11L, 101L, "WF_A", "S6F13", "actA", null, null, null),
@@ -64,7 +64,7 @@ class JpaModelFlowQueryPortTest {
     @DisplayName("findFlowSummaries는 workflow가 0건이면 빈 list를 반환한다")
     void findFlowSummariesReturnsEmptyWhenNoWorkflows() {
         final Fixture fixture = new Fixture();
-        when(fixture.modelWorkflowStore.findAllByModelVersionKey(anyLong(), any(PageRequest.class)))
+        when(fixture.modelMessageFlowStore.findAllByModelVersionKey(anyLong(), any(PageRequest.class)))
                 .thenReturn(List.of());
 
         final List<UiMessageFlowSummary> summaries = fixture.port.findFlowSummaries(101L);
@@ -73,14 +73,14 @@ class JpaModelFlowQueryPortTest {
     }
 
     @Test
-    @DisplayName("findFlowByWorkflowKey는 SECS workflow 의 join row 에 매핑된 DCOP 2건만 묶어 반환한다")
-    void findFlowByWorkflowKeyReturnsDetailWithBoundDcops() {
+    @DisplayName("findFlowByMessageFlowKey는 SECS workflow 의 join row 에 매핑된 DCOP 2건만 묶어 반환한다")
+    void findFlowByMessageFlowKeyReturnsDetailWithBoundDcops() {
         final Fixture fixture = new Fixture();
-        final TcModelWorkflow workflow = workflow(
+        final TcModelMessageFlow workflow = workflow(
                 77L, 101L, "WF_A", "S6F11", "actA", "EVT_1", "TX_1", "{\"op\":\"EQUAL\"}"
         );
-        when(fixture.modelWorkflowStore.findByWorkflowKey(77L)).thenReturn(Optional.of(workflow));
-        when(fixture.modelMessageFlowDcopItemStore.findAllByWorkflowKey(77L)).thenReturn(List.of(
+        when(fixture.modelMessageFlowStore.findByMessageFlowKey(77L)).thenReturn(Optional.of(workflow));
+        when(fixture.modelMessageFlowDcopItemStore.findAllByMessageFlowKey(77L)).thenReturn(List.of(
                 binding(901L, 77L, 101L, 101L),
                 binding(902L, 77L, 103L, 101L)
         ));
@@ -92,7 +92,7 @@ class JpaModelFlowQueryPortTest {
                 ))
                 .thenReturn(List.of());
 
-        final Optional<UiMessageFlow> detail = fixture.port.findFlowByWorkflowKey(101L, 77L);
+        final Optional<UiMessageFlow> detail = fixture.port.findFlowByMessageFlowKey(101L, 77L);
 
         assertTrue(detail.isPresent());
         assertEquals(77L, detail.get().flowId());
@@ -106,20 +106,20 @@ class JpaModelFlowQueryPortTest {
     }
 
     @Test
-    @DisplayName("findFlowByWorkflowKey N:M — 같은 dcop_item 이 2 Flow 에 매핑되어도 각 Flow 는 자신의 binding 만 본다")
-    void findFlowByWorkflowKey_N_M_DoesNotLeakAcrossFlows() {
+    @DisplayName("findFlowByMessageFlowKey N:M — 같은 dcop_item 이 2 Flow 에 매핑되어도 각 Flow 는 자신의 binding 만 본다")
+    void findFlowByMessageFlowKey_N_M_DoesNotLeakAcrossFlows() {
         final Fixture fixture = new Fixture();
-        final TcModelWorkflow flowA = workflow(11L, 101L, "WF_A", "S6F11", "actA", null, null, null);
-        final TcModelWorkflow flowB = workflow(22L, 101L, "WF_B", "S6F13", "actB", null, null, null);
+        final TcModelMessageFlow flowA = workflow(11L, 101L, "WF_A", "S6F11", "actA", null, null, null);
+        final TcModelMessageFlow flowB = workflow(22L, 101L, "WF_B", "S6F13", "actB", null, null, null);
 
-        when(fixture.modelWorkflowStore.findByWorkflowKey(11L)).thenReturn(Optional.of(flowA));
-        when(fixture.modelWorkflowStore.findByWorkflowKey(22L)).thenReturn(Optional.of(flowB));
+        when(fixture.modelMessageFlowStore.findByMessageFlowKey(11L)).thenReturn(Optional.of(flowA));
+        when(fixture.modelMessageFlowStore.findByMessageFlowKey(22L)).thenReturn(Optional.of(flowB));
 
         // 같은 dcop_item (501) 이 두 Flow 모두에 binding 되어 있음 — N:M 핵심 시나리오.
-        when(fixture.modelMessageFlowDcopItemStore.findAllByWorkflowKey(11L)).thenReturn(List.of(
+        when(fixture.modelMessageFlowDcopItemStore.findAllByMessageFlowKey(11L)).thenReturn(List.of(
                 binding(701L, 11L, 501L, 101L)
         ));
-        when(fixture.modelMessageFlowDcopItemStore.findAllByWorkflowKey(22L)).thenReturn(List.of(
+        when(fixture.modelMessageFlowDcopItemStore.findAllByMessageFlowKey(22L)).thenReturn(List.of(
                 binding(702L, 22L, 501L, 101L),
                 binding(703L, 22L, 502L, 101L)
         ));
@@ -131,8 +131,8 @@ class JpaModelFlowQueryPortTest {
                         dcopItem(502L, 101L, "DCOP_B_ONLY")
                 ));
 
-        final Optional<UiMessageFlow> detailA = fixture.port.findFlowByWorkflowKey(101L, 11L);
-        final Optional<UiMessageFlow> detailB = fixture.port.findFlowByWorkflowKey(101L, 22L);
+        final Optional<UiMessageFlow> detailA = fixture.port.findFlowByMessageFlowKey(101L, 11L);
+        final Optional<UiMessageFlow> detailB = fixture.port.findFlowByMessageFlowKey(101L, 22L);
 
         assertTrue(detailA.isPresent());
         assertEquals(List.of(501L), detailA.get().dcopItemKeys());
@@ -145,14 +145,14 @@ class JpaModelFlowQueryPortTest {
     }
 
     @Test
-    @DisplayName("findFlowByWorkflowKey 는 binding 이 0 건이면 dcopItems / dcopItemKeys 모두 빈 list")
-    void findFlowByWorkflowKey_NoBinding_ReturnsEmptyDcopList() {
+    @DisplayName("findFlowByMessageFlowKey 는 binding 이 0 건이면 dcopItems / dcopItemKeys 모두 빈 list")
+    void findFlowByMessageFlowKey_NoBinding_ReturnsEmptyDcopList() {
         final Fixture fixture = new Fixture();
-        when(fixture.modelWorkflowStore.findByWorkflowKey(77L))
+        when(fixture.modelMessageFlowStore.findByMessageFlowKey(77L))
                 .thenReturn(Optional.of(workflow(77L, 101L, "WF_A", "S6F11", "actA", null, null, null)));
-        when(fixture.modelMessageFlowDcopItemStore.findAllByWorkflowKey(77L)).thenReturn(List.of());
+        when(fixture.modelMessageFlowDcopItemStore.findAllByMessageFlowKey(77L)).thenReturn(List.of());
 
-        final Optional<UiMessageFlow> detail = fixture.port.findFlowByWorkflowKey(101L, 77L);
+        final Optional<UiMessageFlow> detail = fixture.port.findFlowByMessageFlowKey(101L, 77L);
 
         assertTrue(detail.isPresent());
         assertEquals(0, detail.get().dcopItems().size());
@@ -160,38 +160,38 @@ class JpaModelFlowQueryPortTest {
     }
 
     @Test
-    @DisplayName("findFlowByWorkflowKey는 workflow row가 없으면 Optional.empty를 반환한다")
-    void findFlowByWorkflowKeyReturnsEmptyWhenWorkflowMissing() {
+    @DisplayName("findFlowByMessageFlowKey는 workflow row가 없으면 Optional.empty를 반환한다")
+    void findFlowByMessageFlowKeyReturnsEmptyWhenWorkflowMissing() {
         final Fixture fixture = new Fixture();
-        when(fixture.modelWorkflowStore.findByWorkflowKey(9999L)).thenReturn(Optional.empty());
+        when(fixture.modelMessageFlowStore.findByMessageFlowKey(9999L)).thenReturn(Optional.empty());
 
-        final Optional<UiMessageFlow> detail = fixture.port.findFlowByWorkflowKey(101L, 9999L);
+        final Optional<UiMessageFlow> detail = fixture.port.findFlowByMessageFlowKey(101L, 9999L);
 
         assertTrue(detail.isEmpty());
     }
 
     @Test
-    @DisplayName("findFlowByWorkflowKey는 workflow.modelVersionKey가 다르면 Optional.empty를 반환한다")
-    void findFlowByWorkflowKeyReturnsEmptyWhenModelVersionMismatch() {
+    @DisplayName("findFlowByMessageFlowKey는 workflow.modelVersionKey가 다르면 Optional.empty를 반환한다")
+    void findFlowByMessageFlowKeyReturnsEmptyWhenModelVersionMismatch() {
         final Fixture fixture = new Fixture();
         // workflow 77 은 modelVersionKey=999 에 속함. 호출자는 modelVersionKey=101 로 조회 시도.
-        when(fixture.modelWorkflowStore.findByWorkflowKey(77L))
+        when(fixture.modelMessageFlowStore.findByMessageFlowKey(77L))
                 .thenReturn(Optional.of(workflow(77L, 999L, "WF_OTHER", "S6F11", "actX", null, null, null)));
 
-        final Optional<UiMessageFlow> detail = fixture.port.findFlowByWorkflowKey(101L, 77L);
+        final Optional<UiMessageFlow> detail = fixture.port.findFlowByMessageFlowKey(101L, 77L);
 
         assertTrue(detail.isEmpty());
     }
 
     @Test
-    @DisplayName("findFlowByWorkflowKey는 Socket workflow (Trigger 3필드 null) 를 null 보존해 반환한다")
-    void findFlowByWorkflowKeyPreservesSocketTriggerNulls() {
+    @DisplayName("findFlowByMessageFlowKey는 Socket workflow (Trigger 3필드 null) 를 null 보존해 반환한다")
+    void findFlowByMessageFlowKeyPreservesSocketTriggerNulls() {
         final Fixture fixture = new Fixture();
-        final TcModelWorkflow socket = workflow(77L, 101L, "WF_S", "SOCK_MSG", "actS", null, null, null);
-        when(fixture.modelWorkflowStore.findByWorkflowKey(77L)).thenReturn(Optional.of(socket));
-        when(fixture.modelMessageFlowDcopItemStore.findAllByWorkflowKey(77L)).thenReturn(List.of());
+        final TcModelMessageFlow socket = workflow(77L, 101L, "WF_S", "SOCK_MSG", "actS", null, null, null);
+        when(fixture.modelMessageFlowStore.findByMessageFlowKey(77L)).thenReturn(Optional.of(socket));
+        when(fixture.modelMessageFlowDcopItemStore.findAllByMessageFlowKey(77L)).thenReturn(List.of());
 
-        final Optional<UiMessageFlow> detail = fixture.port.findFlowByWorkflowKey(101L, 77L);
+        final Optional<UiMessageFlow> detail = fixture.port.findFlowByMessageFlowKey(101L, 77L);
 
         assertTrue(detail.isPresent());
         assertNull(detail.get().eventId());
@@ -200,7 +200,7 @@ class JpaModelFlowQueryPortTest {
         assertEquals(0, detail.get().dcopItems().size());
     }
 
-    private static TcModelWorkflow workflow(
+    private static TcModelMessageFlow workflow(
             final long workflowKey,
             final long modelVersionKey,
             final String workflowName,
@@ -210,7 +210,7 @@ class JpaModelFlowQueryPortTest {
             final String transactionId,
             final String workflowFilter
     ) {
-        return new TcModelWorkflow(
+        return new TcModelMessageFlow(
                 workflowKey,
                 modelVersionKey,
                 workflowName,
@@ -259,12 +259,12 @@ class JpaModelFlowQueryPortTest {
 
     private static final class Fixture {
 
-        private final TcModelWorkflowStore modelWorkflowStore = mock(TcModelWorkflowStore.class);
+        private final TcModelMessageFlowStore modelMessageFlowStore = mock(TcModelMessageFlowStore.class);
         private final TcModelDcopItemStore modelDcopItemStore = mock(TcModelDcopItemStore.class);
         private final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore =
                 mock(TcModelMessageFlowDcopItemStore.class);
         private final JpaModelFlowQueryPort port = new JpaModelFlowQueryPort(
-                modelWorkflowStore,
+                modelMessageFlowStore,
                 modelDcopItemStore,
                 modelMessageFlowDcopItemStore
         );

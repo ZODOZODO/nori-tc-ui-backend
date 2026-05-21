@@ -10,8 +10,8 @@ import com.nori.tc.db.core.model.store.TcModelMesMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
-import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelDcopItem;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelEventId;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMdf;
@@ -20,11 +20,11 @@ import com.nori.tc.db.core.model.upsert.UpsertTcModelReportId;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMesMessage;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelSecsMessage;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelSocketMessage;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelMessageFlow;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelVariableId;
-import com.nori.tc.db.core.model.upsert.UpsertTcModelWorkflow;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
 import com.nori.tc.db.domain.model.TcModelMdf;
-import com.nori.tc.db.domain.model.TcModelWorkflow;
+import com.nori.tc.db.domain.model.TcModelMessageFlow;
 import com.nori.tc.ui.adapter.db.mapper.UiDomainEnumMapper;
 import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
@@ -81,7 +81,7 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
     private final TcModelVariableIdStore modelVariableIdStore;
     private final TcModelReportIdStore modelReportIdStore;
     private final TcModelEventIdStore modelEventIdStore;
-    private final TcModelWorkflowStore modelWorkflowStore;
+    private final TcModelMessageFlowStore modelMessageFlowStore;
     private final TcModelMdfStore modelMdfStore;
     private final TcModelDcopItemStore modelDcopItemStore;
 
@@ -97,7 +97,7 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
             final TcModelVariableIdStore modelVariableIdStore,
             final TcModelReportIdStore modelReportIdStore,
             final TcModelEventIdStore modelEventIdStore,
-            final TcModelWorkflowStore modelWorkflowStore,
+            final TcModelMessageFlowStore modelMessageFlowStore,
             final TcModelMdfStore modelMdfStore,
             final TcModelDcopItemStore modelDcopItemStore
     ) {
@@ -109,7 +109,7 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
         this.modelVariableIdStore = Objects.requireNonNull(modelVariableIdStore, "modelVariableIdStore is null");
         this.modelReportIdStore = Objects.requireNonNull(modelReportIdStore, "modelReportIdStore is null");
         this.modelEventIdStore = Objects.requireNonNull(modelEventIdStore, "modelEventIdStore is null");
-        this.modelWorkflowStore = Objects.requireNonNull(modelWorkflowStore, "modelWorkflowStore is null");
+        this.modelMessageFlowStore = Objects.requireNonNull(modelMessageFlowStore, "modelMessageFlowStore is null");
         this.modelMdfStore = Objects.requireNonNull(modelMdfStore, "modelMdfStore is null");
         this.modelDcopItemStore = Objects.requireNonNull(modelDcopItemStore, "modelDcopItemStore is null");
         log.info("JpaModelDetailCommandPort initialized.");
@@ -299,22 +299,22 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
      *
      * <p>요청 row 의 id 가 비어 있으면 새 row 로 INSERT, 기존 PK 와 일치하면
      * 그 PK 기반으로 UPDATE, 응답에 포함되지 않은 기존 row 는 DELETE 한다.
-     * flowId = workflow_key anchor stability 를 보장하기 위한 정책이다.</p>
+     * flowId = message_flow_key anchor stability 를 보장하기 위한 정책이다.</p>
      */
     private void replaceWorkflows(final long modelVersionKey, final List<DetailRowCommand> rows) {
-        final Map<Long, TcModelWorkflow> existingByKey =
-                loadAllByModelVersionKey(modelVersionKey, modelWorkflowStore::findAllByModelVersionKey)
+        final Map<Long, TcModelMessageFlow> existingByKey =
+                loadAllByModelVersionKey(modelVersionKey, modelMessageFlowStore::findAllByModelVersionKey)
                         .stream()
-                        .collect(Collectors.toMap(TcModelWorkflow::workflowKey, Function.identity()));
+                        .collect(Collectors.toMap(TcModelMessageFlow::messageFlowKey, Function.identity()));
 
         final Set<Long> retainedKeys = new HashSet<>();
         for (final DetailRowCommand row : rows) {
-            final Long workflowKey = resolveExistingKey(row, existingByKey.keySet(), "workflow");
-            if (workflowKey != null) {
-                retainedKeys.add(workflowKey);
+            final Long messageFlowKey = resolveExistingKey(row, existingByKey.keySet(), "workflow");
+            if (messageFlowKey != null) {
+                retainedKeys.add(messageFlowKey);
             }
-            modelWorkflowStore.upsert(new UpsertTcModelWorkflow(
-                    workflowKey,
+            modelMessageFlowStore.upsert(new UpsertTcModelMessageFlow(
+                    messageFlowKey,
                     modelVersionKey,
                     requiredCell(row, 0, "workflowName"),
                     requiredCell(row, 1, "messageName"),
@@ -328,7 +328,7 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
 
         existingByKey.keySet().stream()
                 .filter(key -> !retainedKeys.contains(key))
-                .forEach(modelWorkflowStore::deleteByWorkflowKey);
+                .forEach(modelMessageFlowStore::deleteByMessageFlowKey);
     }
 
     /**

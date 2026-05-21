@@ -10,7 +10,7 @@ import java.util.List;
  * <p>GET {@code /api/model/{modelVersionKey}/flows} 의 응답 본문입니다.
  * Flat 구조 — 트리 그룹화 (workflowName 묶음) 는 FE 가 담당합니다.</p>
  *
- * @param items Flow 요약 row 목록 (workflow_key ASC)
+ * @param items Flow 요약 row 목록 (message_flow_key ASC)
  */
 public record ModelFlowListResponse(
         List<ModelFlowSummaryItem> items
@@ -32,7 +32,7 @@ public record ModelFlowListResponse(
     /**
      * 목록 1 행 항목입니다.
      *
-     * @param flowId       Workflow PK
+     * @param flowId       Message Flow PK
      * @param workflowName Identity 섹션 — Workflow 명
      * @param messageName  Identity 섹션 — Message 명
      * @param actionName   Action 섹션 — Action 명

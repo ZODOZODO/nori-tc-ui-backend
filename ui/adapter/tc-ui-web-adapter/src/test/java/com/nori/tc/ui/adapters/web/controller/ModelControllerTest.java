@@ -11,7 +11,7 @@ import com.nori.tc.ui.domain.common.model.UiModelStatus;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import com.nori.tc.ui.domain.model.UiModel;
 import com.nori.tc.ui.domain.model.UiModelMdf;
-import com.nori.tc.ui.domain.model.UiModelWorkflow;
+import com.nori.tc.ui.domain.model.UiModelMessageFlow;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -43,7 +43,7 @@ class ModelControllerTest {
     void getDetailReturnsWorkflowPreviewValues() {
         final Fixture fixture = new Fixture();
         final UiModel model = model(101L);
-        final UiModelWorkflow workflow = new UiModelWorkflow(
+        final UiModelMessageFlow workflow = new UiModelMessageFlow(
                 77L,
                 101L,
                 "WF_READY",
@@ -82,7 +82,7 @@ class ModelControllerTest {
         );
 
         when(fixture.modelCrudPort.findByModelVersionKey(101L)).thenReturn(Optional.of(model));
-        when(fixture.modelDetailQueryPort.findWorkflowsByModelVersionKey(101L)).thenReturn(List.of(workflow));
+        when(fixture.modelDetailQueryPort.findMessageFlowsByModelVersionKey(101L)).thenReturn(List.of(workflow));
 
         final ResponseEntity<ApiResponse<ModelDetailDataResponse>> response = fixture.queryController.getDetail(101L, "workflow");
 
@@ -169,7 +169,7 @@ class ModelControllerTest {
                         }
                         """
         );
-        when(fixture.modelDetailQueryPort.findWorkflowsByModelVersionKey(101L)).thenReturn(List.of(new UiModelWorkflow(
+        when(fixture.modelDetailQueryPort.findMessageFlowsByModelVersionKey(101L)).thenReturn(List.of(new UiModelMessageFlow(
                 77L,
                 101L,
                 "WF_READY",
@@ -226,7 +226,7 @@ class ModelControllerTest {
                         }
                         """
         );
-        when(fixture.modelDetailQueryPort.findWorkflowsByModelVersionKey(101L)).thenReturn(List.of(new UiModelWorkflow(
+        when(fixture.modelDetailQueryPort.findMessageFlowsByModelVersionKey(101L)).thenReturn(List.of(new UiModelMessageFlow(
                 77L,
                 101L,
                 "WF_PARAM",

@@ -11,17 +11,17 @@ import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
-import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelDcopItem;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMdf;
-import com.nori.tc.db.core.model.upsert.UpsertTcModelWorkflow;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelMessageFlow;
 import com.nori.tc.db.domain.common.model.DcopCollectionRule;
 import com.nori.tc.db.domain.common.model.ModelStatus;
 import com.nori.tc.db.domain.common.model.ProtocolType;
 import com.nori.tc.db.domain.model.TcModel;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
 import com.nori.tc.db.domain.model.TcModelMdf;
-import com.nori.tc.db.domain.model.TcModelWorkflow;
+import com.nori.tc.db.domain.model.TcModelMessageFlow;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.core.port.db.ModelDetailCommandPort;
@@ -123,7 +123,7 @@ class JpaModelDetailCommandPortTest {
     void replaceWorkflows_idNull_insertsAsNew() {
         final Fixture fixture = new Fixture();
         when(fixture.modelStore.findByModelVersionKey(101L)).thenReturn(Optional.of(model(101L)));
-        when(fixture.modelWorkflowStore.findAllByModelVersionKey(anyLong(), any(PageRequest.class)))
+        when(fixture.modelMessageFlowStore.findAllByModelVersionKey(anyLong(), any(PageRequest.class)))
                 .thenReturn(List.of());
 
         fixture.port.saveDetailRows(
@@ -135,12 +135,12 @@ class JpaModelDetailCommandPortTest {
                 ))
         );
 
-        final ArgumentCaptor<UpsertTcModelWorkflow> captor = ArgumentCaptor.forClass(UpsertTcModelWorkflow.class);
-        verify(fixture.modelWorkflowStore).upsert(captor.capture());
-        assertNull(captor.getValue().workflowKey());
+        final ArgumentCaptor<UpsertTcModelMessageFlow> captor = ArgumentCaptor.forClass(UpsertTcModelMessageFlow.class);
+        verify(fixture.modelMessageFlowStore).upsert(captor.capture());
+        assertNull(captor.getValue().messageFlowKey());
         assertEquals("WF_NEW", captor.getValue().workflowName());
         assertEquals("S6F11", captor.getValue().messageName());
-        verify(fixture.modelWorkflowStore, never()).deleteByWorkflowKey(anyLong());
+        verify(fixture.modelMessageFlowStore, never()).deleteByMessageFlowKey(anyLong());
     }
 
     @Test
@@ -148,7 +148,7 @@ class JpaModelDetailCommandPortTest {
     void replaceWorkflows_idMatchesExisting_updatesByKey() {
         final Fixture fixture = new Fixture();
         when(fixture.modelStore.findByModelVersionKey(101L)).thenReturn(Optional.of(model(101L)));
-        when(fixture.modelWorkflowStore.findAllByModelVersionKey(anyLong(), any(PageRequest.class)))
+        when(fixture.modelMessageFlowStore.findAllByModelVersionKey(anyLong(), any(PageRequest.class)))
                 .thenReturn(List.of(workflow(77L, 101L, "WF_OLD", "S6F11", "actOld")));
 
         fixture.port.saveDetailRows(
@@ -160,19 +160,19 @@ class JpaModelDetailCommandPortTest {
                 ))
         );
 
-        final ArgumentCaptor<UpsertTcModelWorkflow> captor = ArgumentCaptor.forClass(UpsertTcModelWorkflow.class);
-        verify(fixture.modelWorkflowStore).upsert(captor.capture());
-        assertEquals(77L, captor.getValue().workflowKey());
+        final ArgumentCaptor<UpsertTcModelMessageFlow> captor = ArgumentCaptor.forClass(UpsertTcModelMessageFlow.class);
+        verify(fixture.modelMessageFlowStore).upsert(captor.capture());
+        assertEquals(77L, captor.getValue().messageFlowKey());
         assertEquals("actUpdated", captor.getValue().actionName());
-        verify(fixture.modelWorkflowStore, never()).deleteByWorkflowKey(anyLong());
+        verify(fixture.modelMessageFlowStore, never()).deleteByMessageFlowKey(anyLong());
     }
 
     @Test
-    @DisplayName("workflow 저장 시 응답에 없는 기존 row는 deleteByWorkflowKey 1회 호출")
+    @DisplayName("workflow 저장 시 응답에 없는 기존 row는 deleteByMessageFlowKey 1회 호출")
     void replaceWorkflows_existingNotInRequest_deletesByKey() {
         final Fixture fixture = new Fixture();
         when(fixture.modelStore.findByModelVersionKey(101L)).thenReturn(Optional.of(model(101L)));
-        when(fixture.modelWorkflowStore.findAllByModelVersionKey(anyLong(), any(PageRequest.class)))
+        when(fixture.modelMessageFlowStore.findAllByModelVersionKey(anyLong(), any(PageRequest.class)))
                 .thenReturn(List.of(
                         workflow(77L, 101L, "WF_KEEP", "S6F11", "actKeep"),
                         workflow(88L, 101L, "WF_REMOVED", "S6F13", "actGone")
@@ -187,8 +187,8 @@ class JpaModelDetailCommandPortTest {
                 ))
         );
 
-        verify(fixture.modelWorkflowStore).deleteByWorkflowKey(88L);
-        verify(fixture.modelWorkflowStore, never()).deleteByWorkflowKey(77L);
+        verify(fixture.modelMessageFlowStore).deleteByMessageFlowKey(88L);
+        verify(fixture.modelMessageFlowStore, never()).deleteByMessageFlowKey(77L);
     }
 
     @Test
@@ -196,7 +196,7 @@ class JpaModelDetailCommandPortTest {
     void replaceWorkflows_idDoesNotMatchExisting_throwsBadRequest() {
         final Fixture fixture = new Fixture();
         when(fixture.modelStore.findByModelVersionKey(101L)).thenReturn(Optional.of(model(101L)));
-        when(fixture.modelWorkflowStore.findAllByModelVersionKey(anyLong(), any(PageRequest.class)))
+        when(fixture.modelMessageFlowStore.findAllByModelVersionKey(anyLong(), any(PageRequest.class)))
                 .thenReturn(List.of(workflow(77L, 101L, "WF_OLD", "S6F11", "actOld")));
 
         final UiBadRequestException exception = assertThrows(
@@ -212,8 +212,8 @@ class JpaModelDetailCommandPortTest {
         );
 
         assertEquals("존재하지 않는 workflow row id 입니다.", exception.getMessage());
-        verify(fixture.modelWorkflowStore, never()).upsert(any());
-        verify(fixture.modelWorkflowStore, never()).deleteByWorkflowKey(anyLong());
+        verify(fixture.modelMessageFlowStore, never()).upsert(any());
+        verify(fixture.modelMessageFlowStore, never()).deleteByMessageFlowKey(anyLong());
     }
 
     @Test
@@ -221,7 +221,7 @@ class JpaModelDetailCommandPortTest {
     void replaceWorkflows_idNotNumeric_throwsBadRequest() {
         final Fixture fixture = new Fixture();
         when(fixture.modelStore.findByModelVersionKey(101L)).thenReturn(Optional.of(model(101L)));
-        when(fixture.modelWorkflowStore.findAllByModelVersionKey(anyLong(), any(PageRequest.class)))
+        when(fixture.modelMessageFlowStore.findAllByModelVersionKey(anyLong(), any(PageRequest.class)))
                 .thenReturn(List.of());
 
         final UiBadRequestException exception = assertThrows(
@@ -237,7 +237,7 @@ class JpaModelDetailCommandPortTest {
         );
 
         assertEquals("workflow row id 형식이 올바르지 않습니다.", exception.getMessage());
-        verify(fixture.modelWorkflowStore, never()).upsert(any());
+        verify(fixture.modelMessageFlowStore, never()).upsert(any());
     }
 
     // =================================================================================
@@ -403,14 +403,14 @@ class JpaModelDetailCommandPortTest {
         );
     }
 
-    private static TcModelWorkflow workflow(
+    private static TcModelMessageFlow workflow(
             final long workflowKey,
             final long modelVersionKey,
             final String workflowName,
             final String messageName,
             final String actionName
     ) {
-        return new TcModelWorkflow(
+        return new TcModelMessageFlow(
                 workflowKey,
                 modelVersionKey,
                 workflowName,
@@ -455,7 +455,7 @@ class JpaModelDetailCommandPortTest {
         private final TcModelVariableIdStore modelVariableIdStore = mock(TcModelVariableIdStore.class);
         private final TcModelReportIdStore modelReportIdStore = mock(TcModelReportIdStore.class);
         private final TcModelEventIdStore modelEventIdStore = mock(TcModelEventIdStore.class);
-        private final TcModelWorkflowStore modelWorkflowStore = mock(TcModelWorkflowStore.class);
+        private final TcModelMessageFlowStore modelMessageFlowStore = mock(TcModelMessageFlowStore.class);
         private final TcModelMdfStore modelMdfStore = mock(TcModelMdfStore.class);
         private final TcModelDcopItemStore modelDcopItemStore = mock(TcModelDcopItemStore.class);
         private final JpaModelDetailCommandPort port = new JpaModelDetailCommandPort(
@@ -467,7 +467,7 @@ class JpaModelDetailCommandPortTest {
                 modelVariableIdStore,
                 modelReportIdStore,
                 modelEventIdStore,
-                modelWorkflowStore,
+                modelMessageFlowStore,
                 modelMdfStore,
                 modelDcopItemStore
         );

@@ -30,7 +30,7 @@ public class ModelFlowQueryService {
     /**
      * model_version_key 기준 Flow 요약 목록을 조회합니다.
      *
-     * <p>정렬 / 트리 그룹화 책임은 각각 port (workflow_key ASC) 와 호출 측 FE 에 위임 — 서비스는
+     * <p>정렬 / 트리 그룹화 책임은 각각 port (message_flow_key ASC) 와 호출 측 FE 에 위임 — 서비스는
      * 변형 없이 그대로 전달합니다.</p>
      *
      * @param modelVersionKey 대상 모델 버전 키
@@ -44,12 +44,12 @@ public class ModelFlowQueryService {
      * model_version_key + flowId 기준 Flow 상세 aggregate 를 조회합니다.
      *
      * @param modelVersionKey 대상 모델 버전 키
-     * @param flowId          Workflow PK (= tc_model_workflow.workflow_key)
+     * @param flowId          Message Flow PK (= tc_model_message_flow.message_flow_key)
      * @return 4 섹션 aggregate
      * @throws UiNotFoundException flowId 가 해당 model_version 에 존재하지 않을 때
      */
     public UiMessageFlow findFlowDetail(final long modelVersionKey, final long flowId) {
-        return modelFlowQueryPort.findFlowByWorkflowKey(modelVersionKey, flowId)
+        return modelFlowQueryPort.findFlowByMessageFlowKey(modelVersionKey, flowId)
                 .orElseThrow(() -> new UiNotFoundException(
                         "Flow를 찾을 수 없습니다. modelVersionKey=" + modelVersionKey + ", flowId=" + flowId
                 ));

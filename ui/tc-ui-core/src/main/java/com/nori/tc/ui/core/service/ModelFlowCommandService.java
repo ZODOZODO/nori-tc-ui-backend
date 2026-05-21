@@ -55,7 +55,7 @@ public class ModelFlowCommandService {
      * @param modelVersionKey 대상 모델 버전 키
      * @param workflowName    Workflow 명 (blank 금지)
      * @param messageName     Message 명 (blank 금지)
-     * @return 생성된 Workflow PK (= flowId)
+     * @return 생성된 Message Flow PK (= flowId)
      * @throws UiBadRequestException workflowName / messageName blank 또는 EDIT 가 아닌 모델 버전
      * @throws UiNotFoundException modelVersionKey 에 해당하는 모델이 없을 때
      */
@@ -73,7 +73,7 @@ public class ModelFlowCommandService {
      * 클라이언트의 라우팅 실수이므로 즉시 400 으로 거부한다.</p>
      *
      * @param modelVersionKey 대상 모델 버전 키
-     * @param flowId          Workflow PK (= tc_model_workflow.workflow_key)
+     * @param flowId          Message Flow PK (= tc_model_message_flow.message_flow_key)
      * @param request         갱신할 Flow aggregate
      * @throws UiBadRequestException 검증 실패 (null body / flowId mismatch / blank name / non-EDIT 모델)
      * @throws UiNotFoundException modelVersionKey 에 해당하는 모델이 없을 때

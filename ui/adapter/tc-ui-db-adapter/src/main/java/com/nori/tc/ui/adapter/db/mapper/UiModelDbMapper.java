@@ -10,7 +10,7 @@ import com.nori.tc.db.domain.model.TcModelReportId;
 import com.nori.tc.db.domain.model.TcModelSecsMessage;
 import com.nori.tc.db.domain.model.TcModelSocketMessage;
 import com.nori.tc.db.domain.model.TcModelVariableId;
-import com.nori.tc.db.domain.model.TcModelWorkflow;
+import com.nori.tc.db.domain.model.TcModelMessageFlow;
 import com.nori.tc.ui.domain.model.UiMessageFlow;
 import com.nori.tc.ui.domain.model.UiMessageFlowSummary;
 import com.nori.tc.ui.domain.model.UiModel;
@@ -23,7 +23,7 @@ import com.nori.tc.ui.domain.model.UiModelReportId;
 import com.nori.tc.ui.domain.model.UiModelSecsMessage;
 import com.nori.tc.ui.domain.model.UiModelSocketMessage;
 import com.nori.tc.ui.domain.model.UiModelVariableId;
-import com.nori.tc.ui.domain.model.UiModelWorkflow;
+import com.nori.tc.ui.domain.model.UiModelMessageFlow;
 
 import java.util.List;
 
@@ -153,12 +153,12 @@ public final class UiModelDbMapper {
         );
     }
 
-    public static UiModelWorkflow toDomain(final TcModelWorkflow source) {
+    public static UiModelMessageFlow toDomain(final TcModelMessageFlow source) {
         if (source == null) {
             return null;
         }
-        return new UiModelWorkflow(
-                source.workflowKey(),
+        return new UiModelMessageFlow(
+                source.messageFlowKey(),
                 source.modelVersionKey(),
                 source.workflowName(),
                 source.messageName(),
@@ -202,14 +202,14 @@ public final class UiModelDbMapper {
     }
 
     /**
-     * tc_model_workflow row 1 개를 Message Flow 목록 요약으로 변환합니다.
+     * tc_model_message_flow row 1 개를 Message Flow 목록 요약으로 변환합니다.
      */
-    public static UiMessageFlowSummary toFlowSummary(final TcModelWorkflow source) {
+    public static UiMessageFlowSummary toFlowSummary(final TcModelMessageFlow source) {
         if (source == null) {
             return null;
         }
         return new UiMessageFlowSummary(
-                source.workflowKey(),
+                source.messageFlowKey(),
                 source.workflowName(),
                 source.messageName(),
                 source.actionName()
@@ -217,7 +217,7 @@ public final class UiModelDbMapper {
     }
 
     /**
-     * tc_model_workflow row 1 개 + 매칭 DCOP 목록을 Flow 상세 aggregate 로 결합합니다.
+     * tc_model_message_flow row 1 개 + 매칭 DCOP 목록을 Flow 상세 aggregate 로 결합합니다.
      *
      * <p>Trigger 3 필드 (eventId / transactionId / workflowFilter) 가 모두 null 이면 Socket 프로토콜
      * 모델의 Flow 입니다 — 분기는 호출 측 (FE) 에서 null 체크로 수행합니다.</p>
@@ -226,10 +226,10 @@ public final class UiModelDbMapper {
      * 두 표현으로 제공해 FE 가 round-trip PUT 시 별도 변환 없이 그대로 송신할 수 있도록 합니다.</p>
      */
     public static UiMessageFlow toFlowDetail(
-            final TcModelWorkflow workflow,
+            final TcModelMessageFlow messageFlow,
             final List<UiModelDcopItem> dcopItems
     ) {
-        if (workflow == null) {
+        if (messageFlow == null) {
             return null;
         }
         final List<UiModelDcopItem> safeDcopItems = dcopItems == null ? List.of() : List.copyOf(dcopItems);
@@ -238,14 +238,14 @@ public final class UiModelDbMapper {
                 .filter(java.util.Objects::nonNull)
                 .toList();
         return new UiMessageFlow(
-                workflow.workflowKey(),
-                workflow.workflowName(),
-                workflow.messageName(),
-                workflow.eventId(),
-                workflow.transactionId(),
-                workflow.workflowFilter(),
-                workflow.actionName(),
-                workflow.actionDataIndex(),
+                messageFlow.messageFlowKey(),
+                messageFlow.workflowName(),
+                messageFlow.messageName(),
+                messageFlow.eventId(),
+                messageFlow.transactionId(),
+                messageFlow.workflowFilter(),
+                messageFlow.actionName(),
+                messageFlow.actionDataIndex(),
                 safeDcopItems,
                 dcopItemKeys
         );

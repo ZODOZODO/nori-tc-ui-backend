@@ -6,7 +6,7 @@ package com.nori.tc.ui.adapters.web.dto.response;
  * <p>POST {@code /api/model/{modelVersionKey}/flows} 의 응답 본문입니다.
  * FE 는 응답 받은 {@code flowId} 를 그대로 좌측 트리 selection 에 사용합니다.</p>
  *
- * @param flowId 생성된 Workflow PK (= tc_model_workflow.workflow_key)
+ * @param flowId 생성된 Message Flow PK (= tc_model_message_flow.message_flow_key)
  */
 public record ModelFlowCreatedResponse(
         long flowId

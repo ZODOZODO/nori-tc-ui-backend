@@ -3,10 +3,10 @@ package com.nori.tc.ui.adapter.db;
 import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.model.store.TcModelDcopItemStore;
 import com.nori.tc.db.core.model.store.TcModelMessageFlowDcopItemStore;
-import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
+import com.nori.tc.db.domain.model.TcModelMessageFlow;
 import com.nori.tc.db.domain.model.TcModelMessageFlowDcopItem;
-import com.nori.tc.db.domain.model.TcModelWorkflow;
 import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.port.db.ModelFlowQueryPort;
@@ -29,8 +29,8 @@ import java.util.function.Function;
 /**
  * {@link ModelFlowQueryPort} 의 DB Store 기반 구현체입니다.
  *
- * <p>workflow row 1 개 = Flow 1 개. Flow 의 Collect 섹션 (DCOP item) 은
- * {@code tc_model_message_flow_dcop_item} N:M join table 에서 {@code workflow_key} 로
+ * <p>message flow row 1 개 = Flow 1 개. Flow 의 Collect 섹션 (DCOP item) 은
+ * {@code tc_model_message_flow_dcop_item} N:M join table 에서 {@code message_flow_key} 로
  * 매칭된 {@code dcop_item_key} 만 추려 dcop_item 본체와 결합합니다 (한 dcop_item 이 다수
  * Flow 에 매핑된 N:M 상태에서도 각 Flow 의 Collect 응답은 자기 Flow 의 매핑만 포함).</p>
  */
@@ -40,7 +40,7 @@ public class JpaModelFlowQueryPort implements ModelFlowQueryPort {
     private static final Logger log = LoggerFactory.getLogger(JpaModelFlowQueryPort.class);
     private static final int DETAIL_PAGE_LIMIT = 500;
 
-    private final TcModelWorkflowStore modelWorkflowStore;
+    private final TcModelMessageFlowStore modelMessageFlowStore;
     private final TcModelDcopItemStore modelDcopItemStore;
     private final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore;
 
@@ -48,11 +48,11 @@ public class JpaModelFlowQueryPort implements ModelFlowQueryPort {
      * 필수 의존성을 초기화합니다.
      */
     public JpaModelFlowQueryPort(
-            final TcModelWorkflowStore modelWorkflowStore,
+            final TcModelMessageFlowStore modelMessageFlowStore,
             final TcModelDcopItemStore modelDcopItemStore,
             final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore
     ) {
-        this.modelWorkflowStore = Objects.requireNonNull(modelWorkflowStore, "modelWorkflowStore is null");
+        this.modelMessageFlowStore = Objects.requireNonNull(modelMessageFlowStore, "modelMessageFlowStore is null");
         this.modelDcopItemStore = Objects.requireNonNull(modelDcopItemStore, "modelDcopItemStore is null");
         this.modelMessageFlowDcopItemStore = Objects.requireNonNull(
                 modelMessageFlowDcopItemStore, "modelMessageFlowDcopItemStore is null");
@@ -62,34 +62,34 @@ public class JpaModelFlowQueryPort implements ModelFlowQueryPort {
     @Override
     public List<UiMessageFlowSummary> findFlowSummaries(final long modelVersionKey) {
         validateModelVersionKey(modelVersionKey);
-        return loadAllByPage(page -> modelWorkflowStore.findAllByModelVersionKey(modelVersionKey, page))
+        return loadAllByPage(page -> modelMessageFlowStore.findAllByModelVersionKey(modelVersionKey, page))
                 .stream()
-                .sorted(Comparator.comparingLong(TcModelWorkflow::workflowKey))
+                .sorted(Comparator.comparingLong(TcModelMessageFlow::messageFlowKey))
                 .map(UiModelDbMapper::toFlowSummary)
                 .toList();
     }
 
     @Override
-    public Optional<UiMessageFlow> findFlowByWorkflowKey(final long modelVersionKey, final long flowId) {
+    public Optional<UiMessageFlow> findFlowByMessageFlowKey(final long modelVersionKey, final long flowId) {
         validateModelVersionKey(modelVersionKey);
         if (flowId <= 0L) {
             throw new UiBadRequestException("flowId는 1 이상이어야 합니다.");
         }
 
-        final Optional<TcModelWorkflow> workflowOpt = modelWorkflowStore.findByWorkflowKey(flowId);
-        if (workflowOpt.isEmpty()) {
+        final Optional<TcModelMessageFlow> messageFlowOpt = modelMessageFlowStore.findByMessageFlowKey(flowId);
+        if (messageFlowOpt.isEmpty()) {
             return Optional.empty();
         }
 
-        final TcModelWorkflow workflow = workflowOpt.get();
-        if (workflow.modelVersionKey() != modelVersionKey) {
-            // 다른 모델 버전의 workflow row 노출을 차단한다 — 호출자에게는 "해당 modelVersionKey 의
+        final TcModelMessageFlow messageFlow = messageFlowOpt.get();
+        if (messageFlow.modelVersionKey() != modelVersionKey) {
+            // 다른 모델 버전의 message flow row 노출을 차단한다 — 호출자에게는 "해당 modelVersionKey 의
             // flowId 는 존재하지 않음" 으로 보이게 한다.
             return Optional.empty();
         }
 
         final Set<Long> boundDcopItemKeys = modelMessageFlowDcopItemStore
-                .findAllByWorkflowKey(workflow.workflowKey())
+                .findAllByMessageFlowKey(messageFlow.messageFlowKey())
                 .stream()
                 .map(TcModelMessageFlowDcopItem::dcopItemKey)
                 .collect(java.util.stream.Collectors.toCollection(HashSet::new));
@@ -114,7 +114,7 @@ public class JpaModelFlowQueryPort implements ModelFlowQueryPort {
                     .toList();
         }
 
-        return Optional.of(UiModelDbMapper.toFlowDetail(workflow, dcopItems));
+        return Optional.of(UiModelDbMapper.toFlowDetail(messageFlow, dcopItems));
     }
 
     /**
