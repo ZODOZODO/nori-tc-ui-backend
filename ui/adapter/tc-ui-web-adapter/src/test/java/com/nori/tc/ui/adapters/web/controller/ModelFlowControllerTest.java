@@ -132,6 +132,7 @@ class ModelFlowControllerTest {
                 "{\"and\":[]}",
                 "ACT1",
                 "{\"fields\":{}}",
+                List.of(),
                 List.of()
         ));
 
@@ -163,7 +164,7 @@ class ModelFlowControllerTest {
     @Test
     void updateFlow_returnsUpdatedDetail() throws Exception {
         when(queryService.findFlowDetail(eq(10L), eq(1L))).thenReturn(new UiMessageFlow(
-                1L, "WF1u", "MSG1u", null, null, null, "ACT1u", null, List.of()
+                1L, "WF1u", "MSG1u", null, null, null, "ACT1u", null, List.of(), List.of()
         ));
 
         mockMvc.perform(put("/api/model/10/flows/1")
@@ -172,7 +173,28 @@ class ModelFlowControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.workflowName").value("WF1u"))
-                .andExpect(jsonPath("$.data.actionName").value("ACT1u"));
+                .andExpect(jsonPath("$.data.actionName").value("ACT1u"))
+                // AC B15 contract — dcop-item 응답 row 에 workflowName 필드 부재 (dcopItems 가 비어도 형 유지).
+                .andExpect(jsonPath("$.data.dcopItems").isArray())
+                .andExpect(jsonPath("$.data.dcopItems[0].workflowName").doesNotExist());
+
+        verify(commandService).updateFlow(eq(10L), eq(1L), any(UiMessageFlow.class));
+    }
+
+    @Test
+    void updateFlow_acceptsDcopItemKeysForCollectBinding() throws Exception {
+        when(queryService.findFlowDetail(eq(10L), eq(1L))).thenReturn(new UiMessageFlow(
+                1L, "WF1u", "MSG1u", null, null, null, "ACT1u", null, List.of(), List.of(11L, 22L)
+        ));
+
+        mockMvc.perform(put("/api/model/10/flows/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workflowName\":\"WF1u\",\"messageName\":\"MSG1u\",\"actionName\":\"ACT1u\","
+                                + "\"dcopItemKeys\":[11,22]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.dcopItemKeys[0]").value(11))
+                .andExpect(jsonPath("$.data.dcopItemKeys[1]").value(22));
 
         verify(commandService).updateFlow(eq(10L), eq(1L), any(UiMessageFlow.class));
     }

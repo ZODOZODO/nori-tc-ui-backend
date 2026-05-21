@@ -15,6 +15,9 @@ import java.util.List;
  * <p>{@code workflowFilter} 와 {@code actionDataIndex} 는 raw JSON 문자열로 노출 — FE 가
  * 시각화 / 편집기에서 동일 형태로 다룹니다 (Plan D9).</p>
  *
+ * <p>Collect 섹션은 두 표현을 모두 노출합니다: {@code dcopItems} 는 본체 데이터 (table 표시용),
+ * {@code dcopItemKeys} 는 PUT round-trip 시 그대로 송신할 수 있는 binding key 배열입니다.</p>
+ *
  * @param flowId          Workflow PK
  * @param workflowName    Identity 섹션 — Workflow 명
  * @param messageName     Identity 섹션 — Message 명
@@ -23,7 +26,8 @@ import java.util.List;
  * @param workflowFilter  Trigger 섹션 — workflow_filter raw JSON (nullable)
  * @param actionName      Action 섹션 — Action 명
  * @param actionDataIndex Action 섹션 — action_data_index raw JSON (nullable)
- * @param dcopItems       Collect 섹션 — Flow 에 매핑된 DCOP item 목록
+ * @param dcopItems       Collect 섹션 — Flow 에 매핑된 DCOP item 본체 목록
+ * @param dcopItemKeys    Collect 섹션 — Flow 에 매핑된 dcop_item_key 배열
  */
 public record ModelFlowDetailResponse(
         long flowId,
@@ -34,7 +38,8 @@ public record ModelFlowDetailResponse(
         String workflowFilter,
         String actionName,
         String actionDataIndex,
-        List<UiModelDcopItem> dcopItems
+        List<UiModelDcopItem> dcopItems,
+        List<Long> dcopItemKeys
 ) {
 
     /**
@@ -53,7 +58,8 @@ public record ModelFlowDetailResponse(
                 flow.workflowFilter(),
                 flow.actionName(),
                 flow.actionDataIndex(),
-                flow.dcopItems() == null ? List.of() : flow.dcopItems()
+                flow.dcopItems() == null ? List.of() : flow.dcopItems(),
+                flow.dcopItemKeys() == null ? List.of() : flow.dcopItemKeys()
         );
     }
 }

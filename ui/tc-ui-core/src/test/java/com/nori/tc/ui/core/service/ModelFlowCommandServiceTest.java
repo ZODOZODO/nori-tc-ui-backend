@@ -148,7 +148,8 @@ class ModelFlowCommandServiceTest {
                 null,
                 "  ",
                 null,
-                List.of()
+                List.of(),
+                null
         );
 
         assertThrows(
@@ -213,7 +214,8 @@ class ModelFlowCommandServiceTest {
                 "{\"type\":\"AND\",\"children\":[]}",
                 "DispatchToBusiness",
                 "{\"mdfTemplateName\":\"M1\",\"fields\":[]}",
-                List.of()
+                List.of(),
+                null
         );
     }
 }

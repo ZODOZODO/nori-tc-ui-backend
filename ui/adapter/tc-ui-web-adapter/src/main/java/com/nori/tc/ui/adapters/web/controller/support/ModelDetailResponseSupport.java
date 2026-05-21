@@ -37,18 +37,15 @@ public final class ModelDetailResponseSupport {
     );
     private static final List<String> SECS_MESSAGE_COLUMNS = List.of(
             "SECS Message Name",
-            "Description",
-            "Data Indexes"
+            "Description"
     );
     private static final List<String> SOCKET_MESSAGE_COLUMNS = List.of(
             "Socket Message Name",
-            "Description",
-            "Data Indexes"
+            "Description"
     );
     private static final List<String> MES_MESSAGE_COLUMNS = List.of(
             "MES Message Name",
-            "Description",
-            "Data Indexes"
+            "Description"
     );
     private static final List<String> VARIABLE_ID_COLUMNS = List.of(
             "VariableId",
@@ -85,7 +82,6 @@ public final class ModelDetailResponseSupport {
     );
     private static final List<String> SECS_DCOP_ITEM_COLUMNS = List.of(
             "Dcop Item Name",
-            "Workflow Name",
             "EventId",
             "VariableId",
             "Collection Rule",
@@ -94,7 +90,6 @@ public final class ModelDetailResponseSupport {
     );
     private static final List<String> SOCKET_DCOP_ITEM_COLUMNS = List.of(
             "Dcop Item Name",
-            "Workflow Name",
             "VariableId",
             "Collection Rule",
             "Calculation Rule",
@@ -286,24 +281,21 @@ public final class ModelDetailResponseSupport {
     private static ModelDetailRowResponse toSecsMessageRow(final UiModelSecsMessage message) {
         return new ModelDetailRowResponse(modelRowId("secs", message.secsMsgKey()), List.of(
                 nullToEmpty(message.secsMsgName()),
-                nullToEmpty(message.description()),
-                nullToEmpty(message.dataIndex())
+                nullToEmpty(message.description())
         ));
     }
 
     private static ModelDetailRowResponse toMesMessageRow(final UiModelMesMessage message) {
         return new ModelDetailRowResponse(modelRowId("mes", message.mesMsgKey()), List.of(
                 nullToEmpty(message.mesMsgName()),
-                nullToEmpty(message.description()),
-                nullToEmpty(message.dataIndex())
+                nullToEmpty(message.description())
         ));
     }
 
     private static ModelDetailRowResponse toSocketMessageRow(final UiModelSocketMessage message) {
         return new ModelDetailRowResponse(modelRowId("socket", message.socketMsgKey()), List.of(
                 nullToEmpty(message.socketMsgName()),
-                nullToEmpty(message.description()),
-                nullToEmpty(message.dataIndex())
+                nullToEmpty(message.description())
         ));
     }
 
@@ -370,7 +362,6 @@ public final class ModelDetailResponseSupport {
         if (excludeEventId) {
             values = List.of(
                     nullToEmpty(dcopItem.dcopItemName()),
-                    nullToEmpty(dcopItem.workflowName()),
                     nullToEmpty(dcopItem.variableId()),
                     collectionRule,
                     calculationRule,
@@ -379,7 +370,6 @@ public final class ModelDetailResponseSupport {
         } else {
             values = List.of(
                     nullToEmpty(dcopItem.dcopItemName()),
-                    nullToEmpty(dcopItem.workflowName()),
                     nullToEmpty(dcopItem.eventId()),
                     nullToEmpty(dcopItem.variableId()),
                     collectionRule,

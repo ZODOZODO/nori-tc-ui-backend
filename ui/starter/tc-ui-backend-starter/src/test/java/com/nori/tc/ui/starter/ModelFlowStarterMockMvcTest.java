@@ -190,6 +190,7 @@ class ModelFlowStarterMockMvcTest {
                 "{\"and\":[{\"from\":\"data\",\"path\":\"status\",\"comparison\":\"equals\",\"expected\":\"ok\"}]}",
                 "PUBLISH_MES_COMMAND",
                 "{\"mdfTemplateName\":\"TOOL_CONDITION_REPLY_MES\",\"fields\":{}}",
+                List.of(),
                 List.of()
         ));
 
@@ -219,7 +220,8 @@ class ModelFlowStarterMockMvcTest {
                 null,
                 "PUBLISH_MES_COMMAND",
                 null,
-                List.<UiModelDcopItem>of()
+                List.<UiModelDcopItem>of(),
+                List.of()
         ));
 
         mockMvc.perform(get("/api/model/20/flows/7"))
@@ -262,6 +264,7 @@ class ModelFlowStarterMockMvcTest {
                 null,
                 "PUBLISH_MES_COMMAND_v2",
                 null,
+                List.of(),
                 List.of()
         ));
 
@@ -276,6 +279,38 @@ class ModelFlowStarterMockMvcTest {
                 .andExpect(jsonPath("$.data.messageName").value("S6F11"))
                 .andExpect(jsonPath("$.data.eventId").value("1001"))
                 .andExpect(jsonPath("$.data.actionName").value("PUBLISH_MES_COMMAND_v2"));
+
+        verify(commandService).updateFlow(eq(10L), eq(1L), any(UiMessageFlow.class));
+    }
+
+    @Test
+    @DisplayName("PUT /flows/{flowId} — Collect 섹션 dcopItemKeys round-trip + N:M 시나리오 응답 schema")
+    void updateFlow_returns200WithCollectRoundTrip() throws Exception {
+        when(queryService.findFlowDetail(eq(10L), eq(1L))).thenReturn(new UiMessageFlow(
+                1L,
+                "handleLotStart",
+                "S6F11",
+                "1001",
+                null,
+                null,
+                "PUBLISH_MES_COMMAND",
+                null,
+                List.<UiModelDcopItem>of(),
+                List.of(101L, 102L)
+        ));
+
+        mockMvc.perform(put("/api/model/10/flows/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workflowName\":\"handleLotStart\",\"messageName\":\"S6F11\","
+                                + "\"eventId\":\"1001\",\"actionName\":\"PUBLISH_MES_COMMAND\","
+                                + "\"dcopItemKeys\":[101,102]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                // 응답 schema 에 dcopItemKeys 노출 — FE 가 round-trip 시 동일 배열 송신 가능.
+                .andExpect(jsonPath("$.data.dcopItemKeys").isArray())
+                .andExpect(jsonPath("$.data.dcopItemKeys.length()").value(2))
+                .andExpect(jsonPath("$.data.dcopItemKeys[0]").value(101))
+                .andExpect(jsonPath("$.data.dcopItemKeys[1]").value(102));
 
         verify(commandService).updateFlow(eq(10L), eq(1L), any(UiMessageFlow.class));
     }
