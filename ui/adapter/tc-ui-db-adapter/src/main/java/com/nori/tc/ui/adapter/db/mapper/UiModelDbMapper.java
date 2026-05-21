@@ -79,7 +79,6 @@ public final class UiModelDbMapper {
                 source.modelVersionKey(),
                 source.secsMsgName(),
                 source.description(),
-                source.dataIndex(),
                 source.updatedAt()
         );
     }
@@ -93,7 +92,6 @@ public final class UiModelDbMapper {
                 source.modelVersionKey(),
                 source.socketMsgName(),
                 source.description(),
-                source.dataIndex(),
                 source.updatedAt()
         );
     }
@@ -107,7 +105,6 @@ public final class UiModelDbMapper {
                 source.modelVersionKey(),
                 source.mesMsgName(),
                 source.description(),
-                source.dataIndex(),
                 source.updatedAt()
         );
     }
@@ -195,7 +192,6 @@ public final class UiModelDbMapper {
                 source.dcopItemKey(),
                 source.modelVersionKey(),
                 source.dcopItemName(),
-                source.workflowName(),
                 source.eventId(),
                 source.variableId(),
                 UiDomainEnumMapper.toUiDcopCollectionRule(source.collectionRule()),
@@ -225,6 +221,9 @@ public final class UiModelDbMapper {
      *
      * <p>Trigger 3 필드 (eventId / transactionId / workflowFilter) 가 모두 null 이면 Socket 프로토콜
      * 모델의 Flow 입니다 — 분기는 호출 측 (FE) 에서 null 체크로 수행합니다.</p>
+     *
+     * <p>{@code dcopItemKeys} 는 {@code dcopItems} 의 키 집합으로 자동 도출 — 응답 시 동일 정보를
+     * 두 표현으로 제공해 FE 가 round-trip PUT 시 별도 변환 없이 그대로 송신할 수 있도록 합니다.</p>
      */
     public static UiMessageFlow toFlowDetail(
             final TcModelWorkflow workflow,
@@ -233,6 +232,11 @@ public final class UiModelDbMapper {
         if (workflow == null) {
             return null;
         }
+        final List<UiModelDcopItem> safeDcopItems = dcopItems == null ? List.of() : List.copyOf(dcopItems);
+        final List<Long> dcopItemKeys = safeDcopItems.stream()
+                .map(UiModelDcopItem::dcopItemKey)
+                .filter(java.util.Objects::nonNull)
+                .toList();
         return new UiMessageFlow(
                 workflow.workflowKey(),
                 workflow.workflowName(),
@@ -242,7 +246,8 @@ public final class UiModelDbMapper {
                 workflow.workflowFilter(),
                 workflow.actionName(),
                 workflow.actionDataIndex(),
-                dcopItems == null ? List.of() : List.copyOf(dcopItems)
+                safeDcopItems,
+                dcopItemKeys
         );
     }
 }

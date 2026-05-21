@@ -2,8 +2,10 @@ package com.nori.tc.ui.adapter.db;
 
 import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.model.store.TcModelDcopItemStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowDcopItemStore;
 import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
+import com.nori.tc.db.domain.model.TcModelMessageFlowDcopItem;
 import com.nori.tc.db.domain.model.TcModelWorkflow;
 import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
@@ -17,17 +19,20 @@ import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 
 /**
  * {@link ModelFlowQueryPort} 의 DB Store 기반 구현체입니다.
  *
  * <p>workflow row 1 개 = Flow 1 개. Flow 의 Collect 섹션 (DCOP item) 은
- * {@code tc_model_dcop_item.workflow_name == workflow.workflow_name} 매칭으로 client-side
- * 필터링합니다 (store 의 batch IN-by-workflow-name primitive 미존재).</p>
+ * {@code tc_model_message_flow_dcop_item} N:M join table 에서 {@code workflow_key} 로
+ * 매칭된 {@code dcop_item_key} 만 추려 dcop_item 본체와 결합합니다 (한 dcop_item 이 다수
+ * Flow 에 매핑된 N:M 상태에서도 각 Flow 의 Collect 응답은 자기 Flow 의 매핑만 포함).</p>
  */
 @Repository
 public class JpaModelFlowQueryPort implements ModelFlowQueryPort {
@@ -37,16 +42,20 @@ public class JpaModelFlowQueryPort implements ModelFlowQueryPort {
 
     private final TcModelWorkflowStore modelWorkflowStore;
     private final TcModelDcopItemStore modelDcopItemStore;
+    private final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore;
 
     /**
      * 필수 의존성을 초기화합니다.
      */
     public JpaModelFlowQueryPort(
             final TcModelWorkflowStore modelWorkflowStore,
-            final TcModelDcopItemStore modelDcopItemStore
+            final TcModelDcopItemStore modelDcopItemStore,
+            final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore
     ) {
         this.modelWorkflowStore = Objects.requireNonNull(modelWorkflowStore, "modelWorkflowStore is null");
         this.modelDcopItemStore = Objects.requireNonNull(modelDcopItemStore, "modelDcopItemStore is null");
+        this.modelMessageFlowDcopItemStore = Objects.requireNonNull(
+                modelMessageFlowDcopItemStore, "modelMessageFlowDcopItemStore is null");
         log.info("JpaModelFlowQueryPort initialized.");
     }
 
@@ -79,17 +88,31 @@ public class JpaModelFlowQueryPort implements ModelFlowQueryPort {
             return Optional.empty();
         }
 
-        final List<UiModelDcopItem> dcopItems = loadAllByPage(
-                page -> modelDcopItemStore.findAllByModelVersionKey(modelVersionKey, page)
-        )
+        final Set<Long> boundDcopItemKeys = modelMessageFlowDcopItemStore
+                .findAllByWorkflowKey(workflow.workflowKey())
                 .stream()
-                .filter(item -> workflow.workflowName().equals(item.workflowName()))
-                .sorted(Comparator.comparing(
-                        TcModelDcopItem::dcopItemKey,
-                        Comparator.nullsLast(Long::compareTo)
-                ))
-                .map(UiModelDbMapper::toDomain)
-                .toList();
+                .map(TcModelMessageFlowDcopItem::dcopItemKey)
+                .collect(java.util.stream.Collectors.toCollection(HashSet::new));
+
+        final List<UiModelDcopItem> dcopItems;
+        if (boundDcopItemKeys.isEmpty()) {
+            dcopItems = List.of();
+        } else {
+            // dcop_item 본체는 model_version 단위 pool 에서 In-memory Set 조회 — N:M binding 의
+            // dcop_item_key 부분집합만 매칭하므로 modelVersion pool 전체를 페이지 로드 후 필터링한다.
+            dcopItems = loadAllByPage(
+                    page -> modelDcopItemStore.findAllByModelVersionKey(modelVersionKey, page)
+            )
+                    .stream()
+                    .filter(item -> item.dcopItemKey() != null
+                            && boundDcopItemKeys.contains(item.dcopItemKey()))
+                    .sorted(Comparator.comparing(
+                            TcModelDcopItem::dcopItemKey,
+                            Comparator.nullsLast(Long::compareTo)
+                    ))
+                    .map(UiModelDbMapper::toDomain)
+                    .toList();
+        }
 
         return Optional.of(UiModelDbMapper.toFlowDetail(workflow, dcopItems));
     }
