@@ -10,7 +10,6 @@ public record UiModelSecsMessage(
         long modelVersionKey,
         String secsMsgName,
         String description,
-        String dataIndex,
         OffsetDateTime updatedAt
 ) {
 }

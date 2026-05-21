@@ -10,7 +10,6 @@ public record UiModelSocketMessage(
         long modelVersionKey,
         String socketMsgName,
         String description,
-        String dataIndex,
         OffsetDateTime updatedAt
 ) {
 }
