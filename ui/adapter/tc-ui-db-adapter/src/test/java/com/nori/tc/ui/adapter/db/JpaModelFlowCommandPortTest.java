@@ -1,8 +1,11 @@
 package com.nori.tc.ui.adapter.db;
 
 import com.nori.tc.db.core.exception.DbDuplicateKeyException;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowDcopItemStore;
 import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelMessageFlowDcopItem;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelWorkflow;
+import com.nori.tc.db.domain.model.TcModelMessageFlowDcopItem;
 import com.nori.tc.db.domain.model.TcModelWorkflow;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
@@ -27,6 +30,8 @@ import static org.mockito.Mockito.when;
 
 /**
  * {@link JpaModelFlowCommandPort} 의 write-side 계약을 검증합니다.
+ *
+ * <p>Collect 섹션 diff upsert 시나리오 (toAdd / toRemove / toKeep) 도 포함합니다.</p>
  */
 class JpaModelFlowCommandPortTest {
 
@@ -85,7 +90,8 @@ class JpaModelFlowCommandPortTest {
                 "{\"op\":\"EQUAL\"}",
                 "actNew",
                 "{\"mdfTemplateName\":\"REQ\"}",
-                List.of()
+                List.of(),
+                null
         );
 
         fixture.port.updateFlow(101L, 77L, request);
@@ -99,6 +105,76 @@ class JpaModelFlowCommandPortTest {
         assertEquals("{\"op\":\"EQUAL\"}", captor.getValue().workflowFilter());
         assertEquals("actNew", captor.getValue().actionName());
         assertEquals("{\"mdfTemplateName\":\"REQ\"}", captor.getValue().actionDataIndex());
+        // dcopItemKeys == null 이면 Collect 미갱신 — join store 비호출.
+        verify(fixture.modelMessageFlowDcopItemStore, never()).findAllByWorkflowKey(anyLong());
+        verify(fixture.modelMessageFlowDcopItemStore, never()).upsert(any());
+        verify(fixture.modelMessageFlowDcopItemStore, never())
+                .deleteByWorkflowKeyAndDcopItemKey(anyLong(), anyLong());
+    }
+
+    @Test
+    @DisplayName("updateFlow Collect — toAdd / toRemove / toKeep diff 가 올바르게 처리된다")
+    void updateFlow_CollectDiffUpsert() {
+        final Fixture fixture = new Fixture();
+        when(fixture.modelWorkflowStore.findByWorkflowKey(77L))
+                .thenReturn(Optional.of(workflow(77L, 101L, "WF_OLD", "S6F11", "actOld")));
+        when(fixture.modelWorkflowStore.upsert(any()))
+                .thenReturn(workflow(77L, 101L, "WF_OLD", "S6F11", "actOld"));
+        // 기존 binding: 11, 22 → 신규 요청: 22, 33 → toAdd={33}, toRemove={11}, toKeep={22}
+        when(fixture.modelMessageFlowDcopItemStore.findAllByWorkflowKey(77L)).thenReturn(List.of(
+                new TcModelMessageFlowDcopItem(801L, 77L, 11L, 101L, NOW),
+                new TcModelMessageFlowDcopItem(802L, 77L, 22L, 101L, NOW)
+        ));
+
+        final UiMessageFlow request = new UiMessageFlow(
+                77L,
+                "WF_OLD",
+                "S6F11",
+                null, null, null,
+                "actOld",
+                null,
+                List.of(),
+                List.of(22L, 33L)
+        );
+
+        fixture.port.updateFlow(101L, 77L, request);
+
+        // toAdd = {33}
+        final ArgumentCaptor<UpsertTcModelMessageFlowDcopItem> upsertCaptor =
+                ArgumentCaptor.forClass(UpsertTcModelMessageFlowDcopItem.class);
+        verify(fixture.modelMessageFlowDcopItemStore).upsert(upsertCaptor.capture());
+        assertNull(upsertCaptor.getValue().mfdiKey());
+        assertEquals(77L, upsertCaptor.getValue().workflowKey());
+        assertEquals(33L, upsertCaptor.getValue().dcopItemKey());
+        assertEquals(101L, upsertCaptor.getValue().modelVersionKey());
+        // toRemove = {11}
+        verify(fixture.modelMessageFlowDcopItemStore).deleteByWorkflowKeyAndDcopItemKey(77L, 11L);
+        // toKeep = {22} — delete 호출 없음
+        verify(fixture.modelMessageFlowDcopItemStore, never()).deleteByWorkflowKeyAndDcopItemKey(77L, 22L);
+    }
+
+    @Test
+    @DisplayName("updateFlow Collect — 빈 배열 요청은 기존 binding 전부 정리")
+    void updateFlow_CollectEmpty_ClearsAllBindings() {
+        final Fixture fixture = new Fixture();
+        when(fixture.modelWorkflowStore.findByWorkflowKey(77L))
+                .thenReturn(Optional.of(workflow(77L, 101L, "WF_OLD", "S6F11", "actOld")));
+        when(fixture.modelWorkflowStore.upsert(any()))
+                .thenReturn(workflow(77L, 101L, "WF_OLD", "S6F11", "actOld"));
+        when(fixture.modelMessageFlowDcopItemStore.findAllByWorkflowKey(77L)).thenReturn(List.of(
+                new TcModelMessageFlowDcopItem(801L, 77L, 11L, 101L, NOW),
+                new TcModelMessageFlowDcopItem(802L, 77L, 22L, 101L, NOW)
+        ));
+
+        final UiMessageFlow request = new UiMessageFlow(
+                77L, "WF_OLD", "S6F11", null, null, null, "actOld", null, List.of(), List.of()
+        );
+
+        fixture.port.updateFlow(101L, 77L, request);
+
+        verify(fixture.modelMessageFlowDcopItemStore, never()).upsert(any());
+        verify(fixture.modelMessageFlowDcopItemStore).deleteByWorkflowKeyAndDcopItemKey(77L, 11L);
+        verify(fixture.modelMessageFlowDcopItemStore).deleteByWorkflowKeyAndDcopItemKey(77L, 22L);
     }
 
     @Test
@@ -108,7 +184,7 @@ class JpaModelFlowCommandPortTest {
         when(fixture.modelWorkflowStore.findByWorkflowKey(9999L)).thenReturn(Optional.empty());
 
         final UiMessageFlow request = new UiMessageFlow(
-                9999L, "WF_X", "S6F11", null, null, null, "actX", null, List.of()
+                9999L, "WF_X", "S6F11", null, null, null, "actX", null, List.of(), null
         );
 
         assertThrows(UiNotFoundException.class,
@@ -125,7 +201,7 @@ class JpaModelFlowCommandPortTest {
                 .thenReturn(Optional.of(workflow(77L, 999L, "WF_OTHER", "S6F11", "actX")));
 
         final UiMessageFlow request = new UiMessageFlow(
-                77L, "WF_X", "S6F11", null, null, null, "actX", null, List.of()
+                77L, "WF_X", "S6F11", null, null, null, "actX", null, List.of(), null
         );
 
         assertThrows(UiNotFoundException.class,
@@ -144,7 +220,7 @@ class JpaModelFlowCommandPortTest {
                 .thenThrow(new DbDuplicateKeyException("uk_tc_model_workflow violated", new RuntimeException("dup")));
 
         final UiMessageFlow request = new UiMessageFlow(
-                77L, "WF_DUP", "S6F13", null, null, null, "actNew", null, List.of()
+                77L, "WF_DUP", "S6F13", null, null, null, "actNew", null, List.of(), null
         );
 
         assertThrows(UiConflictException.class,
@@ -160,7 +236,7 @@ class JpaModelFlowCommandPortTest {
                 () -> fixture.port.insertFlow(0L, "WF", "MSG"));
         assertThrows(com.nori.tc.ui.core.exception.UiBadRequestException.class,
                 () -> fixture.port.updateFlow(0L, 77L,
-                        new UiMessageFlow(77L, "WF", "MSG", null, null, null, "act", null, List.of())));
+                        new UiMessageFlow(77L, "WF", "MSG", null, null, null, "act", null, List.of(), null)));
         verify(fixture.modelWorkflowStore, never()).upsert(any());
         verify(fixture.modelWorkflowStore, never()).findByWorkflowKey(anyLong());
     }
@@ -189,6 +265,11 @@ class JpaModelFlowCommandPortTest {
     private static final class Fixture {
 
         private final TcModelWorkflowStore modelWorkflowStore = mock(TcModelWorkflowStore.class);
-        private final JpaModelFlowCommandPort port = new JpaModelFlowCommandPort(modelWorkflowStore);
+        private final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore =
+                mock(TcModelMessageFlowDcopItemStore.class);
+        private final JpaModelFlowCommandPort port = new JpaModelFlowCommandPort(
+                modelWorkflowStore,
+                modelMessageFlowDcopItemStore
+        );
     }
 }

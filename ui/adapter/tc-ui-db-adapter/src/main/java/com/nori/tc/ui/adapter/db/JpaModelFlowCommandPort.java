@@ -1,8 +1,11 @@
 package com.nori.tc.ui.adapter.db;
 
 import com.nori.tc.db.core.exception.DbDuplicateKeyException;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowDcopItemStore;
 import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelMessageFlowDcopItem;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelWorkflow;
+import com.nori.tc.db.domain.model.TcModelMessageFlowDcopItem;
 import com.nori.tc.db.domain.model.TcModelWorkflow;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
@@ -14,13 +17,19 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * {@link ModelFlowCommandPort} 의 DB Store 기반 구현체입니다.
  *
- * <p>workflow row 1 개 = Flow 1 개. INSERT / UPDATE 모두 단일 row 트랜잭션입니다.</p>
+ * <p>workflow row 1 개 = Flow 1 개. INSERT / UPDATE 는 단일 row 트랜잭션이며, UPDATE 시점에
+ * Collect 섹션 (DCOP item 바인딩) 도 {@code tc_model_message_flow_dcop_item} join table 에
+ * id-aware diff (toAdd / toRemove / toKeep) 로 함께 갱신합니다.</p>
  */
 @Repository
 public class JpaModelFlowCommandPort implements ModelFlowCommandPort {
@@ -38,12 +47,18 @@ public class JpaModelFlowCommandPort implements ModelFlowCommandPort {
     private static final String NEW_FLOW_ACTION_NAME_PLACEHOLDER = "TODO";
 
     private final TcModelWorkflowStore modelWorkflowStore;
+    private final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore;
 
     /**
      * 필수 의존성을 초기화합니다.
      */
-    public JpaModelFlowCommandPort(final TcModelWorkflowStore modelWorkflowStore) {
+    public JpaModelFlowCommandPort(
+            final TcModelWorkflowStore modelWorkflowStore,
+            final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore
+    ) {
         this.modelWorkflowStore = Objects.requireNonNull(modelWorkflowStore, "modelWorkflowStore is null");
+        this.modelMessageFlowDcopItemStore = Objects.requireNonNull(
+                modelMessageFlowDcopItemStore, "modelMessageFlowDcopItemStore is null");
         log.info("JpaModelFlowCommandPort initialized.");
     }
 
@@ -119,7 +134,59 @@ public class JpaModelFlowCommandPort implements ModelFlowCommandPort {
             throw e;
         }
 
+        if (request.dcopItemKeys() != null) {
+            replaceFlowDcopBindings(flowId, modelVersionKey, request.dcopItemKeys());
+        }
+
         log.info("Flow UPDATE 완료. modelVersionKey={}, flowId={}", modelVersionKey, flowId);
+    }
+
+    /**
+     * Flow 의 Collect 섹션 binding 을 요청 배열로 교체합니다.
+     *
+     * <p>id-aware diff:</p>
+     * <ul>
+     *   <li>{@code toAdd = next - current} → {@code upsert} 로 신규 join row INSERT</li>
+     *   <li>{@code toRemove = current - next} → {@code deleteByWorkflowKeyAndDcopItemKey} 로 정리</li>
+     *   <li>{@code toKeep = next ∩ current} → no-op (audit churn 방지)</li>
+     * </ul>
+     */
+    private void replaceFlowDcopBindings(
+            final long workflowKey,
+            final long modelVersionKey,
+            final List<Long> nextDcopItemKeys
+    ) {
+        final Set<Long> next = new LinkedHashSet<>();
+        for (final Long key : nextDcopItemKeys) {
+            if (key == null || key <= 0L) {
+                throw new UiBadRequestException("dcopItemKey 는 1 이상이어야 합니다.");
+            }
+            next.add(key);
+        }
+
+        final Set<Long> current = modelMessageFlowDcopItemStore
+                .findAllByWorkflowKey(workflowKey)
+                .stream()
+                .map(TcModelMessageFlowDcopItem::dcopItemKey)
+                .collect(java.util.stream.Collectors.toCollection(HashSet::new));
+
+        final Set<Long> toAdd = new LinkedHashSet<>(next);
+        toAdd.removeAll(current);
+
+        final Set<Long> toRemove = new HashSet<>(current);
+        toRemove.removeAll(next);
+
+        for (final Long dcopItemKey : toAdd) {
+            modelMessageFlowDcopItemStore.upsert(new UpsertTcModelMessageFlowDcopItem(
+                    null,
+                    workflowKey,
+                    dcopItemKey,
+                    modelVersionKey
+            ));
+        }
+        for (final Long dcopItemKey : toRemove) {
+            modelMessageFlowDcopItemStore.deleteByWorkflowKeyAndDcopItemKey(workflowKey, dcopItemKey);
+        }
     }
 
     /**
