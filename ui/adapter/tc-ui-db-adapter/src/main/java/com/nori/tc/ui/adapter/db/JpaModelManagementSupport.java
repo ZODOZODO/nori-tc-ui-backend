@@ -65,13 +65,11 @@ final class JpaModelManagementSupport {
     );
     static final List<String> SECS_MESSAGE_COLUMNS = List.of(
             "SECS Message Name",
-            "Description",
-            "Data Indexes"
+            "Description"
     );
     static final List<String> SOCKET_MESSAGE_COLUMNS = List.of(
             "Socket Message Name",
-            "Description",
-            "Data Indexes"
+            "Description"
     );
     static final List<String> VARIABLE_ID_COLUMNS = List.of(
             "VariableId",
@@ -105,7 +103,6 @@ final class JpaModelManagementSupport {
     );
     static final List<String> DCOP_ITEM_COLUMNS = List.of(
             "Dcop Item Name",
-            "Workflow Name",
             "EventId",
             "VariableId",
             "Collection Rule",

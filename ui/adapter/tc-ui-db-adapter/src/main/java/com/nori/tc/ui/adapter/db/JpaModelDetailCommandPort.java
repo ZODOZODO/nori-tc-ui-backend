@@ -193,6 +193,8 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
 
     /**
      * secs message node를 교체 저장합니다.
+     *
+     * <p>컬럼 인덱스: [0]=secsMsgName, [1]=description</p>
      */
     private void replaceSecsMessages(final long modelVersionKey, final List<DetailRowCommand> rows) {
         loadAllByModelVersionKey(modelVersionKey, modelSecsMessageStore::findAllByModelVersionKey)
@@ -202,15 +204,14 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
                 null,
                 modelVersionKey,
                 requiredCell(row, 0, "secsMsgName"),
-                optionalCell(row, 1),
-                optionalCell(row, 2)
+                optionalCell(row, 1)
         )));
     }
 
     /**
      * mes message node를 교체 저장합니다.
      *
-     * <p>컬럼 인덱스: [0]=mesMsgName, [1]=description, [2]=dataIndex</p>
+     * <p>컬럼 인덱스: [0]=mesMsgName, [1]=description</p>
      */
     private void replaceMesMessages(final long modelVersionKey, final List<DetailRowCommand> rows) {
         loadAllByModelVersionKey(modelVersionKey, modelMesMessageStore::findAllByModelVersionKey)
@@ -220,13 +221,14 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
                 null,
                 modelVersionKey,
                 requiredCell(row, 0, "mesMsgName"),
-                optionalCell(row, 1),
-                optionalCell(row, 2)
+                optionalCell(row, 1)
         )));
     }
 
     /**
      * socket message node를 교체 저장합니다.
+     *
+     * <p>컬럼 인덱스: [0]=socketMsgName, [1]=description</p>
      */
     private void replaceSocketMessages(final long modelVersionKey, final List<DetailRowCommand> rows) {
         loadAllByModelVersionKey(modelVersionKey, modelSocketMessageStore::findAllByModelVersionKey)
@@ -239,7 +241,6 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
                 modelVersionKey,
                 requiredCell(row, 0, "socketMsgName"),
                 optionalCell(row, 1),
-                optionalCell(row, 2),
                 null
         )));
     }
@@ -333,7 +334,7 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
     /**
      * dcop item node를 id-aware upsert 방식으로 저장합니다.
      *
-     * <p>Controller 계층에서 SOCKET 모델의 경우 6개 values를 7개(SECS 기준)로 확장한 후
+     * <p>Controller 계층에서 SOCKET 모델의 경우 5개 values를 6개(SECS 기준)로 확장한 후
      * 이 메서드에 전달하므로, 항상 SECS 기준 인덱스를 사용합니다.</p>
      *
      * <p>요청 row 의 id 가 비어 있으면 새 row 로 INSERT, 기존 PK 와 일치하면
@@ -341,8 +342,9 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
      * dcop_item_key anchor stability 를 보장하기 위한 정책이다.</p>
      *
      * <p>컬럼 인덱스 (확장 후 공통):
-     * [0]=dcopItemName, [1]=workflowName, [2]=eventId, [3]=variableId,
-     * [4]=collectionRule, [5]=calculationRule, [6]=orderRule</p>
+     * [0]=dcopItemName, [1]=eventId, [2]=variableId,
+     * [3]=collectionRule, [4]=calculationRule, [5]=orderRule.
+     * workflow_name 컬럼은 N:M join table {@code tc_model_message_flow_dcop_item} 으로 분리됨.</p>
      */
     private void replaceDcopItems(final long modelVersionKey, final List<DetailRowCommand> rows) {
         final Map<Long, TcModelDcopItem> existingByKey =
@@ -360,14 +362,13 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
                     dcopItemKey,
                     modelVersionKey,
                     requiredCell(row, 0, "dcopItemName"),
-                    optionalCell(row, 1),    // workflowName
-                    optionalCell(row, 2),    // eventId
-                    optionalCell(row, 3),    // variableId
+                    optionalCell(row, 1),    // eventId
+                    optionalCell(row, 2),    // variableId
                     UiDomainEnumMapper.toDbDcopCollectionRule(
-                            parseOptionalEnum(optionalCell(row, 4), UiDcopCollectionRule.class, "collectionRule")
+                            parseOptionalEnum(optionalCell(row, 3), UiDcopCollectionRule.class, "collectionRule")
                     ),
-                    optionalCell(row, 5),    // calculationRule (자유 텍스트)
-                    parseOptionalInteger(optionalCell(row, 6), "orderRule")
+                    optionalCell(row, 4),    // calculationRule (자유 텍스트)
+                    parseOptionalInteger(optionalCell(row, 5), "orderRule")
             ));
         }
 

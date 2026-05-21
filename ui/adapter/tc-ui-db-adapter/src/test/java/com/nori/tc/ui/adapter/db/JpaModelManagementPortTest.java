@@ -562,15 +562,15 @@ class JpaModelManagementPortTest {
     }
 
     private static TcModelSecsMessage secs(final long modelVersionKey, final String name) {
-        return new TcModelSecsMessage(1L, modelVersionKey, name, "desc", "1", OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
+        return new TcModelSecsMessage(1L, modelVersionKey, name, "desc", OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
     }
 
     private static TcModelSocketMessage socket(final long modelVersionKey, final String name) {
-        return new TcModelSocketMessage(1L, modelVersionKey, name, "desc", "1", OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
+        return new TcModelSocketMessage(1L, modelVersionKey, name, "desc", OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
     }
 
     private static TcModelMesMessage mes(final long modelVersionKey, final String name) {
-        return new TcModelMesMessage(1L, modelVersionKey, name, "desc", "1", OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
+        return new TcModelMesMessage(1L, modelVersionKey, name, "desc", OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
     }
 
     private static TcModelVariableId variable(final long modelVersionKey, final String variableId) {
@@ -594,7 +594,7 @@ class JpaModelManagementPortTest {
     }
 
     private static TcModelDcopItem dcop(final long modelVersionKey, final String name) {
-        return new TcModelDcopItem(1L, modelVersionKey, name, "FLOW_01", "EVT_01", "VID_TEMP", null, null, 1, OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
+        return new TcModelDcopItem(1L, modelVersionKey, name, "EVT_01", "VID_TEMP", null, null, 1, OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
     }
 
     private static TcEqp eqp(final long eqpKey, final String eqpId, final long modelVersionKey) {

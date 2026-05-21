@@ -257,7 +257,7 @@ class JpaModelDetailCommandPortTest {
                 "dcop-itemes",
                 List.of(new ModelDetailCommandPort.DetailRowCommand(
                         null,
-                        Arrays.asList("DCOP_NEW", "WF_A", "EVT_1", "VAR_1", "LAST", null, "1")
+                        Arrays.asList("DCOP_NEW", "EVT_1", "VAR_1", "LAST", null, "1")
                 ))
         );
 
@@ -265,6 +265,8 @@ class JpaModelDetailCommandPortTest {
         verify(fixture.modelDcopItemStore).upsert(captor.capture());
         assertNull(captor.getValue().dcopItemKey());
         assertEquals("DCOP_NEW", captor.getValue().dcopItemName());
+        assertEquals("EVT_1", captor.getValue().eventId());
+        assertEquals("VAR_1", captor.getValue().variableId());
         verify(fixture.modelDcopItemStore, never()).deleteByDcopItemKey(anyLong());
     }
 
@@ -274,21 +276,23 @@ class JpaModelDetailCommandPortTest {
         final Fixture fixture = new Fixture();
         when(fixture.modelStore.findByModelVersionKey(101L)).thenReturn(Optional.of(model(101L)));
         when(fixture.modelDcopItemStore.findAllByModelVersionKey(anyLong(), any(PageRequest.class)))
-                .thenReturn(List.of(dcopItem(55L, 101L, "DCOP_OLD", "WF_A")));
+                .thenReturn(List.of(dcopItem(55L, 101L, "DCOP_OLD")));
 
         fixture.port.saveDetailRows(
                 101L,
                 "dcop-itemes",
                 List.of(new ModelDetailCommandPort.DetailRowCommand(
                         "55",
-                        Arrays.asList("DCOP_OLD", "WF_B", "EVT_2", "VAR_2", "FIRST", null, "2")
+                        Arrays.asList("DCOP_OLD", "EVT_2", "VAR_2", "FIRST", null, "2")
                 ))
         );
 
         final ArgumentCaptor<UpsertTcModelDcopItem> captor = ArgumentCaptor.forClass(UpsertTcModelDcopItem.class);
         verify(fixture.modelDcopItemStore).upsert(captor.capture());
         assertEquals(55L, captor.getValue().dcopItemKey());
-        assertEquals("WF_B", captor.getValue().workflowName());
+        assertEquals("DCOP_OLD", captor.getValue().dcopItemName());
+        assertEquals("EVT_2", captor.getValue().eventId());
+        assertEquals("VAR_2", captor.getValue().variableId());
         verify(fixture.modelDcopItemStore, never()).deleteByDcopItemKey(anyLong());
     }
 
@@ -299,8 +303,8 @@ class JpaModelDetailCommandPortTest {
         when(fixture.modelStore.findByModelVersionKey(101L)).thenReturn(Optional.of(model(101L)));
         when(fixture.modelDcopItemStore.findAllByModelVersionKey(anyLong(), any(PageRequest.class)))
                 .thenReturn(List.of(
-                        dcopItem(55L, 101L, "DCOP_KEEP", "WF_A"),
-                        dcopItem(66L, 101L, "DCOP_REMOVED", "WF_B")
+                        dcopItem(55L, 101L, "DCOP_KEEP"),
+                        dcopItem(66L, 101L, "DCOP_REMOVED")
                 ));
 
         fixture.port.saveDetailRows(
@@ -308,7 +312,7 @@ class JpaModelDetailCommandPortTest {
                 "dcop-itemes",
                 List.of(new ModelDetailCommandPort.DetailRowCommand(
                         "55",
-                        Arrays.asList("DCOP_KEEP", "WF_A", null, null, null, null, null)
+                        Arrays.asList("DCOP_KEEP", null, null, null, null, null)
                 ))
         );
 
@@ -322,7 +326,7 @@ class JpaModelDetailCommandPortTest {
         final Fixture fixture = new Fixture();
         when(fixture.modelStore.findByModelVersionKey(101L)).thenReturn(Optional.of(model(101L)));
         when(fixture.modelDcopItemStore.findAllByModelVersionKey(anyLong(), any(PageRequest.class)))
-                .thenReturn(List.of(dcopItem(55L, 101L, "DCOP_OLD", "WF_A")));
+                .thenReturn(List.of(dcopItem(55L, 101L, "DCOP_OLD")));
 
         final UiBadRequestException exception = assertThrows(
                 UiBadRequestException.class,
@@ -331,7 +335,7 @@ class JpaModelDetailCommandPortTest {
                         "dcop-itemes",
                         List.of(new ModelDetailCommandPort.DetailRowCommand(
                                 "9999",
-                                Arrays.asList("DCOP_OLD", "WF_A", null, null, null, null, null)
+                                Arrays.asList("DCOP_OLD", null, null, null, null, null)
                         ))
                 )
         );
@@ -356,7 +360,7 @@ class JpaModelDetailCommandPortTest {
                         "dcop-itemes",
                         List.of(new ModelDetailCommandPort.DetailRowCommand(
                                 "not-a-number",
-                                Arrays.asList("DCOP_NEW", "WF_A", null, null, null, null, null)
+                                Arrays.asList("DCOP_NEW", null, null, null, null, null)
                         ))
                 )
         );
@@ -423,14 +427,12 @@ class JpaModelDetailCommandPortTest {
     private static TcModelDcopItem dcopItem(
             final long dcopItemKey,
             final long modelVersionKey,
-            final String dcopItemName,
-            final String workflowName
+            final String dcopItemName
     ) {
         return new TcModelDcopItem(
                 dcopItemKey,
                 modelVersionKey,
                 dcopItemName,
-                workflowName,
                 null,
                 null,
                 DcopCollectionRule.LAST,

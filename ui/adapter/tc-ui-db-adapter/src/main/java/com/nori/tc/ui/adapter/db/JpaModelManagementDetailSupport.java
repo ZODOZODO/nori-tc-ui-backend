@@ -102,22 +102,19 @@ final class JpaModelManagementDetailSupport {
                 null,
                 targetModelVersionKey,
                 message.secsMsgName(),
-                message.description(),
-                message.dataIndex()
+                message.description()
         )));
         snapshot.socketMessages().forEach(message -> modelSocketMessageStore.upsert(new UpsertTcModelSocketMessage(
                 targetModelVersionKey,
                 message.socketMsgName(),
                 message.description(),
-                message.dataIndex(),
                 null
         )));
         snapshot.mesMessages().forEach(message -> modelMesMessageStore.upsert(new UpsertTcModelMesMessage(
                 null,
                 targetModelVersionKey,
                 message.mesMsgName(),
-                message.description(),
-                message.dataIndex()
+                message.description()
         )));
         snapshot.variableIds().forEach(variableId -> modelVariableIdStore.upsert(new UpsertTcModelVariableId(
                 targetModelVersionKey,
@@ -160,7 +157,6 @@ final class JpaModelManagementDetailSupport {
                 null,
                 targetModelVersionKey,
                 dcopItem.dcopItemName(),
-                dcopItem.workflowName(),
                 dcopItem.eventId(),
                 dcopItem.variableId(),
                 dcopItem.collectionRule(),
@@ -337,8 +333,7 @@ final class JpaModelManagementDetailSupport {
                 normalizeOptionalText(message.secsMsgName()),
                 List.of(
                         safe(message.secsMsgName()),
-                        safe(message.description()),
-                        safe(message.dataIndex())
+                        safe(message.description())
                 )
         );
     }
@@ -348,8 +343,7 @@ final class JpaModelManagementDetailSupport {
                 normalizeOptionalText(message.socketMsgName()),
                 List.of(
                         safe(message.socketMsgName()),
-                        safe(message.description()),
-                        safe(message.dataIndex())
+                        safe(message.description())
                 )
         );
     }
@@ -359,8 +353,7 @@ final class JpaModelManagementDetailSupport {
                 normalizeOptionalText(message.mesMsgName()),
                 List.of(
                         safe(message.mesMsgName()),
-                        safe(message.description()),
-                        safe(message.dataIndex())
+                        safe(message.description())
                 )
         );
     }
@@ -433,7 +426,6 @@ final class JpaModelManagementDetailSupport {
                 normalizeOptionalText(dcopItem.dcopItemName()),
                 List.of(
                         safe(dcopItem.dcopItemName()),
-                        safe(dcopItem.workflowName()),
                         safe(dcopItem.eventId()),
                         safe(dcopItem.variableId()),
                         safe(dcopItem.collectionRule() == null ? null : dcopItem.collectionRule().name()),
