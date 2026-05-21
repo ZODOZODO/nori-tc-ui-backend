@@ -29,7 +29,7 @@ import static org.mockito.Mockito.when;
 /**
  * {@link JpaModelFlowQueryPort} 의 read-side 계약을 검증합니다.
  *
- * <p>Collect 섹션은 N:M join table {@code tc_model_message_flow_dcop_item} 의 workflow_key
+ * <p>Collect 섹션은 N:M join table {@code tc_model_message_flow_dcop_item} 의 message_flow_key
  * 매칭으로 결정되므로, 같은 dcop_item 이 2 Flow 에 매핑된 상태에서도 각 Flow 조회 시
  * 자신의 binding 만 보여야 한다 (cross-Flow leak 부재).</p>
  */
@@ -38,8 +38,8 @@ class JpaModelFlowQueryPortTest {
     private static final OffsetDateTime NOW = OffsetDateTime.parse("2026-05-20T10:15:30+09:00");
 
     @Test
-    @DisplayName("findFlowSummaries는 workflow row를 workflow_key ASC로 정렬해 요약을 반환한다")
-    void findFlowSummariesReturnsSortedByWorkflowKeyAsc() {
+    @DisplayName("findFlowSummaries는 workflow row를 message_flow_key ASC로 정렬해 요약을 반환한다")
+    void findFlowSummariesReturnsSortedByMessageFlowKeyAsc() {
         final Fixture fixture = new Fixture();
         when(fixture.modelMessageFlowStore.findAllByModelVersionKey(eq(101L), any(PageRequest.class)))
                 .thenReturn(List.of(
@@ -201,7 +201,7 @@ class JpaModelFlowQueryPortTest {
     }
 
     private static TcModelMessageFlow workflow(
-            final long workflowKey,
+            final long messageFlowKey,
             final long modelVersionKey,
             final String workflowName,
             final String messageName,
@@ -211,7 +211,7 @@ class JpaModelFlowQueryPortTest {
             final String workflowFilter
     ) {
         return new TcModelMessageFlow(
-                workflowKey,
+                messageFlowKey,
                 modelVersionKey,
                 workflowName,
                 messageName,
@@ -244,13 +244,13 @@ class JpaModelFlowQueryPortTest {
 
     private static TcModelMessageFlowDcopItem binding(
             final long mfdiKey,
-            final long workflowKey,
+            final long messageFlowKey,
             final long dcopItemKey,
             final long modelVersionKey
     ) {
         return new TcModelMessageFlowDcopItem(
                 mfdiKey,
-                workflowKey,
+                messageFlowKey,
                 dcopItemKey,
                 modelVersionKey,
                 NOW

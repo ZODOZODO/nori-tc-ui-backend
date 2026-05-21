@@ -54,13 +54,13 @@ class ModelFlowCommandServiceTest {
     }
 
     @Test
-    void createFlowDelegatesToPortAndReturnsWorkflowKey() {
+    void createFlowDelegatesToPortAndReturnsMessageFlowKey() {
         when(modelCrudPort.findByModelVersionKey(MODEL_VERSION_KEY)).thenReturn(Optional.of(editModel()));
         when(modelFlowCommandPort.insertFlow(MODEL_VERSION_KEY, "handleLotStart", "S6F11")).thenReturn(99L);
 
-        final long workflowKey = modelFlowCommandService.createFlow(MODEL_VERSION_KEY, "handleLotStart", "S6F11");
+        final long messageFlowKey = modelFlowCommandService.createFlow(MODEL_VERSION_KEY, "handleLotStart", "S6F11");
 
-        assertEquals(99L, workflowKey);
+        assertEquals(99L, messageFlowKey);
         verify(modelFlowCommandPort).insertFlow(MODEL_VERSION_KEY, "handleLotStart", "S6F11");
     }
 

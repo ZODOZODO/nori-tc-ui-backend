@@ -38,7 +38,7 @@ class JpaModelFlowCommandPortTest {
     private static final OffsetDateTime NOW = OffsetDateTime.parse("2026-05-20T10:15:30+09:00");
 
     @Test
-    @DisplayName("insertFlow는 workflowKey=null로 upsert를 호출하고 생성된 workflow_key를 반환한다")
+    @DisplayName("insertFlow는 messageFlowKey=null로 upsert를 호출하고 생성된 message_flow_key를 반환한다")
     void insertFlowDelegatesUpsertAndReturnsGeneratedKey() {
         final Fixture fixture = new Fixture();
         when(fixture.modelMessageFlowStore.upsert(any()))
@@ -242,14 +242,14 @@ class JpaModelFlowCommandPortTest {
     }
 
     private static TcModelMessageFlow workflow(
-            final long workflowKey,
+            final long messageFlowKey,
             final long modelVersionKey,
             final String workflowName,
             final String messageName,
             final String actionName
     ) {
         return new TcModelMessageFlow(
-                workflowKey,
+                messageFlowKey,
                 modelVersionKey,
                 workflowName,
                 messageName,

@@ -119,7 +119,7 @@ class JpaModelDetailCommandPortTest {
     // =================================================================================
 
     @Test
-    @DisplayName("workflow 저장 시 row.id가 null이면 신규 INSERT (workflowKey=null upsert, DELETE 없음)")
+    @DisplayName("workflow 저장 시 row.id가 null이면 신규 INSERT (messageFlowKey=null upsert, DELETE 없음)")
     void replaceWorkflows_idNull_insertsAsNew() {
         final Fixture fixture = new Fixture();
         when(fixture.modelStore.findByModelVersionKey(101L)).thenReturn(Optional.of(model(101L)));
@@ -404,14 +404,14 @@ class JpaModelDetailCommandPortTest {
     }
 
     private static TcModelMessageFlow workflow(
-            final long workflowKey,
+            final long messageFlowKey,
             final long modelVersionKey,
             final String workflowName,
             final String messageName,
             final String actionName
     ) {
         return new TcModelMessageFlow(
-                workflowKey,
+                messageFlowKey,
                 modelVersionKey,
                 workflowName,
                 messageName,
