@@ -1,6 +1,6 @@
 package com.nori.tc.ui.adapters.web.controller.support;
 
-import com.nori.tc.ui.domain.model.UiModelWorkflow;
+import com.nori.tc.ui.domain.model.UiModelMessageFlow;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,18 +19,18 @@ public final class ModelDetailPreviewSupport {
     /**
      * workflow row의 preview 셀 값을 생성합니다.
      *
-     * @param workflow workflow 원본 row
+     * @param messageFlow message flow 원본 row
      * @return 컬럼 순서에 맞는 preview 값 목록
      */
-    public static List<String> buildWorkflowPreviewValues(final UiModelWorkflow workflow) {
+    public static List<String> buildWorkflowPreviewValues(final UiModelMessageFlow messageFlow) {
         final List<String> previewValues = new ArrayList<>(List.of(
-                nullToEmpty(workflow.workflowName()),
-                nullToEmpty(workflow.messageName()),
-                nullToEmpty(workflow.eventId()),
-                nullToEmpty(workflow.transactionId()),
-                summarizeWorkflowFilter(workflow.workflowFilter()),
-                nullToEmpty(workflow.actionName()),
-                summarizeActionDataIndex(workflow.actionDataIndex())
+                nullToEmpty(messageFlow.workflowName()),
+                nullToEmpty(messageFlow.messageName()),
+                nullToEmpty(messageFlow.eventId()),
+                nullToEmpty(messageFlow.transactionId()),
+                summarizeWorkflowFilter(messageFlow.workflowFilter()),
+                nullToEmpty(messageFlow.actionName()),
+                summarizeActionDataIndex(messageFlow.actionDataIndex())
         ));
         return List.copyOf(previewValues);
     }

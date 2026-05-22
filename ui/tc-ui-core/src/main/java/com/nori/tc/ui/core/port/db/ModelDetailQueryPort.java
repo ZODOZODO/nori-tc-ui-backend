@@ -9,7 +9,7 @@ import com.nori.tc.ui.domain.model.UiModelReportId;
 import com.nori.tc.ui.domain.model.UiModelSecsMessage;
 import com.nori.tc.ui.domain.model.UiModelSocketMessage;
 import com.nori.tc.ui.domain.model.UiModelVariableId;
-import com.nori.tc.ui.domain.model.UiModelWorkflow;
+import com.nori.tc.ui.domain.model.UiModelMessageFlow;
 
 import java.util.List;
 import java.util.Optional;
@@ -26,7 +26,7 @@ import java.util.Optional;
  *   <li>VariableIdes: tc_model_variableid</li>
  *   <li>ReportIdes: tc_model_reportid</li>
  *   <li>EventIdes: tc_model_eventid</li>
- *   <li>Workflow: tc_model_workflow</li>
+ *   <li>Message Flow: tc_model_message_flow</li>
  *   <li>MDF: tc_model_mdf</li>
  *   <li>Dcop Itemes: tc_model_dcop_item</li>
  * </ul>
@@ -69,9 +69,9 @@ public interface ModelDetailQueryPort {
     List<UiModelEventId> findEventIdsByModelVersionKey(long modelVersionKey);
 
     /**
-     * model_version_key 기준 Workflow 목록을 조회합니다.
+     * model_version_key 기준 Message Flow 목록을 조회합니다.
      */
-    List<UiModelWorkflow> findWorkflowsByModelVersionKey(long modelVersionKey);
+    List<UiModelMessageFlow> findMessageFlowsByModelVersionKey(long modelVersionKey);
 
     /**
      * model_version_key 기준 MDF를 조회합니다.

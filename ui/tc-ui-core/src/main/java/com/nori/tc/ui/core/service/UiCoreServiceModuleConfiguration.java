@@ -30,6 +30,8 @@ import org.springframework.context.annotation.Import;
         EqpRepairTaskService.class,
         CommLogQueryService.class,
         LiveMapQueryService.class,
+        ModelFlowCommandService.class,
+        ModelFlowQueryService.class,
         UiCoreFallbackStorageConfiguration.class,
         UiCommandIngressService.class
 })

@@ -10,7 +10,6 @@ public record UiModelMesMessage(
         long modelVersionKey,
         String mesMsgName,
         String description,
-        String dataIndex,
         OffsetDateTime updatedAt
 ) {
 }

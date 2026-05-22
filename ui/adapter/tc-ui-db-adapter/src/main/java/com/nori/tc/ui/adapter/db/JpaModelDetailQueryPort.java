@@ -9,8 +9,8 @@ import com.nori.tc.db.core.model.store.TcModelReportIdStore;
 import com.nori.tc.db.core.model.store.TcModelMesMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
-import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
 import com.nori.tc.db.domain.model.TcModelEventId;
 import com.nori.tc.db.domain.model.TcModelParam;
@@ -18,8 +18,8 @@ import com.nori.tc.db.domain.model.TcModelReportId;
 import com.nori.tc.db.domain.model.TcModelMesMessage;
 import com.nori.tc.db.domain.model.TcModelSecsMessage;
 import com.nori.tc.db.domain.model.TcModelSocketMessage;
+import com.nori.tc.db.domain.model.TcModelMessageFlow;
 import com.nori.tc.db.domain.model.TcModelVariableId;
-import com.nori.tc.db.domain.model.TcModelWorkflow;
 import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
@@ -31,8 +31,8 @@ import com.nori.tc.ui.domain.model.UiModelParam;
 import com.nori.tc.ui.domain.model.UiModelReportId;
 import com.nori.tc.ui.domain.model.UiModelSecsMessage;
 import com.nori.tc.ui.domain.model.UiModelSocketMessage;
+import com.nori.tc.ui.domain.model.UiModelMessageFlow;
 import com.nori.tc.ui.domain.model.UiModelVariableId;
-import com.nori.tc.ui.domain.model.UiModelWorkflow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -63,7 +63,7 @@ public class JpaModelDetailQueryPort implements ModelDetailQueryPort {
     private final TcModelVariableIdStore modelVariableIdStore;
     private final TcModelReportIdStore modelReportIdStore;
     private final TcModelEventIdStore modelEventIdStore;
-    private final TcModelWorkflowStore modelWorkflowStore;
+    private final TcModelMessageFlowStore modelMessageFlowStore;
     private final TcModelMdfStore modelMdfStore;
     private final TcModelDcopItemStore modelDcopItemStore;
 
@@ -78,7 +78,7 @@ public class JpaModelDetailQueryPort implements ModelDetailQueryPort {
             final TcModelVariableIdStore modelVariableIdStore,
             final TcModelReportIdStore modelReportIdStore,
             final TcModelEventIdStore modelEventIdStore,
-            final TcModelWorkflowStore modelWorkflowStore,
+            final TcModelMessageFlowStore modelMessageFlowStore,
             final TcModelMdfStore modelMdfStore,
             final TcModelDcopItemStore modelDcopItemStore
     ) {
@@ -89,7 +89,7 @@ public class JpaModelDetailQueryPort implements ModelDetailQueryPort {
         this.modelVariableIdStore = Objects.requireNonNull(modelVariableIdStore, "modelVariableIdStore is null");
         this.modelReportIdStore = Objects.requireNonNull(modelReportIdStore, "modelReportIdStore is null");
         this.modelEventIdStore = Objects.requireNonNull(modelEventIdStore, "modelEventIdStore is null");
-        this.modelWorkflowStore = Objects.requireNonNull(modelWorkflowStore, "modelWorkflowStore is null");
+        this.modelMessageFlowStore = Objects.requireNonNull(modelMessageFlowStore, "modelMessageFlowStore is null");
         this.modelMdfStore = Objects.requireNonNull(modelMdfStore, "modelMdfStore is null");
         this.modelDcopItemStore = Objects.requireNonNull(modelDcopItemStore, "modelDcopItemStore is null");
         log.info("JpaModelDetailQueryPort initialized.");
@@ -166,11 +166,11 @@ public class JpaModelDetailQueryPort implements ModelDetailQueryPort {
     }
 
     @Override
-    public List<UiModelWorkflow> findWorkflowsByModelVersionKey(final long modelVersionKey) {
+    public List<UiModelMessageFlow> findMessageFlowsByModelVersionKey(final long modelVersionKey) {
         validateModelVersionKey(modelVersionKey);
-        return loadAllByPage(page -> modelWorkflowStore.findAllByModelVersionKey(modelVersionKey, page))
+        return loadAllByPage(page -> modelMessageFlowStore.findAllByModelVersionKey(modelVersionKey, page))
                 .stream()
-                .sorted(Comparator.comparingLong(TcModelWorkflow::workflowKey))
+                .sorted(Comparator.comparingLong(TcModelMessageFlow::messageFlowKey))
                 .map(UiModelDbMapper::toDomain)
                 .toList();
     }

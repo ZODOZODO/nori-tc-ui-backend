@@ -20,6 +20,7 @@ import com.nori.tc.ui.adapters.web.controller.GroupController;
 import com.nori.tc.ui.adapters.web.controller.LiveMapController;
 import com.nori.tc.ui.adapters.web.controller.ModelBranchController;
 import com.nori.tc.ui.adapters.web.controller.ModelDetailController;
+import com.nori.tc.ui.adapters.web.controller.ModelFlowController;
 import com.nori.tc.ui.adapters.web.controller.ModelMutationController;
 import com.nori.tc.ui.adapters.web.controller.ModelQueryController;
 import com.nori.tc.ui.adapters.web.controller.PermissionController;
@@ -61,6 +62,7 @@ import org.springframework.context.annotation.Import;
         LiveMapController.class,
         ModelBranchController.class,
         ModelDetailController.class,
+        ModelFlowController.class,
         ModelMutationController.class,
         ModelQueryController.class,
         PermissionController.class,

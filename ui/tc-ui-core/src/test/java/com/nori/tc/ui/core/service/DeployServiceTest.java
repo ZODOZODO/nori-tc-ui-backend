@@ -1002,7 +1002,7 @@ class DeployServiceTest {
             }
 
             @Override
-            public List<com.nori.tc.ui.domain.model.UiModelWorkflow> findWorkflowsByModelVersionKey(final long modelVersionKey) {
+            public List<com.nori.tc.ui.domain.model.UiModelMessageFlow> findMessageFlowsByModelVersionKey(final long modelVersionKey) {
                 return List.of();
             }
 

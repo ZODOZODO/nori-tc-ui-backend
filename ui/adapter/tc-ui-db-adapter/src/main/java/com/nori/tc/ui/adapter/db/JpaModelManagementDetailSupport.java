@@ -10,7 +10,7 @@ import com.nori.tc.db.core.model.store.TcModelReportIdStore;
 import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
-import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelDcopItem;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelEventId;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMdf;
@@ -20,7 +20,7 @@ import com.nori.tc.db.core.model.upsert.UpsertTcModelReportId;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelSecsMessage;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelSocketMessage;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelVariableId;
-import com.nori.tc.db.core.model.upsert.UpsertTcModelWorkflow;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelMessageFlow;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
 import com.nori.tc.db.domain.model.TcModelEventId;
 import com.nori.tc.db.domain.model.TcModelMdf;
@@ -30,7 +30,7 @@ import com.nori.tc.db.domain.model.TcModelReportId;
 import com.nori.tc.db.domain.model.TcModelSecsMessage;
 import com.nori.tc.db.domain.model.TcModelSocketMessage;
 import com.nori.tc.db.domain.model.TcModelVariableId;
-import com.nori.tc.db.domain.model.TcModelWorkflow;
+import com.nori.tc.db.domain.model.TcModelMessageFlow;
 import com.nori.tc.ui.core.port.db.ModelParentCommitPort;
 
 import java.nio.charset.StandardCharsets;
@@ -56,7 +56,7 @@ final class JpaModelManagementDetailSupport {
     private final TcModelVariableIdStore modelVariableIdStore;
     private final TcModelReportIdStore modelReportIdStore;
     private final TcModelEventIdStore modelEventIdStore;
-    private final TcModelWorkflowStore modelWorkflowStore;
+    private final TcModelMessageFlowStore modelMessageFlowStore;
     private final TcModelMdfStore modelMdfStore;
     private final TcModelDcopItemStore modelDcopItemStore;
 
@@ -68,7 +68,7 @@ final class JpaModelManagementDetailSupport {
             final TcModelVariableIdStore modelVariableIdStore,
             final TcModelReportIdStore modelReportIdStore,
             final TcModelEventIdStore modelEventIdStore,
-            final TcModelWorkflowStore modelWorkflowStore,
+            final TcModelMessageFlowStore modelMessageFlowStore,
             final TcModelMdfStore modelMdfStore,
             final TcModelDcopItemStore modelDcopItemStore
     ) {
@@ -79,7 +79,7 @@ final class JpaModelManagementDetailSupport {
         this.modelVariableIdStore = Objects.requireNonNull(modelVariableIdStore, "modelVariableIdStore is null");
         this.modelReportIdStore = Objects.requireNonNull(modelReportIdStore, "modelReportIdStore is null");
         this.modelEventIdStore = Objects.requireNonNull(modelEventIdStore, "modelEventIdStore is null");
-        this.modelWorkflowStore = Objects.requireNonNull(modelWorkflowStore, "modelWorkflowStore is null");
+        this.modelMessageFlowStore = Objects.requireNonNull(modelMessageFlowStore, "modelMessageFlowStore is null");
         this.modelMdfStore = Objects.requireNonNull(modelMdfStore, "modelMdfStore is null");
         this.modelDcopItemStore = Objects.requireNonNull(modelDcopItemStore, "modelDcopItemStore is null");
     }
@@ -102,22 +102,19 @@ final class JpaModelManagementDetailSupport {
                 null,
                 targetModelVersionKey,
                 message.secsMsgName(),
-                message.description(),
-                message.dataIndex()
+                message.description()
         )));
         snapshot.socketMessages().forEach(message -> modelSocketMessageStore.upsert(new UpsertTcModelSocketMessage(
                 targetModelVersionKey,
                 message.socketMsgName(),
                 message.description(),
-                message.dataIndex(),
                 null
         )));
         snapshot.mesMessages().forEach(message -> modelMesMessageStore.upsert(new UpsertTcModelMesMessage(
                 null,
                 targetModelVersionKey,
                 message.mesMsgName(),
-                message.description(),
-                message.dataIndex()
+                message.description()
         )));
         snapshot.variableIds().forEach(variableId -> modelVariableIdStore.upsert(new UpsertTcModelVariableId(
                 targetModelVersionKey,
@@ -139,16 +136,16 @@ final class JpaModelManagementDetailSupport {
                 eventId.description(),
                 eventId.enabled()
         )));
-        snapshot.workflows().forEach(workflow -> modelWorkflowStore.upsert(new UpsertTcModelWorkflow(
+        snapshot.messageFlows().forEach(messageFlow -> modelMessageFlowStore.upsert(new UpsertTcModelMessageFlow(
                 null,
                 targetModelVersionKey,
-                workflow.workflowName(),
-                workflow.messageName(),
-                workflow.eventId(),
-                workflow.transactionId(),
-                workflow.workflowFilter(),
-                workflow.actionName(),
-                workflow.actionDataIndex()
+                messageFlow.workflowName(),
+                messageFlow.messageName(),
+                messageFlow.eventId(),
+                messageFlow.transactionId(),
+                messageFlow.workflowFilter(),
+                messageFlow.actionName(),
+                messageFlow.actionDataIndex()
         )));
         snapshot.mdfs().forEach(mdf -> modelMdfStore.upsert(new UpsertTcModelMdf(
                 null,
@@ -157,9 +154,9 @@ final class JpaModelManagementDetailSupport {
                 mdf.mdfFile()
         )));
         snapshot.dcopItems().forEach(dcopItem -> modelDcopItemStore.upsert(new UpsertTcModelDcopItem(
+                null,
                 targetModelVersionKey,
                 dcopItem.dcopItemName(),
-                dcopItem.workflowName(),
                 dcopItem.eventId(),
                 dcopItem.variableId(),
                 dcopItem.collectionRule(),
@@ -218,8 +215,8 @@ final class JpaModelManagementDetailSupport {
                 buildDiffSection(
                         "workflow",
                         JpaModelManagementSupport.WORKFLOW_COLUMNS,
-                        branchSnapshot.workflows().stream().map(this::toWorkflowRow).toList(),
-                        parentSnapshot.workflows().stream().map(this::toWorkflowRow).toList()
+                        branchSnapshot.messageFlows().stream().map(this::toMessageFlowRow).toList(),
+                        parentSnapshot.messageFlows().stream().map(this::toMessageFlowRow).toList()
                 ),
                 buildDiffSection(
                         "mdf",
@@ -245,7 +242,7 @@ final class JpaModelManagementDetailSupport {
                 loadAllByModelVersionKey(modelVersionKey, modelVariableIdStore::findAllByModelVersionKey),
                 loadAllByModelVersionKey(modelVersionKey, modelReportIdStore::findAllByModelVersionKey),
                 loadAllByModelVersionKey(modelVersionKey, modelEventIdStore::findAllByModelVersionKey),
-                loadAllByModelVersionKey(modelVersionKey, modelWorkflowStore::findAllByModelVersionKey),
+                loadAllByModelVersionKey(modelVersionKey, modelMessageFlowStore::findAllByModelVersionKey),
                 loadAllByModelVersionKey(modelVersionKey, modelMdfStore::findAllByModelVersionKey),
                 loadAllByModelVersionKey(modelVersionKey, modelDcopItemStore::findAllByModelVersionKey)
         );
@@ -336,8 +333,7 @@ final class JpaModelManagementDetailSupport {
                 normalizeOptionalText(message.secsMsgName()),
                 List.of(
                         safe(message.secsMsgName()),
-                        safe(message.description()),
-                        safe(message.dataIndex())
+                        safe(message.description())
                 )
         );
     }
@@ -347,8 +343,7 @@ final class JpaModelManagementDetailSupport {
                 normalizeOptionalText(message.socketMsgName()),
                 List.of(
                         safe(message.socketMsgName()),
-                        safe(message.description()),
-                        safe(message.dataIndex())
+                        safe(message.description())
                 )
         );
     }
@@ -358,8 +353,7 @@ final class JpaModelManagementDetailSupport {
                 normalizeOptionalText(message.mesMsgName()),
                 List.of(
                         safe(message.mesMsgName()),
-                        safe(message.description()),
-                        safe(message.dataIndex())
+                        safe(message.description())
                 )
         );
     }
@@ -401,18 +395,18 @@ final class JpaModelManagementDetailSupport {
         );
     }
 
-    private JpaModelManagementSupport.DiffRow toWorkflowRow(final TcModelWorkflow workflow) {
-        final String identity = safe(workflow.workflowName()) + "|" + safe(workflow.messageName());
+    private JpaModelManagementSupport.DiffRow toMessageFlowRow(final TcModelMessageFlow messageFlow) {
+        final String identity = safe(messageFlow.workflowName()) + "|" + safe(messageFlow.messageName());
         return new JpaModelManagementSupport.DiffRow(
                 identity,
                 List.of(
-                        safe(workflow.workflowName()),
-                        safe(workflow.messageName()),
-                        safe(workflow.eventId()),
-                        safe(workflow.transactionId()),
-                        safe(workflow.workflowFilter()),
-                        safe(workflow.actionName()),
-                        safe(workflow.actionDataIndex())
+                        safe(messageFlow.workflowName()),
+                        safe(messageFlow.messageName()),
+                        safe(messageFlow.eventId()),
+                        safe(messageFlow.transactionId()),
+                        safe(messageFlow.workflowFilter()),
+                        safe(messageFlow.actionName()),
+                        safe(messageFlow.actionDataIndex())
                 )
         );
     }
@@ -432,7 +426,6 @@ final class JpaModelManagementDetailSupport {
                 normalizeOptionalText(dcopItem.dcopItemName()),
                 List.of(
                         safe(dcopItem.dcopItemName()),
-                        safe(dcopItem.workflowName()),
                         safe(dcopItem.eventId()),
                         safe(dcopItem.variableId()),
                         safe(dcopItem.collectionRule() == null ? null : dcopItem.collectionRule().name()),

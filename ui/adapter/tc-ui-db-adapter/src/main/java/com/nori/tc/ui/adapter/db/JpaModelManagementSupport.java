@@ -11,8 +11,8 @@ import com.nori.tc.db.core.model.store.TcModelReportIdStore;
 import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
-import com.nori.tc.db.core.model.store.TcModelWorkflowStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModel;
 import com.nori.tc.db.domain.common.model.ModelStatus;
 import com.nori.tc.db.domain.eqp.TcEqp;
@@ -25,8 +25,8 @@ import com.nori.tc.db.domain.model.TcModelParam;
 import com.nori.tc.db.domain.model.TcModelReportId;
 import com.nori.tc.db.domain.model.TcModelSecsMessage;
 import com.nori.tc.db.domain.model.TcModelSocketMessage;
+import com.nori.tc.db.domain.model.TcModelMessageFlow;
 import com.nori.tc.db.domain.model.TcModelVariableId;
-import com.nori.tc.db.domain.model.TcModelWorkflow;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
@@ -65,13 +65,11 @@ final class JpaModelManagementSupport {
     );
     static final List<String> SECS_MESSAGE_COLUMNS = List.of(
             "SECS Message Name",
-            "Description",
-            "Data Indexes"
+            "Description"
     );
     static final List<String> SOCKET_MESSAGE_COLUMNS = List.of(
             "Socket Message Name",
-            "Description",
-            "Data Indexes"
+            "Description"
     );
     static final List<String> VARIABLE_ID_COLUMNS = List.of(
             "VariableId",
@@ -105,7 +103,6 @@ final class JpaModelManagementSupport {
     );
     static final List<String> DCOP_ITEM_COLUMNS = List.of(
             "Dcop Item Name",
-            "Workflow Name",
             "EventId",
             "VariableId",
             "Collection Rule",
@@ -127,7 +124,7 @@ final class JpaModelManagementSupport {
             final TcModelVariableIdStore modelVariableIdStore,
             final TcModelReportIdStore modelReportIdStore,
             final TcModelEventIdStore modelEventIdStore,
-            final TcModelWorkflowStore modelWorkflowStore,
+            final TcModelMessageFlowStore modelMessageFlowStore,
             final TcModelMdfStore modelMdfStore,
             final TcModelDcopItemStore modelDcopItemStore
     ) {
@@ -141,7 +138,7 @@ final class JpaModelManagementSupport {
                 Objects.requireNonNull(modelVariableIdStore, "modelVariableIdStore is null"),
                 Objects.requireNonNull(modelReportIdStore, "modelReportIdStore is null"),
                 Objects.requireNonNull(modelEventIdStore, "modelEventIdStore is null"),
-                Objects.requireNonNull(modelWorkflowStore, "modelWorkflowStore is null"),
+                Objects.requireNonNull(modelMessageFlowStore, "modelMessageFlowStore is null"),
                 Objects.requireNonNull(modelMdfStore, "modelMdfStore is null"),
                 Objects.requireNonNull(modelDcopItemStore, "modelDcopItemStore is null")
         );
@@ -550,7 +547,7 @@ final class JpaModelManagementSupport {
             List<TcModelVariableId> variableIds,
             List<TcModelReportId> reportIds,
             List<TcModelEventId> eventIds,
-            List<TcModelWorkflow> workflows,
+            List<TcModelMessageFlow> messageFlows,
             List<TcModelMdf> mdfs,
             List<TcModelDcopItem> dcopItems
     ) {
