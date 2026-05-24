@@ -97,7 +97,7 @@ find ui/adapter/tc-ui-web-adapter/src/main/java -name "*Controller.java" -exec w
 ```bash
 for f in $(find <target> -name "*ModuleConfiguration.java"); do
   echo "=== $f ==="
-  grep -cE "^\s+[A-Z][A-Za-z0-9_]+\.class," "$f"
+  grep -cE "^\s+[A-Z][A-Za-z0-9_]+\.class" "$f"   # 마지막 원소는 ',' 없음 — comma 빼고 매치
 done
 ```
 원소 수 > 15 면 모듈 분리 후보. (ui-backend 는 6 개 ModuleConfiguration 존재 — db / kafka / redis / web / core / service.)
