@@ -19,3 +19,10 @@ libs/vendor/
 
 # 로컬 Codex 지침 파일
 /AGENTS.md
+
+# Claude Code (머신별 / 작업 산출물만 무시; skills, agents, settings.json 등은 추적)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/progress/
+.claude/harness/
+.claude/perf/measurements/
