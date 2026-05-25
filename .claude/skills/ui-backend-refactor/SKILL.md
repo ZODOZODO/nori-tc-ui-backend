@@ -63,6 +63,13 @@ ls -la C:/tc-trace/tc-ui-backend-app/jfr/ 2>/dev/null | tail -5
 ```bash
 TS=$(date -u +%Y-%m-%dT%H%M)
 mkdir -p .claude/perf/measurements
+# (사전) 인증 cookie 가 없으면 먼저 로그인 endpoint 호출하여 cookies.txt 저장.
+# 인증 endpoint / credential 은 nori-tc-ui-backend 의 SecurityConfig 참고.
+if [ ! -f cookies.txt ]; then
+  curl -s -c cookies.txt -X POST http://localhost:8080/api/auth/login \
+    -H 'Content-Type: application/json' \
+    -d '{"username":"<USER>","password":"<PASS>"}'
+fi
 # 임의의 read endpoint 1~3 개 — 분할 대상 controller 의 GET 만
 curl -s -b cookies.txt http://localhost:8080/api/eqp > ".claude/perf/measurements/surface-baseline-${TS}.eqp.json"
 ```
@@ -86,6 +93,8 @@ find <target> -type f -name "*.java" -path "*/src/main/java/*" -exec wc -l {} + 
 - LOC — `wc -l file.java`
 - `@Autowired` / `@Inject` 카운트
 - 중첩 `if` / `for` 깊이 — `grep -E "^\s{12,}(if|for|while)" file.java | wc -l` (heuristic)
+  - 주의: 코드 스타일 (4 공백 × 3 레벨) 가정. **false positive 높음** — 결과는 report 에만 기록하고
+    PASS/FAIL 판정에서 제외.
 
 **Controller 비대화** — ui-backend 특화:
 ```bash
@@ -120,6 +129,10 @@ find ui -name "*Response*.java" -o -name "*Dto*.java" -o -name "*View*.java" 2>/
 DTO LOC > 200 → 도메인 분리 후보. 단, 필드명 / 타입 변경은 surface 깨짐 (별 SPEC).
 
 ### 1-2. 런타임 baseline (audit-full)
+
+**mode 추천 룰** (Step 1 의 `$2` 와 연동):
+- 메서드 추출 / 클래스 내부 분할 → `audit-static` (JVM/JFR 미실행, 정적 측정만)
+- 모듈 분리 / 패키지 경계 변경 / 헥사고날 layer 이동 → `audit-full` (정적 + 런타임 baseline)
 
 **Actuator metrics** (Actuator 노출 시):
 ```bash
@@ -179,7 +192,7 @@ ls -la ui/starter/tc-ui-backend-starter/build/libs/*.jar | grep -v plain
 
 - **P1 (즉시)**: LOC > 800, 메서드 수 ≥ 30, adapter→core 역방향 import, `@Import` > 25
 - **P2 (다음 스프린트)**: LOC 400–800, 메서드 수 20–30, `@Import` 15–25, Controller endpoint 군 분리
-- **P3 (기록만)**: 중첩 깊이 4, 생성자 파라미터 7~10 — false positive 가능
+- **P3 (기록만)**: 중첩 깊이 4, 생성자 파라미터 7~10 — false positive 가능. report 에만 기록, PASS/FAIL 판정 제외.
 
 ### 분할 패턴 후보 (사용자 선택 필요 — 자동 결정 금지)
 
@@ -218,8 +231,15 @@ AskUserQuestion 으로 분할 단위 선택. 질문 본문에 포함:
 5. **UI surface DTO 보존 검증** — Step 0-4 의 baseline JSON 과 분할 후 동일 endpoint 응답 hash / diff:
    ```bash
    curl -s -b cookies.txt http://localhost:8080/api/eqp > ".claude/perf/measurements/surface-after-${TS}.eqp.json"
-   diff <(jq -S . .claude/perf/measurements/surface-baseline-*.eqp.json) \
-        <(jq -S . .claude/perf/measurements/surface-after-${TS}.eqp.json) 2>&1 | head -20
+   if command -v jq >/dev/null 2>&1; then
+     diff <(jq -S . .claude/perf/measurements/surface-baseline-*.eqp.json) \
+          <(jq -S . .claude/perf/measurements/surface-after-${TS}.eqp.json) 2>&1 | head -20
+   else
+     # jq 부재 (Windows + Git Bash 흔함) — raw diff 로 fallback. key 순서 차이는 false positive 가능.
+     echo "[WARN] jq not found — falling back to raw diff (key order sensitive)."
+     diff .claude/perf/measurements/surface-baseline-*.eqp.json \
+          .claude/perf/measurements/surface-after-${TS}.eqp.json 2>&1 | head -20
+   fi
    ```
    diff 0 줄 → PASS. 차이 발생 → **surface 깨짐 — 즉시 롤백** + 사용자 보고.
 6. 모듈 단위 테스트:
