@@ -95,9 +95,11 @@ curl -s http://localhost:8080/actuator/prometheus | grep -E "^http_server_reques
 2. JFR 은 이미 dumponexit 옵션으로 가동 중이므로 별 명령 불필요. 종료 시 자동 dump.
 3. 종료 안 하고 in-flight dump 원하면:
    ```bash
-   jcmd <PID> JFR.dump filename=C:\tc-trace\tc-ui-backend-app\jfr\manual-${TS}.jfr
+   jcmd <PID> JFR.dump name=tc-ui-backend-app filename=C:\tc-trace\tc-ui-backend-app\jfr\manual-${TS}.jfr
    ```
    ※ `jcmd` 는 JDK 에 포함 (`%JAVA_HOME%\bin\jcmd.exe`). PID 는 `jcmd -l | grep tc-ui-backend-app`.
+   ※ `name=tc-ui-backend-app` 은 run-trace bat 의 `-XX:StartFlightRecording=` recording name
+   가정. business-perf / gateway-perf 와 동일 컨벤션.
 
 ### 1-4. 쿼리 EXPLAIN / DB 측정
 LiveMap 9.4초 같은 응답 시간이 DB 쿼리 때문인지 확인:
@@ -212,9 +214,21 @@ backend 재가동:
 ```
 run-trace-tc-ui-backend-app.bat
 ```
+
+먼저 인증 cookie 확보 (cookies.txt 부재 시):
+```bash
+if [ ! -f cookies.txt ]; then
+  curl -s -c cookies.txt -X POST http://localhost:8080/api/auth/login \
+    -H 'Content-Type: application/json' \
+    -d "{\"username\":\"${TEST_USER:-admin}\",\"password\":\"${TEST_PASS:-admin}\"}"
+fi
+# 인증 endpoint / payload 는 nori-tc-ui-backend 의 AuthController / LoginRequest 참고
+# (예: ui-backend-refactor SKILL.md Step 0-4 의 cookies 절차와 동일).
+```
+
 warmup (5~10 회 요청 후) — JIT compile 완료 대기:
 ```bash
-for i in 1 2 3 4 5; do curl -s -o /dev/null -w "%{time_total}\n" -H "Cookie: $COOKIE" "http://localhost:8080/api/live-map"; done
+for i in 1 2 3 4 5; do curl -s -o /dev/null -w "%{time_total}\n" -b cookies.txt "http://localhost:8080/api/live-map"; done
 ```
 Actuator metrics dump:
 ```bash

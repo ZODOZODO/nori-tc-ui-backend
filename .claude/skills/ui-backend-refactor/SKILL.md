@@ -64,11 +64,19 @@ ls -la C:/tc-trace/tc-ui-backend-app/jfr/ 2>/dev/null | tail -5
 TS=$(date -u +%Y-%m-%dT%H%M)
 mkdir -p .claude/perf/measurements
 # (사전) 인증 cookie 가 없으면 먼저 로그인 endpoint 호출하여 cookies.txt 저장.
-# 인증 endpoint / credential 은 nori-tc-ui-backend 의 SecurityConfig 참고.
+# 실 endpoint / payload schema 확인 절차:
+#   1. AuthController 의 @PostMapping path 확인 (예: grep -rn "@PostMapping" ui/adapter/tc-ui-web-adapter/src/main/java | grep -i auth)
+#   2. LoginRequest record / class 의 필드명 확인 (예: grep -rn "record LoginRequest\|class LoginRequest" ui)
+#      - 필드명이 username/password 가 아니라 loginId / userId 등으로 다를 수 있음
+#   3. 인증 방식 확인 — Cookie 세션 (-c cookies.txt) vs JWT Bearer Token (응답에서 token 추출)
+# credential 은 환경변수 TEST_USER / TEST_PASS 로 주입 (skill 본문에 hard-code 금지).
 if [ ! -f cookies.txt ]; then
+  : "${TEST_USER:?TEST_USER 환경변수 미설정}"; : "${TEST_PASS:?TEST_PASS 환경변수 미설정}"
   curl -s -c cookies.txt -X POST http://localhost:8080/api/auth/login \
     -H 'Content-Type: application/json' \
-    -d '{"username":"<USER>","password":"<PASS>"}'
+    -d "{\"username\":\"${TEST_USER}\",\"password\":\"${TEST_PASS}\"}"
+  # 인증 방식이 JWT 인 경우 (LoginResponse.token 등): 응답에서 token 추출 후
+  # 후속 curl 에 -H "Authorization: Bearer $TOKEN" 사용. -b cookies.txt 는 cookie 방식 가정.
 fi
 # 임의의 read endpoint 1~3 개 — 분할 대상 controller 의 GET 만
 curl -s -b cookies.txt http://localhost:8080/api/eqp > ".claude/perf/measurements/surface-baseline-${TS}.eqp.json"
@@ -106,10 +114,13 @@ find ui/adapter/tc-ui-web-adapter/src/main/java -name "*Controller.java" -exec w
 ```bash
 for f in $(find <target> -name "*ModuleConfiguration.java"); do
   echo "=== $f ==="
-  grep -cE "^\s+[A-Z][A-Za-z0-9_]+\.class" "$f"   # 마지막 원소는 ',' 없음 — comma 빼고 매치
+  grep -cE "^\s+[A-Z][A-Za-z0-9_]+\.class\s*[,)]\s*$" "$f"   # @Import 배열 원소만 — ',' 또는 ')' 종결 강제
 done
 ```
-원소 수 > 15 면 모듈 분리 후보. (ui-backend 는 6 개 ModuleConfiguration 존재 — db / kafka / redis / web / core / service.)
+원소 수 > 15 면 모듈 분리 후보. grep 패턴 설명: `@Import({A.class, B.class, C.class})` 형태에서
+중간 원소는 , 종결 + 마지막 원소는 ) 종결이므로 `[,)]` 로 둘 다 매치 + 줄 끝 `$` 강제 →
+`import com.foo.X` 같은 import 문 / `XClass.class.getName()` 같은 호출은 false positive 배제.
+(ui-backend 는 6 개 ModuleConfiguration 존재 — db / kafka / redis / web / core / service.)
 
 **헥사고날 경계 위반** (`core` 패키지가 `adapter` import 하는지):
 ```bash
@@ -252,7 +263,7 @@ AskUserQuestion 으로 분할 단위 선택. 질문 본문에 포함:
    ```bash
    ./gradlew :ui:tc-ui-core:test --tests "*ArchTest" 2>&1 | tail -25
    ```
-   `UiCoreDependencyArchTest` 통과 확인 ([UiCoreDependencyArchTest.java:17](ui/tc-ui-core/src/test/java/com/nori/tc/ui/core/architecture/UiCoreDependencyArchTest.java#L17)).
+   `UiCoreDependencyArchTest` 통과 확인 ([UiCoreDependencyArchTest.java](ui/tc-ui-core/src/test/java/com/nori/tc/ui/core/architecture/UiCoreDependencyArchTest.java) — 정확한 룰 라인은 `Grep -n "noClasses\|classes()" <file>` 로 동적 확인. 라인 번호 hard-code 시 stale 위험).
 8. 빌드 검증:
    ```bash
    C:\workspace_nori\nori-tc-exec\exec\windows\build-trace-apps.bat ui-backend 2>&1 | tail -25
@@ -343,7 +354,7 @@ AskUserQuestion 으로 분할 단위 선택. 질문 본문에 포함:
 - 헥사고날 + `@Import` 명시 등록: [nori-tc-common/CLAUDE.md](../../../../nori-tc-common/CLAUDE.md)
 - 빌드 / 가동: `nori-tc-exec/exec/windows/build-trace-apps.bat ui-backend` + `run-trace-tc-ui-backend-app.bat`
 - JFR / GC / heap dump 디렉터리: `C:\tc-trace\tc-ui-backend-app\{jfr,gc,heap,console}` ([run-trace-tc-ui-backend-app.bat:22-26](../../../../nori-tc-exec/exec/windows/run-trace-tc-ui-backend-app.bat#L22-L26))
-- ArchUnit: [UiCoreDependencyArchTest.java:17](ui/tc-ui-core/src/test/java/com/nori/tc/ui/core/architecture/UiCoreDependencyArchTest.java#L17)
+- ArchUnit: [UiCoreDependencyArchTest.java](ui/tc-ui-core/src/test/java/com/nori/tc/ui/core/architecture/UiCoreDependencyArchTest.java) (라인 번호는 stale 회피로 생략 — 실제 룰 위치는 `Grep -n "noClasses\|classes()" <file>` 로 동적 확인)
 - Actuator / Micrometer 의존: [ui-backend-perf SKILL.md:289-290](../ui-backend-perf/SKILL.md#L289-L290)
 
 ## 같이 쓰는 skill
