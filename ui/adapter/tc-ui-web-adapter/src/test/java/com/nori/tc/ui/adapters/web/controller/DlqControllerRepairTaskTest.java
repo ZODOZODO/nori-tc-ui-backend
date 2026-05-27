@@ -40,7 +40,7 @@ class DlqControllerRepairTaskTest {
         eqpRepairTaskService = mock(EqpRepairTaskService.class);
         mockMvc = MockMvcBuilders.standaloneSetup(
                         new DlqController(gatewayDlqPort, businessDlqPort, eqpRepairTaskService))
-                .setControllerAdvice(new UiApiExceptionHandler())
+                .setControllerAdvice(new UiApiExceptionHandler(UiControllerTestMessageSource.create()))
                 .build();
     }
 

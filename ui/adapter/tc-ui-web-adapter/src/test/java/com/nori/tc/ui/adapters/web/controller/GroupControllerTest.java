@@ -30,7 +30,7 @@ class GroupControllerTest {
     void setUp() {
         groupAdminFacade = mock(GroupAdminFacade.class);
         mockMvc = MockMvcBuilders.standaloneSetup(new GroupController(groupAdminFacade))
-                .setControllerAdvice(new UiApiExceptionHandler())
+                .setControllerAdvice(new UiApiExceptionHandler(UiControllerTestMessageSource.create()))
                 .build();
     }
 

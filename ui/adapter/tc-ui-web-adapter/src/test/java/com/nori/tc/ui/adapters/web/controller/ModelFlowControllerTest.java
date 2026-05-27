@@ -47,7 +47,7 @@ class ModelFlowControllerTest {
         queryService = mock(ModelFlowQueryService.class);
         commandService = mock(ModelFlowCommandService.class);
         mockMvc = MockMvcBuilders.standaloneSetup(new ModelFlowController(queryService, commandService))
-                .setControllerAdvice(new UiApiExceptionHandler())
+                .setControllerAdvice(new UiApiExceptionHandler(UiControllerTestMessageSource.create()))
                 .build();
     }
 

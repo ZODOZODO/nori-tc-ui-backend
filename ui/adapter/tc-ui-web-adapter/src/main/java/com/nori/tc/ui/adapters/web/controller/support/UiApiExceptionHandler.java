@@ -9,6 +9,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -16,6 +18,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+
+import java.util.Objects;
 
 /**
  * UI Web Adapter 공통 예외 응답 핸들러입니다.
@@ -39,6 +43,20 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 public class UiApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(UiApiExceptionHandler.class);
+
+    /**
+     * 응답 메시지 i18n 해석기입니다. 요청 Locale(Accept-Language) 기준으로 ko/en 메시지를 선택합니다.
+     */
+    private final MessageSource messageSource;
+
+    /**
+     * 의존성을 주입합니다.
+     *
+     * @param messageSource 메시지 i18n 해석기
+     */
+    public UiApiExceptionHandler(final MessageSource messageSource) {
+        this.messageSource = Objects.requireNonNull(messageSource, "messageSource is null");
+    }
 
     /**
      * 입력값 정책 위반 예외를 400으로 변환합니다.
@@ -109,7 +127,7 @@ public class UiApiExceptionHandler {
         final String message = exception.getBindingResult().getFieldErrors().stream()
                 .findFirst()
                 .map(fieldError -> fieldError.getDefaultMessage())
-                .orElse("요청 본문 검증에 실패했습니다.");
+                .orElseGet(() -> resolve("error.request.body.invalid"));
 
         log.warn("요청 본문 검증 실패. method={}, uri={}, message={}",
                 resolveMethod(request), resolveRequestUri(request), message);
@@ -132,7 +150,7 @@ public class UiApiExceptionHandler {
         final String message = exception.getConstraintViolations().stream()
                 .findFirst()
                 .map(violation -> violation.getMessage())
-                .orElse("요청 파라미터 검증에 실패했습니다.");
+                .orElseGet(() -> resolve("error.request.param.invalid"));
 
         log.warn("요청 파라미터 검증 실패. method={}, uri={}, message={}",
                 resolveMethod(request), resolveRequestUri(request), message);
@@ -152,7 +170,7 @@ public class UiApiExceptionHandler {
             final MethodArgumentTypeMismatchException exception,
             final HttpServletRequest request
     ) {
-        final String message = exception.getName() + " 값의 형식이 올바르지 않습니다.";
+        final String message = resolve("error.request.type.mismatch", exception.getName());
         log.warn("요청 파라미터 타입 변환 실패. method={}, uri={}, parameter={}, value={}",
                 resolveMethod(request), resolveRequestUri(request), exception.getName(), exception.getValue());
         return ResponseEntity.badRequest()
@@ -174,7 +192,7 @@ public class UiApiExceptionHandler {
         log.warn("요청 본문 역직렬화 실패. method={}, uri={}, reason={}",
                 resolveMethod(request), resolveRequestUri(request), exception.getMessage());
         return ResponseEntity.badRequest()
-                .body(ApiResponse.error("INVALID_REQUEST", "요청 본문 형식이 올바르지 않습니다."));
+                .body(ApiResponse.error("INVALID_REQUEST", resolve("error.request.body.unreadable")));
     }
 
     /**
@@ -192,7 +210,18 @@ public class UiApiExceptionHandler {
         log.error("처리되지 않은 예외 발생. method={}, uri={}",
                 resolveMethod(request), resolveRequestUri(request), exception);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.error("INTERNAL_ERROR", "요청 처리 중 내부 오류가 발생했습니다."));
+                .body(ApiResponse.error("INTERNAL_ERROR", resolve("error.internal")));
+    }
+
+    /**
+     * 요청 Locale(Accept-Language) 기준으로 메시지 코드를 해석합니다.
+     *
+     * @param code 메시지 코드
+     * @param args 메시지 인자
+     * @return 해석된 메시지
+     */
+    private String resolve(final String code, final Object... args) {
+        return messageSource.getMessage(code, args, LocaleContextHolder.getLocale());
     }
 
     /**

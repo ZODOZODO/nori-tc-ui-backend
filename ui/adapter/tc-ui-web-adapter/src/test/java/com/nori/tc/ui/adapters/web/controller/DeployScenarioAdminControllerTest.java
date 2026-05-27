@@ -41,7 +41,7 @@ class DeployScenarioAdminControllerTest {
     void setUp() {
         deployScenarioCatalogService = mock(DeployScenarioCatalogService.class);
         mockMvc = MockMvcBuilders.standaloneSetup(new DeployScenarioAdminController(deployScenarioCatalogService))
-                .setControllerAdvice(new UiApiExceptionHandler())
+                .setControllerAdvice(new UiApiExceptionHandler(UiControllerTestMessageSource.create()))
                 .build();
     }
 

@@ -30,7 +30,7 @@ class UserControllerTest {
     void setUp() {
         userAdminFacade = mock(UserAdminFacade.class);
         mockMvc = MockMvcBuilders.standaloneSetup(new UserController(userAdminFacade))
-                .setControllerAdvice(new UiApiExceptionHandler())
+                .setControllerAdvice(new UiApiExceptionHandler(UiControllerTestMessageSource.create()))
                 .build();
     }
 

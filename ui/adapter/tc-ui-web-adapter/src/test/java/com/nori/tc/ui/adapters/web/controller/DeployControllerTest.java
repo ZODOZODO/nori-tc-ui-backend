@@ -71,7 +71,7 @@ class DeployControllerTest {
                                 new ObjectMapper()
                         )
                 )
-                .setControllerAdvice(new UiApiExceptionHandler())
+                .setControllerAdvice(new UiApiExceptionHandler(UiControllerTestMessageSource.create()))
                 .build();
     }
 
