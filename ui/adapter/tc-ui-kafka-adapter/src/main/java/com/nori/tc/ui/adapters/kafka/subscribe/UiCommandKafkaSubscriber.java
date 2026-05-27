@@ -3,6 +3,7 @@ package com.nori.tc.ui.adapters.kafka.subscribe;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import com.nori.tc.messaging.kafka.contract.KafkaUiTaskReplyMessage;
+import com.nori.tc.ui.core.logging.UiObservationLogger;
 import com.nori.tc.ui.core.model.UiCommandReply;
 import com.nori.tc.ui.core.port.messaging.UiCommandIngressPort;
 import com.nori.tc.ui.domain.task.UiTaskStatus;
@@ -117,9 +118,16 @@ public class UiCommandKafkaSubscriber {
         try (MdcTraceScope ignored = openTraceMdcScope(commandReply.traceId())) {
             incrementReceivedCounter(commandReply.eventType());
 
-            log.info(
-                    "tc.ui.commands 수신. outcome=RECEIVED, topic={}, partition={}, offset={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, status={}",
-                    topic, partition, offset, key, commandReply.eqpId(), commandReply.traceId(), commandReply.source(), commandReply.eventType(), commandReply.status()
+            UiObservationLogger.logCommandReplyReceived(
+                    commandReply.eventType(),
+                    topic,
+                    partition,
+                    offset,
+                    key,
+                    commandReply.eqpId(),
+                    commandReply.traceId(),
+                    commandReply.source(),
+                    commandReply.status() == null ? null : commandReply.status().name()
             );
             if (log.isTraceEnabled()) {
                 log.trace(

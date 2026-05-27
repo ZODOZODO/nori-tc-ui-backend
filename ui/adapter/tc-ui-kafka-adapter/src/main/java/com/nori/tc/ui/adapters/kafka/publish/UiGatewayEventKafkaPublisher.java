@@ -7,6 +7,7 @@ import com.nori.tc.messaging.kafka.contract.KafkaUiTaskMessage;
 import com.nori.tc.ui.adapters.kafka.config.UiKafkaPublishProperties;
 import com.nori.tc.ui.adapters.kafka.config.UiKafkaTopicProperties;
 import com.nori.tc.ui.adapters.kafka.exception.UiKafkaPublishException;
+import com.nori.tc.ui.core.logging.UiObservationLogger;
 import com.nori.tc.ui.core.model.UiCommandMessage;
 import com.nori.tc.ui.core.port.messaging.UiGatewayEqpRoutePartitionLookupPort;
 import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
@@ -149,8 +150,7 @@ public class UiGatewayEventKafkaPublisher implements UiGatewayEventPublishPort {
         final ProducerRecord<String, Object> record = new ProducerRecord<>(topic, partition, key, kafkaMessage);
         KafkaHeaderSupport.addTracingHeaders(record, traceId, eventType, source);
 
-        log.info("tc.ui.events.gateway 발행 시도. outcome=REQUESTED, topic={}, partition={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, requestBytes={}",
-                topic, partition, key, eqpId, traceId, source, eventType, requestBytes);
+        UiObservationLogger.logEventSendRequested("GATEWAY", eventType, topic, key, eqpId, traceId, source);
 
         final long sendStartNano = System.nanoTime();
         final long publishTimeoutSeconds = publishProperties.getPublishTimeoutSeconds();

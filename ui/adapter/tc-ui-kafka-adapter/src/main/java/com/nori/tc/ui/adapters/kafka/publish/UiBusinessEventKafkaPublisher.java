@@ -7,6 +7,7 @@ import com.nori.tc.messaging.kafka.contract.KafkaUiTaskMessage;
 import com.nori.tc.ui.adapters.kafka.config.UiKafkaPublishProperties;
 import com.nori.tc.ui.adapters.kafka.config.UiKafkaTopicProperties;
 import com.nori.tc.ui.adapters.kafka.exception.UiKafkaPublishException;
+import com.nori.tc.ui.core.logging.UiObservationLogger;
 import com.nori.tc.ui.core.model.UiCommandMessage;
 import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -91,8 +92,7 @@ public class UiBusinessEventKafkaPublisher implements UiBusinessEventPublishPort
         final ProducerRecord<String, Object> record = new ProducerRecord<>(topic, key, kafkaMessage);
         KafkaHeaderSupport.addTracingHeaders(record, traceId, eventType, source);
 
-        log.info("tc.ui.events.business 발행 시도. outcome=REQUESTED, topic={}, key={}, eqpId={}, traceId={}, source={}, eventType={}, requestBytes={}",
-                topic, key, eqpId, traceId, source, eventType, requestBytes);
+        UiObservationLogger.logEventSendRequested("BUSINESS", eventType, topic, key, eqpId, traceId, source);
 
         final long sendStartNano = System.nanoTime();
         final long publishTimeoutSeconds = publishProperties.getPublishTimeoutSeconds();
