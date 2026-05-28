@@ -44,7 +44,7 @@ public class EqpDirectScenarioRunner {
         this.rollbackService = Objects.requireNonNull(rollbackService, "rollbackService is null");
     }
 
-    public void run(final EqpDirectScenarioContext context) throws Exception {
+    public void run(final EqpDirectScenarioContext context) throws EqpManagementCommandFailureException {
         final List<DeployResolvedStepPlan> completedSteps = new ArrayList<>();
 
         try {
