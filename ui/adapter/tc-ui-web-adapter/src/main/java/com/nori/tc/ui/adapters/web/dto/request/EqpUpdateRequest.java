@@ -12,6 +12,7 @@ import jakarta.validation.constraints.Size;
  *
  * <p>수정 가능 필드만 노출하며, eqpId와 commInterface는 경로/기존 스냅샷으로 고정합니다.</p>
  *
+ * @param lineKey 설비 소속 라인 키(tc_line.line_key, 필수, 재배정 허용)
  * @param commMode 통신 모드
  * @param isDev 개발 장비 여부
  * @param routePartition route partition
@@ -22,6 +23,10 @@ import jakarta.validation.constraints.Size;
  * @param socketSettings SOCKET 설정
  */
 public record EqpUpdateRequest(
+
+        @NotNull(message = "lineKey는 필수입니다.")
+        @Positive(message = "lineKey는 1 이상이어야 합니다.")
+        Long lineKey,
 
         @NotBlank(message = "commMode는 필수입니다.")
         String commMode,

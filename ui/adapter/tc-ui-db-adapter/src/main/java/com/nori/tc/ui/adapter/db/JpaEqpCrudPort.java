@@ -20,6 +20,7 @@ import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpSocket;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpState;
 import com.nori.tc.db.core.jar.store.TcJarBusinessStore;
 import com.nori.tc.db.core.jar.store.TcJarGatewayStore;
+import com.nori.tc.db.core.line.store.TcLineStore;
 import com.nori.tc.db.core.work.store.TcWorkStore;
 import com.nori.tc.db.domain.common.eqp.ControlState;
 import com.nori.tc.db.domain.common.eqp.EqpState;
@@ -70,6 +71,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
     private final TcModelParamStore modelParamStore;
     private final TcJarGatewayStore jarGatewayStore;
     private final TcJarBusinessStore jarBusinessStore;
+    private final TcLineStore lineStore;
     private final TcWorkStore workStore;
     private final DemoJobCleanupPort demoJobCleanupPort;
 
@@ -86,6 +88,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             final TcModelParamStore modelParamStore,
             final TcJarGatewayStore jarGatewayStore,
             final TcJarBusinessStore jarBusinessStore,
+            final TcLineStore lineStore,
             final TcWorkStore workStore,
             final DemoJobCleanupPort demoJobCleanupPort
     ) {
@@ -101,6 +104,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         this.modelParamStore = Objects.requireNonNull(modelParamStore, "modelParamStore is null");
         this.jarGatewayStore = Objects.requireNonNull(jarGatewayStore, "jarGatewayStore is null");
         this.jarBusinessStore = Objects.requireNonNull(jarBusinessStore, "jarBusinessStore is null");
+        this.lineStore = Objects.requireNonNull(lineStore, "lineStore is null");
         this.workStore = Objects.requireNonNull(workStore, "workStore is null");
         this.demoJobCleanupPort = Objects.requireNonNull(demoJobCleanupPort, "demoJobCleanupPort is null");
     }
@@ -110,6 +114,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
     public EqpManagementSnapshot create(final EqpManagementCommand.Create command) {
         try {
             validateCreateCommand(command);
+            validateLineRegistered(command.lineKey());
             validateSelectedJarRefs(command.gatewayJarRef(), command.businessJarRef());
             validatePassiveListenerGroupRoutePartition(
                     null,
@@ -123,6 +128,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
 
             final TcEqp createdEqp = eqpStore.upsert(new UpsertTcEqp(
                     command.eqpId(),
+                    command.lineKey(),
                     UiDomainEnumMapper.toDbProtocolType(command.interfaceType()),
                     normalizeCommMode(command.commMode()),
                     command.isDev(),
@@ -162,6 +168,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
 
         try {
             final EqpManagementSnapshot existing = requireSnapshot(eqpId);
+            validateLineRegistered(command.lineKey());
             validateSelectedJarRefs(command.gatewayJarRef(), command.businessJarRef());
             validatePassiveListenerGroupRoutePartition(
                     existing.eqp().eqpId(),
@@ -175,6 +182,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
 
             final TcEqp updatedEqp = eqpStore.upsert(new UpsertTcEqp(
                     existing.eqp().eqpId(),
+                    command.lineKey(),
                     UiDomainEnumMapper.toDbProtocolType(existing.eqp().commInterface()),
                     normalizeCommMode(command.commMode()),
                     command.isDev(),
@@ -211,6 +219,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         try {
             final TcEqp restoredEqp = eqpStore.upsert(new UpsertTcEqp(
                     snapshot.eqp().eqpId(),
+                    snapshot.eqp().lineKey(),
                     UiDomainEnumMapper.toDbProtocolType(snapshot.eqp().commInterface()),
                     snapshot.eqp().commMode(),
                     snapshot.eqp().isDev(),
@@ -300,6 +309,22 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         }
         if (command.socketSettings() == null && command.interfaceType() == UiProtocolType.SOCKET) {
             throw new UiBadRequestException("SOCKET 설비는 socketSettings가 필요합니다.");
+        }
+    }
+
+    /**
+     * 설비가 소속될 라인이 사전 등록된 tc_line 인지 검증합니다.
+     *
+     * <p>SPEC: 라인은 사전 등록 값만 허용 — 누락(lineKey &lt;= 0)·미등록 line_key 는 거부합니다.</p>
+     *
+     * @param lineKey 요청 line_key
+     */
+    private void validateLineRegistered(final long lineKey) {
+        if (lineKey <= 0) {
+            throw new UiBadRequestException("lineKey는 1 이상이어야 합니다.");
+        }
+        if (lineStore.findByKey(lineKey).isEmpty()) {
+            throw new UiBadRequestException("등록되지 않은 라인입니다. lineKey=" + lineKey);
         }
     }
 

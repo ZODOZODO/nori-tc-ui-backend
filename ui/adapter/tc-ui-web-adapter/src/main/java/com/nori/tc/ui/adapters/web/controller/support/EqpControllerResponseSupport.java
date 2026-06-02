@@ -47,6 +47,7 @@ public final class EqpControllerResponseSupport {
 
         return new EqpManageDetailResponse(
                 snapshot.eqp().eqpId(),
+                snapshot.eqp().lineKey(),
                 snapshot.eqp().commInterface(),
                 snapshot.eqp().commMode(),
                 snapshot.eqp().isDev(),

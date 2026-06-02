@@ -83,6 +83,7 @@ public final class EqpManagementCommand {
      *
      * @param actor 요청 사용자
      * @param eqpId eqp id
+     * @param lineKey 설비 소속 라인 키(tc_line.line_key, 필수)
      * @param interfaceType 통신 인터페이스
      * @param commMode 통신 모드
      * @param isDev 개발 장비 여부
@@ -100,6 +101,7 @@ public final class EqpManagementCommand {
     public record Create(
             String actor,
             String eqpId,
+            long lineKey,
             UiProtocolType interfaceType,
             String commMode,
             boolean isDev,
@@ -120,6 +122,7 @@ public final class EqpManagementCommand {
      * EQP 수정 명령입니다.
      *
      * @param actor 요청 사용자
+     * @param lineKey 설비 소속 라인 키(tc_line.line_key, 필수, 재배정 허용)
      * @param commMode 통신 모드
      * @param isDev 개발 장비 여부
      * @param routePartition route partition
@@ -135,6 +138,7 @@ public final class EqpManagementCommand {
      */
     public record Update(
             String actor,
+            long lineKey,
             String commMode,
             boolean isDev,
             Integer routePartition,

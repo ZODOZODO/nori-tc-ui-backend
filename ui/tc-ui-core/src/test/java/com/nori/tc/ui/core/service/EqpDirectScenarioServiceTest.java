@@ -459,6 +459,7 @@ class EqpDirectScenarioServiceTest {
         return new EqpManagementCommand.Create(
                 "tester",
                 eqpId,
+                1L,
                 UiProtocolType.SOCKET,
                 "ACTIVE",
                 false,
@@ -484,6 +485,7 @@ class EqpDirectScenarioServiceTest {
     ) {
         return new EqpManagementCommand.Update(
                 "tester",
+                1L,
                 "ACTIVE",
                 false,
                 1,
@@ -558,6 +560,7 @@ class EqpDirectScenarioServiceTest {
                 new UiEqp(
                         eqpKey,
                         eqpId,
+                        1L,
                         UiProtocolType.SOCKET,
                         commMode,
                         false,
@@ -870,6 +873,7 @@ class EqpDirectScenarioServiceTest {
                     new UiEqp(
                             eqpKey,
                             command.eqpId(),
+                            command.lineKey(),
                             command.interfaceType(),
                             command.commMode(),
                             command.isDev(),
@@ -961,6 +965,7 @@ class EqpDirectScenarioServiceTest {
                     new UiEqp(
                             eqpKey,
                             current.eqp().eqpId(),
+                            current.eqp().lineKey(),
                             current.eqp().commInterface(),
                             command.commMode(),
                             command.isDev(),

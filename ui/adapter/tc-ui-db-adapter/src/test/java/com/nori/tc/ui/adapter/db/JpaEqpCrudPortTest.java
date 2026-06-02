@@ -17,6 +17,7 @@ import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpSocket;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpState;
 import com.nori.tc.db.core.jar.store.TcJarBusinessStore;
 import com.nori.tc.db.core.jar.store.TcJarGatewayStore;
+import com.nori.tc.db.core.line.store.TcLineStore;
 import com.nori.tc.db.core.work.store.TcWorkStore;
 import com.nori.tc.db.domain.common.eqp.ControlState;
 import com.nori.tc.db.domain.common.eqp.EqpState;
@@ -24,6 +25,7 @@ import com.nori.tc.db.domain.common.eqp.LogLevel;
 import com.nori.tc.db.domain.common.model.ProtocolType;
 import com.nori.tc.db.domain.eqp.TcEqp;
 import com.nori.tc.db.domain.eqp.TcEqpParam;
+import com.nori.tc.db.domain.line.TcLine;
 import com.nori.tc.db.domain.jar.TcJarBusiness;
 import com.nori.tc.db.domain.jar.TcJarGateway;
 import com.nori.tc.db.domain.model.TcModelParam;
@@ -47,6 +49,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.inOrder;
@@ -85,6 +88,7 @@ class JpaEqpCrudPortTest {
         final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
                 "tester",
                 "EQP-SECS-001",
+                1L,
                 UiProtocolType.SECS,
                 "active",
                 true,
@@ -173,6 +177,7 @@ class JpaEqpCrudPortTest {
         final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
                 "tester",
                 "EQP-PORTCOUNT-EQP",
+                1L,
                 UiProtocolType.SECS,
                 "ACTIVE",
                 true,
@@ -222,6 +227,7 @@ class JpaEqpCrudPortTest {
         final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
                 "tester",
                 "EQP-PORTCOUNT-MODEL",
+                1L,
                 UiProtocolType.SECS,
                 "ACTIVE",
                 true,
@@ -271,6 +277,7 @@ class JpaEqpCrudPortTest {
         final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
                 "tester",
                 "EQP-PORTCOUNT-DEFAULT",
+                1L,
                 UiProtocolType.SECS,
                 "ACTIVE",
                 true,
@@ -316,6 +323,7 @@ class JpaEqpCrudPortTest {
         final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
                 "tester",
                 "EQP-SOCKET-001",
+                1L,
                 UiProtocolType.SOCKET,
                 "PASSIVE",
                 false,
@@ -380,6 +388,7 @@ class JpaEqpCrudPortTest {
         final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
                 "tester",
                 "EQP-JAR-001",
+                1L,
                 UiProtocolType.SECS,
                 "ACTIVE",
                 true,
@@ -453,6 +462,7 @@ class JpaEqpCrudPortTest {
         final String eqpId = "EQP-UPDATE-001";
         final EqpManagementCommand.Update command = new EqpManagementCommand.Update(
                 "tester",
+                1L,
                 "PASSIVE",
                 true,
                 2,
@@ -564,6 +574,7 @@ class JpaEqpCrudPortTest {
         final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
                 "tester",
                 "CVD_DEMO_01",
+                1L,
                 UiProtocolType.SOCKET,
                 "PASSIVE",
                 false,
@@ -601,6 +612,7 @@ class JpaEqpCrudPortTest {
         final String eqpId = "EQP-SECS-CONFLICT-001";
         final EqpManagementCommand.Update command = new EqpManagementCommand.Update(
                 "tester",
+                1L,
                 "PASSIVE",
                 true,
                 7,
@@ -643,6 +655,37 @@ class JpaEqpCrudPortTest {
         verify(fixture.eqpHsmsStore, never()).upsert(any());
     }
 
+    @Test
+    @DisplayName("EQP 생성은 미등록 line_key면 저장 전에 거부합니다")
+    void createEqpRejectsUnregisteredLineKey() {
+        final Fixture fixture = new Fixture();
+        // 사전 등록되지 않은 라인 → findByKey 빈 결과
+        when(fixture.lineStore.findByKey(anyLong())).thenReturn(Optional.empty());
+
+        final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
+                "tester",
+                "EQP-LINE-REJECT-001",
+                999L,
+                UiProtocolType.SECS,
+                "ACTIVE",
+                true,
+                1,
+                "10.10.0.1",
+                5000,
+                101L,
+                null,
+                null,
+                null,
+                null,
+                new EqpManagementCommand.HsmsSettings(null, null, null, null, null, null, null, null, null),
+                null
+        );
+
+        assertThrows(UiBadRequestException.class, () -> fixture.port.create(command));
+
+        verify(fixture.eqpStore, never()).upsert(any());
+    }
+
     /**
      * 테스트 대상 포트와 mock 의존성을 함께 묶습니다.
      */
@@ -660,6 +703,7 @@ class JpaEqpCrudPortTest {
         private final TcModelParamStore modelParamStore = mock(TcModelParamStore.class);
         private final TcJarGatewayStore jarGatewayStore = mock(TcJarGatewayStore.class);
         private final TcJarBusinessStore jarBusinessStore = mock(TcJarBusinessStore.class);
+        private final TcLineStore lineStore = mock(TcLineStore.class);
         private final TcWorkStore workStore = mock(TcWorkStore.class);
         private final DemoJobCleanupPort demoJobCleanupPort = mock(DemoJobCleanupPort.class);
         private final JpaEqpCrudPort port = new JpaEqpCrudPort(
@@ -675,9 +719,16 @@ class JpaEqpCrudPortTest {
                 modelParamStore,
                 jarGatewayStore,
                 jarBusinessStore,
+                lineStore,
                 workStore,
                 demoJobCleanupPort
         );
+
+        // 기본 stub: 사전 등록된 라인을 반환한다. 미등록 거부 시나리오는 테스트에서 Optional.empty()로 재정의한다.
+        {
+            when(lineStore.findByKey(anyLong()))
+                    .thenReturn(Optional.of(new TcLine(1L, "A_LINE", "A Line", null, true, null, null)));
+        }
     }
 
     private static TcEqp eqp(
@@ -758,6 +809,7 @@ class JpaEqpCrudPortTest {
         return new TcEqp(
                 eqpKey,
                 eqpId,
+                1L,
                 protocolType,
                 commMode,
                 isDev,

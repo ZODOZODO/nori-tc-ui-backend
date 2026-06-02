@@ -111,7 +111,7 @@ class DemoControllerTest {
 
     private static EqpManagementSnapshot snapshot(String eqpId, String... portIds) {
         return new EqpManagementSnapshot(
-                new UiEqp(1L, eqpId, UiProtocolType.SOCKET, "ACTIVE", false, 0, "127.0.0.1", 6101, 1L, "EDIT", null, null, true, OffsetDateTime.now(), OffsetDateTime.now(), "SYSTEM", "SYSTEM"),
+                new UiEqp(1L, eqpId, 1L, UiProtocolType.SOCKET, "ACTIVE", false, 0, "127.0.0.1", 6101, 1L, "EDIT", null, null, true, OffsetDateTime.now(), OffsetDateTime.now(), "SYSTEM", "SYSTEM"),
                 null,
                 null,
                 null,

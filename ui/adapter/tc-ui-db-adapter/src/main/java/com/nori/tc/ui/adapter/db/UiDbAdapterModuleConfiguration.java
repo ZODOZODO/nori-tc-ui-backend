@@ -23,6 +23,7 @@ import org.springframework.context.annotation.Import;
         JpaEqpParamCommandPort.class,
         JpaEqpQueryPort.class,
         JpaGroupCrudPort.class,
+        JpaLineQueryPort.class,
         JpaLiveMapPrefetchPort.class,
         JpaGroupPermissionMappingPort.class,
         JpaModelCrudPort.class,

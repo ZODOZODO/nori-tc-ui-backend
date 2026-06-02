@@ -135,6 +135,7 @@ class EqpManagementDbSupportTest {
         return new TcEqp(
                 eqpKey,
                 eqpId,
+                1L,
                 ProtocolType.SECS,
                 "ACTIVE",
                 false,

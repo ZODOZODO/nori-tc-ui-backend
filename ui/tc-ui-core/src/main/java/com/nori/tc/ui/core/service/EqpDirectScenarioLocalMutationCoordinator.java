@@ -211,6 +211,7 @@ public class EqpDirectScenarioLocalMutationCoordinator {
         final UiEqp updatedEqp = new UiEqp(
                 existingEqp.eqpKey(),
                 existingEqp.eqpId(),
+                command.lineKey(),
                 existingEqp.commInterface(),
                 command.commMode(),
                 command.isDev(),
@@ -312,6 +313,7 @@ public class EqpDirectScenarioLocalMutationCoordinator {
         final UiProtocolType interfaceType = snapshot.eqp().commInterface();
         return new EqpManagementCommand.Update(
                 normalizeActor(actor),
+                snapshot.eqp().lineKey(),
                 snapshot.eqp().commMode(),
                 snapshot.eqp().isDev(),
                 snapshot.eqp().routePartition(),

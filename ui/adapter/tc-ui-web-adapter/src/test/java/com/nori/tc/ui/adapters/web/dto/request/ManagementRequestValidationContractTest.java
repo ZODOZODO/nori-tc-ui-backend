@@ -88,6 +88,7 @@ class ManagementRequestValidationContractTest {
     void eqpRequestsAllowCurrentCreateAndUpdateShape() {
         final EqpCreateRequest createRequest = new EqpCreateRequest(
                 "EQP-01",
+                1L,
                 UiProtocolType.SECS,
                 "ACTIVE",
                 false,
@@ -102,6 +103,7 @@ class ManagementRequestValidationContractTest {
                 null
         );
         final EqpUpdateRequest updateRequest = new EqpUpdateRequest(
+                1L,
                 "ACTIVE",
                 false,
                 1,
@@ -122,6 +124,7 @@ class ManagementRequestValidationContractTest {
         final Set<ConstraintViolation<EqpCreateRequest>> createViolations = validator.validate(
                 new EqpCreateRequest(
                         "EQP-01",
+                        1L,
                         UiProtocolType.SECS,
                         "ACTIVE",
                         false,

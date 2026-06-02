@@ -57,6 +57,7 @@ final class DeployEqpFinalizationService {
 
         return new EqpManagementCommand.Update(
                 normalizeActor(actor),
+                snapshot.eqp().lineKey(),
                 snapshot.eqp().commMode(),
                 snapshot.eqp().isDev(),
                 snapshot.eqp().routePartition(),

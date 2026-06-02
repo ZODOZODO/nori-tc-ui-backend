@@ -17,6 +17,7 @@ import java.util.List;
  */
 public record EqpManageDetailResponse(
         String eqpId,
+        long lineKey,
         UiProtocolType commInterface,
         String commMode,
         boolean isDev,
