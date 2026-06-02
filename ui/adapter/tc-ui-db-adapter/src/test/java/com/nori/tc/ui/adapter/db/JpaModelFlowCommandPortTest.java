@@ -241,6 +241,46 @@ class JpaModelFlowCommandPortTest {
         verify(fixture.modelMessageFlowStore, never()).findByMessageFlowKey(anyLong());
     }
 
+    @Test
+    @DisplayName("deleteFlow는 dcop binding을 먼저 정리한 뒤 flow row를 삭제한다")
+    void deleteFlowClearsBindingsThenDeletesRow() {
+        final Fixture fixture = new Fixture();
+        when(fixture.modelMessageFlowStore.findByMessageFlowKey(77L))
+                .thenReturn(Optional.of(workflow(77L, 101L, "WF_OLD", "S6F11", "actOld")));
+
+        fixture.port.deleteFlow(101L, 77L);
+
+        verify(fixture.modelMessageFlowDcopItemStore).deleteAllByMessageFlowKey(77L);
+        verify(fixture.modelMessageFlowStore).deleteByMessageFlowKey(77L);
+    }
+
+    @Test
+    @DisplayName("deleteFlow는 flowId가 존재하지 않으면 UiNotFoundException")
+    void deleteFlowThrowsNotFoundWhenFlowMissing() {
+        final Fixture fixture = new Fixture();
+        when(fixture.modelMessageFlowStore.findByMessageFlowKey(9999L)).thenReturn(Optional.empty());
+
+        assertThrows(UiNotFoundException.class,
+                () -> fixture.port.deleteFlow(101L, 9999L));
+
+        verify(fixture.modelMessageFlowStore, never()).deleteByMessageFlowKey(anyLong());
+        verify(fixture.modelMessageFlowDcopItemStore, never()).deleteAllByMessageFlowKey(anyLong());
+    }
+
+    @Test
+    @DisplayName("deleteFlow는 workflow.modelVersionKey가 path 인자와 다르면 UiNotFoundException (다른 모델 row 보호)")
+    void deleteFlowThrowsNotFoundWhenModelVersionMismatch() {
+        final Fixture fixture = new Fixture();
+        when(fixture.modelMessageFlowStore.findByMessageFlowKey(77L))
+                .thenReturn(Optional.of(workflow(77L, 999L, "WF_OTHER", "S6F11", "actX")));
+
+        assertThrows(UiNotFoundException.class,
+                () -> fixture.port.deleteFlow(101L, 77L));
+
+        verify(fixture.modelMessageFlowStore, never()).deleteByMessageFlowKey(anyLong());
+        verify(fixture.modelMessageFlowDcopItemStore, never()).deleteAllByMessageFlowKey(anyLong());
+    }
+
     private static TcModelMessageFlow workflow(
             final long messageFlowKey,
             final long modelVersionKey,

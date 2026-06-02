@@ -141,6 +141,27 @@ public class JpaModelFlowCommandPort implements ModelFlowCommandPort {
         log.info("Flow UPDATE 완료. modelVersionKey={}, flowId={}", modelVersionKey, flowId);
     }
 
+    @Override
+    @Transactional
+    public void deleteFlow(final long modelVersionKey, final long flowId) {
+        validateModelVersionKey(modelVersionKey);
+        if (flowId <= 0L) {
+            throw new UiBadRequestException("flowId는 1 이상이어야 합니다.");
+        }
+
+        final Optional<TcModelMessageFlow> existing = modelMessageFlowStore.findByMessageFlowKey(flowId);
+        if (existing.isEmpty() || existing.get().modelVersionKey() != modelVersionKey) {
+            throw new UiNotFoundException("Flow를 찾을 수 없습니다. modelVersionKey=" + modelVersionKey
+                    + ", flowId=" + flowId);
+        }
+
+        // FK 안전 순서: join table(dcop binding) 을 먼저 정리한 뒤 flow row 를 삭제한다.
+        modelMessageFlowDcopItemStore.deleteAllByMessageFlowKey(flowId);
+        modelMessageFlowStore.deleteByMessageFlowKey(flowId);
+
+        log.info("Flow DELETE 완료. modelVersionKey={}, flowId={}", modelVersionKey, flowId);
+    }
+
     /**
      * Flow 의 Collect 섹션 binding 을 요청 배열로 교체합니다.
      *

@@ -182,6 +182,38 @@ class ModelFlowCommandServiceTest {
         verify(modelFlowCommandPort, never()).updateFlow(anyLong(), anyLong(), any());
     }
 
+    @Test
+    void deleteFlowDelegatesToPort() {
+        when(modelCrudPort.findByModelVersionKey(MODEL_VERSION_KEY)).thenReturn(Optional.of(editModel()));
+
+        modelFlowCommandService.deleteFlow(MODEL_VERSION_KEY, FLOW_ID);
+
+        verify(modelFlowCommandPort).deleteFlow(MODEL_VERSION_KEY, FLOW_ID);
+    }
+
+    @Test
+    void deleteFlowThrowsNotFoundWhenModelMissing() {
+        when(modelCrudPort.findByModelVersionKey(MODEL_VERSION_KEY)).thenReturn(Optional.empty());
+
+        assertThrows(
+                UiNotFoundException.class,
+                () -> modelFlowCommandService.deleteFlow(MODEL_VERSION_KEY, FLOW_ID)
+        );
+        verify(modelFlowCommandPort, never()).deleteFlow(anyLong(), anyLong());
+    }
+
+    @Test
+    void deleteFlowThrowsBadRequestWhenModelVersionIsNotEdit() {
+        when(modelCrudPort.findByModelVersionKey(MODEL_VERSION_KEY))
+                .thenReturn(Optional.of(modelWithVersion("v1")));
+
+        assertThrows(
+                UiBadRequestException.class,
+                () -> modelFlowCommandService.deleteFlow(MODEL_VERSION_KEY, FLOW_ID)
+        );
+        verify(modelFlowCommandPort, never()).deleteFlow(anyLong(), anyLong());
+    }
+
     private static UiModel editModel() {
         return modelWithVersion("EDIT");
     }

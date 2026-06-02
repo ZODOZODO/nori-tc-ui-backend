@@ -47,4 +47,15 @@ public interface ModelFlowCommandPort {
      * @param request         갱신할 Flow aggregate (dcopItems 필드는 무시)
      */
     void updateFlow(long modelVersionKey, long flowId, UiMessageFlow request);
+
+    /**
+     * 단일 Flow row 1 개를 삭제합니다.
+     *
+     * <p>{@code tc_model_message_flow_dcop_item} join table 의 해당 Flow binding 도 함께 정리한 뒤
+     * {@code tc_model_message_flow} row 를 삭제합니다 (FK 안전 순서).</p>
+     *
+     * @param modelVersionKey 대상 모델 버전 키 (소유권 검증용)
+     * @param flowId          Message Flow PK (= tc_model_message_flow.message_flow_key)
+     */
+    void deleteFlow(long modelVersionKey, long flowId);
 }

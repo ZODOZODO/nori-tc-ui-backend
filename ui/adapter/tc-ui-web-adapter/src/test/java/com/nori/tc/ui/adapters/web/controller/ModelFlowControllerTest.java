@@ -24,6 +24,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -219,6 +220,26 @@ class ModelFlowControllerTest {
         mockMvc.perform(put("/api/model/99/flows/1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"workflowName\":\"WF1u\",\"messageName\":\"MSG1u\",\"actionName\":\"ACT1u\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value(UiErrorCode.NOT_FOUND));
+    }
+
+    @Test
+    void deleteFlow_returnsOk() throws Exception {
+        mockMvc.perform(delete("/api/model/10/flows/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(commandService).deleteFlow(eq(10L), eq(1L));
+    }
+
+    @Test
+    void deleteFlow_returnsNotFoundWhenServiceThrows() throws Exception {
+        doThrow(new UiNotFoundException("Flow를 찾을 수 없습니다. modelVersionKey=10, flowId=999"))
+                .when(commandService).deleteFlow(eq(10L), eq(999L));
+
+        mockMvc.perform(delete("/api/model/10/flows/999"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.errorCode").value(UiErrorCode.NOT_FOUND));
