@@ -26,3 +26,4 @@ libs/vendor/
 .claude/progress/
 .claude/harness/
 .claude/perf/measurements/
+.claude/mr-review/
