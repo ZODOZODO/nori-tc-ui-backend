@@ -45,6 +45,8 @@ class LiveMapQueryServiceTest {
         final UiEqp eqp = createEqp("EQP-01", "v1");
         final LiveMapEqpPrefetchRow row = new LiveMapEqpPrefetchRow(
                 eqp,
+                "C_LINE",
+                "C Line",
                 List.of(
                         new UiEqpParam(1L, 1L, "PROCESS_TYPE", "v1", "CVD", null, "tester", OffsetDateTime.now()),
                         new UiEqpParam(2L, 1L, "WAFER_MODE", "v1", "SINGLE", null, "tester", OffsetDateTime.now())
@@ -82,6 +84,8 @@ class LiveMapQueryServiceTest {
         final UiEqp eqp = createEqp("EQP-02", "v2");
         final LiveMapEqpPrefetchRow row = new LiveMapEqpPrefetchRow(
                 eqp,
+                "C_LINE",
+                "C Line",
                 List.of(),
                 List.of(new UiEqpPortStatus(
                         2L,
@@ -117,6 +121,8 @@ class LiveMapQueryServiceTest {
         final UiEqp eqp = createEqp("EQP-03", "v3");
         final LiveMapEqpPrefetchRow row = new LiveMapEqpPrefetchRow(
                 eqp,
+                "C_LINE",
+                "C Line",
                 List.of(new UiEqpParam(3L, 1L, "PROCESS_TYPE", "v3", "CMP", null, "tester", OffsetDateTime.now())),
                 List.of(),
                 new EqpQueryPort.EqpRuntimeStateView("LOCAL", "MAINTENANCE", "CONNECTED")
@@ -133,6 +139,8 @@ class LiveMapQueryServiceTest {
         final UiEqp eqp = createEqp("EQP-04", "v4");
         final LiveMapEqpPrefetchRow row = new LiveMapEqpPrefetchRow(
                 eqp,
+                "C_LINE",
+                "C Line",
                 List.of(new UiEqpParam(4L, 1L, "PROCESS_TYPE", "v4", "ETCH", null, "tester", OffsetDateTime.now())),
                 List.of(),
                 new EqpQueryPort.EqpRuntimeStateView("REMOTE", "SERVICE_UNAVAILABLE", "CONNECTED")
@@ -149,6 +157,8 @@ class LiveMapQueryServiceTest {
         final UiEqp eqp = createEqp("EQP-05", "v5");
         final LiveMapEqpPrefetchRow row = new LiveMapEqpPrefetchRow(
                 eqp,
+                "C_LINE",
+                "C Line",
                 List.of(new UiEqpParam(5L, 1L, "PROCESS_TYPE", "v5", "CLN", null, "tester", OffsetDateTime.now())),
                 List.of(),
                 new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED")
@@ -162,10 +172,51 @@ class LiveMapQueryServiceTest {
         assertEquals("WET", result.getFirst().clusterName());
     }
 
+    @Test
+    void getEquipmentViewsReturnsLineValueAndLabelFromEqpTcLine() {
+        // 하드코딩 "A_LINE" 회귀 차단 — 설비 row 에 부착된 실제 tc_line 의 code/name 이 view 에 반영되어야 한다.
+        final UiEqp eqp = createEqp("EQP-LINE-01", "v1");
+        final LiveMapEqpPrefetchRow row = new LiveMapEqpPrefetchRow(
+                eqp,
+                "B_LINE",
+                "B Line",
+                List.of(new UiEqpParam(9L, 1L, "PROCESS_TYPE", "v1", "ETCH", null, "tester", OffsetDateTime.now())),
+                List.of(),
+                new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED")
+        );
+        when(liveMapPrefetchPort.prefetch()).thenReturn(new LiveMapPrefetchSnapshot(List.of(row), Map.of()));
+
+        final List<LiveMapEquipmentView> result = liveMapQueryService.getEquipmentViews();
+
+        assertEquals("B_LINE", result.getFirst().lineValue());
+        assertEquals("B Line", result.getFirst().lineLabel());
+    }
+
+    @Test
+    void getEquipmentViewsReturnsEqpKeyForLayoutPlacementBinding() {
+        // live-map 빌더 placement 는 eqp_key(BIGINT PK)로 실설비를 바인딩한다 — 뷰가 eqpKey 를 노출해야
+        // 프론트가 placement.eqpKey ↔ 실시간 상태(RUN/IDLE/ERROR/DOWN)를 매칭할 수 있다.
+        final UiEqp eqp = createEqp("EQP-KEY-01", "v1");
+        final LiveMapEqpPrefetchRow row = new LiveMapEqpPrefetchRow(
+                eqp,
+                "B_LINE",
+                "B Line",
+                List.of(new UiEqpParam(11L, 1L, "PROCESS_TYPE", "v1", "ETCH", null, "tester", OffsetDateTime.now())),
+                List.of(),
+                new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED")
+        );
+        when(liveMapPrefetchPort.prefetch()).thenReturn(new LiveMapPrefetchSnapshot(List.of(row), Map.of()));
+
+        final List<LiveMapEquipmentView> result = liveMapQueryService.getEquipmentViews();
+
+        assertEquals(1L, result.getFirst().eqpKey());
+    }
+
     private UiEqp createEqp(final String eqpId, final String appliedParamVersion) {
         return new UiEqp(
                 1L,
                 eqpId,
+                7L,
                 UiProtocolType.SOCKET,
                 "ACTIVE",
                 false,

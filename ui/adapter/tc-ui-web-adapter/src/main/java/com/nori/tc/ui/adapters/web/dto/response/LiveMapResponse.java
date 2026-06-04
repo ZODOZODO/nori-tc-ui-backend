@@ -10,6 +10,7 @@ public record LiveMapResponse(
 ) {
 
     public record EquipmentResponse(
+            Long eqpKey,
             String eqpId,
             String eqpName,
             String lineValue,

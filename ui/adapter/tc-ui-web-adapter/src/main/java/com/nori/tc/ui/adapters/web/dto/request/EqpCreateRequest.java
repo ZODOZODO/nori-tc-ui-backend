@@ -14,6 +14,7 @@ import jakarta.validation.constraints.Size;
  * <p>T2 설계 기준에 따라 공통 필드 + 프로토콜별 상세 설정을 함께 전달합니다.</p>
  *
  * @param eqpId 설비 ID
+ * @param lineKey 설비 소속 라인 키(tc_line.line_key, 필수)
  * @param interfaceType 통신 인터페이스 타입
  * @param commMode 통신 모드
  * @param isDev 개발 장비 여부
@@ -31,6 +32,10 @@ public record EqpCreateRequest(
 
         @NotBlank(message = "eqpId는 필수입니다.")
         String eqpId,
+
+        @NotNull(message = "lineKey는 필수입니다.")
+        @Positive(message = "lineKey는 1 이상이어야 합니다.")
+        Long lineKey,
 
         @NotNull(message = "interfaceType은 필수입니다.")
         UiProtocolType interfaceType,

@@ -27,8 +27,6 @@ import java.util.Optional;
 @Service
 public class LiveMapQueryService {
 
-    private static final String DEFAULT_LINE_VALUE = "A_LINE";
-    private static final String DEFAULT_LINE_LABEL = "A Line";
     private static final String PROCESS_TYPE_PARAM_NAME = "PROCESS_TYPE";
     private static final String WAFER_MODE_PARAM_NAME = "WAFER_MODE";
 
@@ -72,10 +70,11 @@ public class LiveMapQueryService {
                 .toList();
 
         return Optional.of(new LiveMapEquipmentView(
+                row.eqp().eqpKey(),
                 row.eqp().eqpId(),
                 row.eqp().eqpId(),
-                DEFAULT_LINE_VALUE,
-                DEFAULT_LINE_LABEL,
+                row.lineCode(),
+                row.lineName(),
                 clusterId,
                 clusterName,
                 resolveWaferMode(row, modelParams),

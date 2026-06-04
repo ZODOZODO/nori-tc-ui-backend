@@ -23,6 +23,7 @@ public final class EqpControllerCommandSupport {
         return new EqpManagementCommand.Create(
                 resolveCurrentUser(authentication),
                 request.eqpId(),
+                request.lineKey(),
                 request.interfaceType(),
                 request.commMode(),
                 request.isDev(),
@@ -46,6 +47,7 @@ public final class EqpControllerCommandSupport {
     ) {
         return new EqpManagementCommand.Update(
                 resolveCurrentUser(authentication),
+                request.lineKey(),
                 request.commMode(),
                 request.isDev(),
                 request.routePartition(),

@@ -36,6 +36,7 @@ public final class UiEqpDbMapper {
         return new UiEqp(
                 source.eqpKey(),
                 source.eqpId(),
+                source.lineKey(),
                 UiDomainEnumMapper.toUiProtocolType(source.commInterface()),
                 source.commMode(),
                 source.isDev(),

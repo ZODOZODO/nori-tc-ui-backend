@@ -16,6 +16,8 @@ import com.nori.tc.ui.domain.eqp.UiEqpPortStatus;
  * <p>필드:</p>
  * <ul>
  *   <li>{@code eqp} : 설비 기본 스냅샷 (eqpId / modelVersionKey / appliedParamVersion 등)</li>
+ *   <li>{@code lineCode} : 설비 소속 tc_line.line_code (live-map lineValue). NOT NULL FK 보장으로 항상 존재한다.</li>
+ *   <li>{@code lineName} : 설비 소속 tc_line.line_name (live-map lineLabel).</li>
  *   <li>{@code params} : 해당 EQP 의 tc_eqp_param 중 PROCESS_TYPE / WAFER_MODE 만 필터링된 목록.
  *       비어 있으면 model_param fallback 으로 사용한다.</li>
  *   <li>{@code portStatuses} : 해당 EQP 의 tc_eqp_port_status 전체 목록.</li>
@@ -24,6 +26,8 @@ import com.nori.tc.ui.domain.eqp.UiEqpPortStatus;
  */
 public record LiveMapEqpPrefetchRow(
         UiEqp eqp,
+        String lineCode,
+        String lineName,
         List<UiEqpParam> params,
         List<UiEqpPortStatus> portStatuses,
         EqpQueryPort.EqpRuntimeStateView runtimeState

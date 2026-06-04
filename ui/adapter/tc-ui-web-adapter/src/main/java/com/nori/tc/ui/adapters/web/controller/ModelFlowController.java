@@ -13,6 +13,7 @@ import com.nori.tc.ui.core.service.ModelFlowQueryService;
 import com.nori.tc.ui.domain.model.UiMessageFlow;
 import com.nori.tc.ui.domain.model.UiMessageFlowSummary;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -135,6 +136,22 @@ public class ModelFlowController {
 
         final UiMessageFlow updated = queryService.findFlowDetail(modelVersionKey, flowId);
         return ResponseEntity.ok(ApiResponse.success(ModelFlowDetailResponse.from(updated)));
+    }
+
+    /**
+     * 단일 Flow 를 삭제합니다.
+     *
+     * @param modelVersionKey 대상 모델 버전 키
+     * @param flowId Workflow PK
+     * @return 빈 성공 응답
+     */
+    @DeleteMapping("/{flowId}")
+    public ResponseEntity<ApiResponse<Void>> deleteFlow(
+            @PathVariable final long modelVersionKey,
+            @PathVariable final long flowId
+    ) {
+        commandService.deleteFlow(modelVersionKey, flowId);
+        return ResponseEntity.ok(ApiResponse.success(null));
     }
 
     private static void validateWorkflowFilterJson(final String workflowFilter) {

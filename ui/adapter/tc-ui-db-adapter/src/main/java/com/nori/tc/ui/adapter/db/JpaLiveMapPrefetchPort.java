@@ -20,8 +20,10 @@ import com.nori.tc.db.core.eqp.store.TcEqpPortStatusStore;
 import com.nori.tc.db.core.eqp.store.TcEqpStateHistStore;
 import com.nori.tc.db.core.eqp.store.TcEqpStateStore;
 import com.nori.tc.db.core.eqp.store.TcEqpStore;
+import com.nori.tc.db.core.line.store.TcLineStore;
 import com.nori.tc.db.core.model.store.TcModelParamStore;
 import com.nori.tc.db.domain.eqp.TcEqp;
+import com.nori.tc.db.domain.line.TcLine;
 import com.nori.tc.db.domain.eqp.TcEqpParam;
 import com.nori.tc.db.domain.eqp.TcEqpPortStatus;
 import com.nori.tc.db.domain.eqp.TcEqpState;
@@ -60,6 +62,7 @@ public class JpaLiveMapPrefetchPort implements LiveMapPrefetchPort {
     private final TcEqpParamStore eqpParamStore;
     private final TcEqpPortStatusStore eqpPortStatusStore;
     private final TcModelParamStore modelParamStore;
+    private final TcLineStore lineStore;
 
     public JpaLiveMapPrefetchPort(
             final TcEqpStore eqpStore,
@@ -67,7 +70,8 @@ public class JpaLiveMapPrefetchPort implements LiveMapPrefetchPort {
             final TcEqpStateHistStore eqpStateHistStore,
             final TcEqpParamStore eqpParamStore,
             final TcEqpPortStatusStore eqpPortStatusStore,
-            final TcModelParamStore modelParamStore
+            final TcModelParamStore modelParamStore,
+            final TcLineStore lineStore
     ) {
         this.eqpStore = Objects.requireNonNull(eqpStore, "eqpStore is null");
         this.eqpStateStore = Objects.requireNonNull(eqpStateStore, "eqpStateStore is null");
@@ -75,6 +79,7 @@ public class JpaLiveMapPrefetchPort implements LiveMapPrefetchPort {
         this.eqpParamStore = Objects.requireNonNull(eqpParamStore, "eqpParamStore is null");
         this.eqpPortStatusStore = Objects.requireNonNull(eqpPortStatusStore, "eqpPortStatusStore is null");
         this.modelParamStore = Objects.requireNonNull(modelParamStore, "modelParamStore is null");
+        this.lineStore = Objects.requireNonNull(lineStore, "lineStore is null");
     }
 
     @Override
@@ -129,6 +134,22 @@ public class JpaLiveMapPrefetchPort implements LiveMapPrefetchPort {
                         Collectors.toList()
                 ));
 
+        // 7. distinct line_key → tc_line IN (live-map lineValue/lineLabel 실데이터 조인)
+        final Set<Long> lineKeys = eqps.stream()
+                .map(UiEqp::lineKey)
+                .filter(key -> key > 0L)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        final Map<Long, TcLine> lineByKey = lineKeys.isEmpty()
+                ? Map.of()
+                : lineStore.findAllByKeyIn(lineKeys).stream()
+                        .collect(Collectors.toMap(
+                                TcLine::lineKey,
+                                line -> line,
+                                (a, b) -> a,
+                                LinkedHashMap::new
+                        ));
+
         // 6. distinct modelVersionKey → tc_model_param IN
         final Set<Long> modelVersionKeys = eqps.stream()
                 .map(UiEqp::modelVersionKey)
@@ -160,7 +181,10 @@ public class JpaLiveMapPrefetchPort implements LiveMapPrefetchPort {
                     eqpKey == null ? null : stateByKey.get(eqpKey),
                     eqpKey == null ? null : latestConnByKey.get(eqpKey)
             );
-            rows.add(new LiveMapEqpPrefetchRow(eqp, params, portStatuses, runtimeState));
+            final TcLine line = lineByKey.get(eqp.lineKey());
+            final String lineCode = line == null ? null : line.lineCode();
+            final String lineName = line == null ? null : line.lineName();
+            rows.add(new LiveMapEqpPrefetchRow(eqp, lineCode, lineName, params, portStatuses, runtimeState));
         }
 
         if (log.isDebugEnabled()) {

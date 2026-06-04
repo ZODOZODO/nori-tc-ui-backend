@@ -1460,6 +1460,7 @@ class DeployServiceTest {
                 new UiEqp(
                         eqpKey,
                         eqpId,
+                        1L,
                         UiProtocolType.SOCKET,
                         "ACTIVE",
                         false,
@@ -1624,6 +1625,7 @@ class DeployServiceTest {
                     new UiEqp(
                             existing.eqp().eqpKey(),
                             existing.eqp().eqpId(),
+                            command.lineKey(),
                             existing.eqp().commInterface(),
                             command.commMode(),
                             command.isDev(),

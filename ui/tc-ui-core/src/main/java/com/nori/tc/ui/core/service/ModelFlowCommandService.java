@@ -95,6 +95,19 @@ public class ModelFlowCommandService {
         modelFlowCommandPort.updateFlow(modelVersionKey, flowId, request);
     }
 
+    /**
+     * 단일 Flow 를 삭제합니다 (Collect 바인딩 포함).
+     *
+     * @param modelVersionKey 대상 모델 버전 키
+     * @param flowId          Message Flow PK (= tc_model_message_flow.message_flow_key)
+     * @throws UiBadRequestException EDIT 가 아닌 모델 버전
+     * @throws UiNotFoundException modelVersionKey 에 해당하는 모델이 없을 때
+     */
+    public void deleteFlow(final long modelVersionKey, final long flowId) {
+        requireEditVersionModel(modelVersionKey);
+        modelFlowCommandPort.deleteFlow(modelVersionKey, flowId);
+    }
+
     private void requireEditVersionModel(final long modelVersionKey) {
         final UiModel model = modelCrudPort.findByModelVersionKey(modelVersionKey)
                 .orElseThrow(() -> new UiNotFoundException(

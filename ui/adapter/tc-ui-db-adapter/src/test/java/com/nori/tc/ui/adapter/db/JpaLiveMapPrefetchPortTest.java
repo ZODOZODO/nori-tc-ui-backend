@@ -12,6 +12,7 @@ import com.nori.tc.db.core.eqp.store.TcEqpPortStatusStore;
 import com.nori.tc.db.core.eqp.store.TcEqpStateHistStore;
 import com.nori.tc.db.core.eqp.store.TcEqpStateStore;
 import com.nori.tc.db.core.eqp.store.TcEqpStore;
+import com.nori.tc.db.core.line.store.TcLineStore;
 import com.nori.tc.db.core.model.store.TcModelParamStore;
 import com.nori.tc.db.domain.common.eqp.ControlState;
 import com.nori.tc.db.domain.common.eqp.EqpState;
@@ -22,6 +23,7 @@ import com.nori.tc.db.domain.eqp.TcEqpParam;
 import com.nori.tc.db.domain.eqp.TcEqpPortStatus;
 import com.nori.tc.db.domain.eqp.TcEqpState;
 import com.nori.tc.db.domain.eqp.TcEqpStateHist;
+import com.nori.tc.db.domain.line.TcLine;
 import com.nori.tc.db.domain.model.TcModelParam;
 import com.nori.tc.ui.core.eqp.LiveMapEqpPrefetchRow;
 import com.nori.tc.ui.core.eqp.LiveMapPrefetchSnapshot;
@@ -55,6 +57,7 @@ class JpaLiveMapPrefetchPortTest {
     private final TcEqpParamStore eqpParamStore = mock(TcEqpParamStore.class);
     private final TcEqpPortStatusStore eqpPortStatusStore = mock(TcEqpPortStatusStore.class);
     private final TcModelParamStore modelParamStore = mock(TcModelParamStore.class);
+    private final TcLineStore lineStore = mock(TcLineStore.class);
 
     private JpaLiveMapPrefetchPort newPort() {
         return new JpaLiveMapPrefetchPort(
@@ -63,7 +66,8 @@ class JpaLiveMapPrefetchPortTest {
                 eqpStateHistStore,
                 eqpParamStore,
                 eqpPortStatusStore,
-                modelParamStore
+                modelParamStore,
+                lineStore
         );
     }
 
@@ -121,6 +125,10 @@ class JpaLiveMapPrefetchPortTest {
                 new TcModelParam(900L, 10L, "PROCESS_TYPE", "CMP", null, null)
         ));
 
+        when(lineStore.findAllByKeyIn(anyCollection())).thenReturn(List.of(
+                new TcLine(100L, "A_LINE", "A Line", null, true, null, null)
+        ));
+
         final LiveMapPrefetchSnapshot snapshot = newPort().prefetch();
 
         // disabled 제외 — 2 row 만
@@ -129,6 +137,9 @@ class JpaLiveMapPrefetchPortTest {
         final LiveMapEqpPrefetchRow row2 = snapshot.rows().get(1);
 
         assertEquals("EQP-1", row1.eqp().eqpId());
+        // 7번째 batch query(tc_line) 결과가 row 에 부착되어 lineValue/lineLabel 실데이터가 채워진다.
+        assertEquals("A_LINE", row1.lineCode());
+        assertEquals("A Line", row1.lineName());
         assertEquals(List.of("PROCESS_TYPE", "WAFER_MODE"), row1.params().stream().map(p -> p.paramName()).toList());
         assertEquals(List.of("CLN", "MIX"), row1.params().stream().map(p -> p.paramValue()).toList());
         assertEquals(List.of("P1"), row1.portStatuses().stream().map(p -> p.portId()).toList());
@@ -177,6 +188,7 @@ class JpaLiveMapPrefetchPortTest {
         return new TcEqp(
                 eqpKey,
                 eqpId,
+                100L,
                 ProtocolType.SECS,
                 "ACTIVE",
                 false,

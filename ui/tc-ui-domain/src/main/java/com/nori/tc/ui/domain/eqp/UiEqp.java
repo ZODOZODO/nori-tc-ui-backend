@@ -10,6 +10,7 @@ import java.time.OffsetDateTime;
 public record UiEqp(
         Long eqpKey,
         String eqpId,
+        long lineKey,
         UiProtocolType commInterface,
         String commMode,
         boolean isDev,
