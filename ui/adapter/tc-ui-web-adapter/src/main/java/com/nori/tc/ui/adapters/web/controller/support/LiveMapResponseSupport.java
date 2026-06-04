@@ -24,6 +24,7 @@ public final class LiveMapResponseSupport {
 
     private static LiveMapResponse.EquipmentResponse toEquipmentResponse(final LiveMapEquipmentView source) {
         return new LiveMapResponse.EquipmentResponse(
+                source.eqpKey(),
                 source.eqpId(),
                 source.eqpName(),
                 source.lineValue(),

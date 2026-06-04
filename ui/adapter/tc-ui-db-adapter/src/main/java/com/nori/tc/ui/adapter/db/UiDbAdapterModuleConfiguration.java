@@ -25,6 +25,8 @@ import org.springframework.context.annotation.Import;
         JpaGroupCrudPort.class,
         JpaLineQueryPort.class,
         JpaLiveMapPrefetchPort.class,
+        LiveMapObjectJdbcStorePort.class,
+        LiveMapLayoutJdbcStorePort.class,
         JpaGroupPermissionMappingPort.class,
         JpaModelCrudPort.class,
         JpaModelDetailCommandPort.class,

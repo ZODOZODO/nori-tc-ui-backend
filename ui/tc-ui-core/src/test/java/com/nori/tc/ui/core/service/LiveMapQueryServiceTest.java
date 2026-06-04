@@ -192,6 +192,26 @@ class LiveMapQueryServiceTest {
         assertEquals("B Line", result.getFirst().lineLabel());
     }
 
+    @Test
+    void getEquipmentViewsReturnsEqpKeyForLayoutPlacementBinding() {
+        // live-map 빌더 placement 는 eqp_key(BIGINT PK)로 실설비를 바인딩한다 — 뷰가 eqpKey 를 노출해야
+        // 프론트가 placement.eqpKey ↔ 실시간 상태(RUN/IDLE/ERROR/DOWN)를 매칭할 수 있다.
+        final UiEqp eqp = createEqp("EQP-KEY-01", "v1");
+        final LiveMapEqpPrefetchRow row = new LiveMapEqpPrefetchRow(
+                eqp,
+                "B_LINE",
+                "B Line",
+                List.of(new UiEqpParam(11L, 1L, "PROCESS_TYPE", "v1", "ETCH", null, "tester", OffsetDateTime.now())),
+                List.of(),
+                new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED")
+        );
+        when(liveMapPrefetchPort.prefetch()).thenReturn(new LiveMapPrefetchSnapshot(List.of(row), Map.of()));
+
+        final List<LiveMapEquipmentView> result = liveMapQueryService.getEquipmentViews();
+
+        assertEquals(1L, result.getFirst().eqpKey());
+    }
+
     private UiEqp createEqp(final String eqpId, final String appliedParamVersion) {
         return new UiEqp(
                 1L,

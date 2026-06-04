@@ -70,6 +70,7 @@ public class LiveMapQueryService {
                 .toList();
 
         return Optional.of(new LiveMapEquipmentView(
+                row.eqp().eqpKey(),
                 row.eqp().eqpId(),
                 row.eqp().eqpId(),
                 row.lineCode(),

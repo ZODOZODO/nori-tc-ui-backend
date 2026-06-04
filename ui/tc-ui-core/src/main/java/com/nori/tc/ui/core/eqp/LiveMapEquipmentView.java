@@ -7,6 +7,7 @@ import java.util.Objects;
  * live-map 화면에서 사용하는 설비 뷰 모델입니다.
  */
 public record LiveMapEquipmentView(
+        Long eqpKey,
         String eqpId,
         String eqpName,
         String lineValue,
@@ -23,6 +24,7 @@ public record LiveMapEquipmentView(
 ) {
 
     public LiveMapEquipmentView {
+        eqpKey = Objects.requireNonNull(eqpKey, "eqpKey is null");
         eqpId = Objects.requireNonNull(eqpId, "eqpId is null");
         eqpName = Objects.requireNonNull(eqpName, "eqpName is null");
         lineValue = Objects.requireNonNull(lineValue, "lineValue is null");

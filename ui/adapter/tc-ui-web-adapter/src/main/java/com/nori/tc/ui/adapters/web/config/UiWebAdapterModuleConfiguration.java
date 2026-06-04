@@ -19,6 +19,7 @@ import com.nori.tc.ui.adapters.web.controller.EqpParamController;
 import com.nori.tc.ui.adapters.web.controller.GroupController;
 import com.nori.tc.ui.adapters.web.controller.LineController;
 import com.nori.tc.ui.adapters.web.controller.LiveMapController;
+import com.nori.tc.ui.adapters.web.controller.LiveMapLayoutController;
 import com.nori.tc.ui.adapters.web.controller.ModelBranchController;
 import com.nori.tc.ui.adapters.web.controller.ModelDetailController;
 import com.nori.tc.ui.adapters.web.controller.ModelFlowController;
@@ -62,6 +63,7 @@ import org.springframework.context.annotation.Import;
         GroupController.class,
         LineController.class,
         LiveMapController.class,
+        LiveMapLayoutController.class,
         ModelBranchController.class,
         ModelDetailController.class,
         ModelFlowController.class,
