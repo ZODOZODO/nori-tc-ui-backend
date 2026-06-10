@@ -160,7 +160,11 @@ public class EqpDirectScenarioLocalMutationCoordinator {
                  EQP_START,
                  EQP_END,
                  EQP_SEND_MESSAGE,
-                 EQP_RECONNECT -> {
+                 EQP_RECONNECT,
+                 // 그룹 명령은 enabled_poll_groups 변이를 EqpDirectScenarioService 가 runner PASS 직후 직접 수행하므로
+                 // finalizeSuccess 단계의 별도 처리가 없다.
+                 EQP_PLC_GROUP_START,
+                 EQP_PLC_GROUP_END -> {
                 // finalization 없음
             }
             default -> {
@@ -186,7 +190,10 @@ public class EqpDirectScenarioLocalMutationCoordinator {
             case EQP_START,
                  EQP_END,
                  EQP_SEND_MESSAGE,
-                 EQP_RECONNECT -> {
+                 EQP_RECONNECT,
+                 // 그룹 명령은 DB 변이가 runner PASS 직후에만 일어나므로 실패 시 보상할 local 변경이 없다.
+                 EQP_PLC_GROUP_START,
+                 EQP_PLC_GROUP_END -> {
                 // local rollback 없음
             }
             default -> {

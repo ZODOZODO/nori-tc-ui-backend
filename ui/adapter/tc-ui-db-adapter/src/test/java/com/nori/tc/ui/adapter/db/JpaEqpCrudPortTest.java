@@ -479,6 +479,54 @@ class JpaEqpCrudPortTest {
     }
 
     @Test
+    @DisplayName("PLC EQP 생성도 tc_eqp_port_status를 PORTCOUNT(미지정=기본 4)만큼 초기화합니다")
+    void createPlcEqpInitializesDefaultFourPortStatuses() {
+        final Fixture fixture = new Fixture();
+        final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
+                "tester",
+                "EQP-PLC-PORT",
+                1L,
+                UiProtocolType.PLC,
+                "ACTIVE",
+                false,
+                1,
+                "10.30.0.9",
+                502,
+                301L,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                new EqpManagementCommand.PlcSettings("MODBUS_TCP", "TCP", 1, 3000, 3)
+        );
+        final TcEqp storedEqp = eqp(
+                52L,
+                command.eqpId(),
+                UiDomainEnumMapper.toDbProtocolType(command.interfaceType()),
+                "ACTIVE",
+                command.isDev(),
+                command.routePartition(),
+                command.eqpIp(),
+                command.eqpPort(),
+                command.modelVersionKey(),
+                "tester"
+        );
+
+        when(fixture.eqpStore.upsert(any())).thenReturn(storedEqp);
+        when(fixture.dbSupport.loadSnapshotByEqpId(command.eqpId())).thenReturn(Optional.of(snapshot(storedEqp)));
+
+        fixture.port.create(command);
+
+        // upsertInitialPortStatuses 는 프로토콜 무관 무조건 호출(§6) — PORTCOUNT 미지정이면 기본 4.
+        // "PLC=포트 없음" 배제 회귀 차단: SECS/SOCKET 과 동일하게 4 행 생성.
+        final ArgumentCaptor<UpsertTcEqpPortStatus> portStatusCaptor = ArgumentCaptor.forClass(UpsertTcEqpPortStatus.class);
+        verify(fixture.eqpPortStatusStore, org.mockito.Mockito.times(4)).upsert(portStatusCaptor.capture());
+        assertEquals(List.of("1", "2", "3", "4"), portStatusCaptor.getAllValues().stream().map(UpsertTcEqpPortStatus::portId).toList());
+    }
+
+    @Test
     @DisplayName("EQP 생성은 선택한 jar ref를 tc_eqp에 그대로 저장합니다")
     void createEqpPersistsSelectedJarRefs() {
         final Fixture fixture = new Fixture();
@@ -617,6 +665,81 @@ class JpaEqpCrudPortTest {
         assertEquals("v3", eqpCaptor.getValue().appliedParamVersion());
         assertEquals(existingSnapshot.eqp().createdBy(), eqpCaptor.getValue().createdBy());
         assertEquals("tester", eqpCaptor.getValue().updatedBy());
+    }
+
+    @Test
+    @DisplayName("PLC EQP 수정은 update DTO의 plcSettings를 tc_eqp_plc에 반영하고 socket/hsms는 정리합니다(프로토콜 불변)")
+    @SuppressWarnings("unchecked")
+    void updatePlcEqpAppliesPlcSettingsFromUpdateDto() {
+        final Fixture fixture = new Fixture();
+        final String eqpId = "EQP-PLC-UPDATE";
+        // 요청에 interfaceType 없음 — 프로토콜 불변(§7). plcSettings 만 갱신(unitId 1→7, timeout 3000→5000, retries 3→2).
+        final EqpManagementCommand.Update command = new EqpManagementCommand.Update(
+                "tester",
+                1L,
+                "ACTIVE",
+                false,
+                1,
+                "10.30.0.2",
+                502,
+                301L,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                new EqpManagementCommand.PlcSettings("MODBUS_TCP", "TCP", 7, 5000, 2)
+        );
+        final EqpManagementSnapshot existingSnapshot = snapshot(eqp(
+                61L,
+                eqpId,
+                ProtocolType.PLC,
+                "ACTIVE",
+                false,
+                1,
+                "10.30.0.1",
+                502,
+                301L,
+                "SYSTEM",
+                null
+        ));
+        final TcEqp updatedEqp = eqp(
+                61L,
+                eqpId,
+                ProtocolType.PLC,
+                "ACTIVE",
+                false,
+                1,
+                "10.30.0.2",
+                502,
+                301L,
+                "tester",
+                null
+        );
+        final EqpManagementSnapshot updatedSnapshot = snapshot(updatedEqp);
+
+        when(fixture.dbSupport.loadSnapshotByEqpId(eqpId))
+                .thenReturn(Optional.of(existingSnapshot), Optional.of(updatedSnapshot));
+        when(fixture.eqpStore.upsert(any())).thenReturn(updatedEqp);
+
+        fixture.port.update(eqpId, command);
+
+        // update DTO 배선: command.plcSettings() 가 upsertProtocolDetails(PLC 분기)로 흘러 tc_eqp_plc 갱신.
+        final ArgumentCaptor<UpsertTcEqpPlc> plcCaptor = ArgumentCaptor.forClass(UpsertTcEqpPlc.class);
+        verify(fixture.eqpPlcStore).upsert(plcCaptor.capture());
+        assertEquals(61L, plcCaptor.getValue().eqpKey());
+        assertEquals(PlcProtocol.MODBUS_TCP, plcCaptor.getValue().plcProtocol());
+        assertEquals(PlcTransport.TCP, plcCaptor.getValue().transport());
+        assertEquals(7, plcCaptor.getValue().unitId());
+        assertEquals(5000, plcCaptor.getValue().pollTimeoutMs());
+        assertEquals(2, plcCaptor.getValue().reconnectMaxRetries());
+
+        // 3-way: PLC 갱신 시 socket/hsms 는 upsert 안 하고 정리만(이분 분기 오저장 회귀 차단).
+        verify(fixture.eqpSocketStore, never()).upsert(any());
+        verify(fixture.eqpHsmsStore, never()).upsert(any());
+        verify(fixture.eqpHsmsStore).deleteByEqpKey(61L);
+        verify(fixture.eqpSocketStore).deleteByEqpKey(61L);
     }
 
     @Test

@@ -15,6 +15,7 @@ import com.nori.tc.ui.core.port.db.DemoJobCleanupPort;
 import com.nori.tc.ui.core.port.db.DeployScenarioCatalogMetaPort;
 import com.nori.tc.ui.core.port.db.DeployStorePort;
 import com.nori.tc.ui.core.port.db.EqpCrudPort;
+import com.nori.tc.ui.core.port.db.EqpPlcPollGroupPort;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
 import com.nori.tc.ui.core.port.db.EqpRepairTaskPort;
 import com.nori.tc.ui.core.port.db.ModelCrudPort;
@@ -66,6 +67,7 @@ class EqpDirectScenarioServiceTest {
     private RecordingPublisher gatewayPublisher;
     private RecordingPublisher businessPublisher;
     private EqpDirectScenarioService service;
+    private RecordingPollGroupPort pollGroupPort;
     private List<String> operationLog;
 
     @BeforeEach
@@ -78,6 +80,7 @@ class EqpDirectScenarioServiceTest {
         eqpCrudPort.operationLog = operationLog;
         gatewayPublisher = new RecordingPublisher("TC-GATEWAY-APP", traceRegistry, operationLog);
         businessPublisher = new RecordingPublisher("TC-BUSINESS-APP", traceRegistry, operationLog);
+        pollGroupPort = new RecordingPollGroupPort();
         service = newService();
     }
 
@@ -275,6 +278,68 @@ class EqpDirectScenarioServiceTest {
         assertTrue(gatewayPublisher.messages.isEmpty());
     }
 
+    @Test
+    void groupStartAddsPollGroupAfterGatewayAccept() {
+        eqpCrudPort.put(snapshot("PLC_001", 7L, "10.10.10.1", 502, "EQP_PARAM_V1", 3001L, 4001L));
+        // default gatewayPublisher behavior = replyPass
+
+        final EqpCommandResult result = service.executeGroupStart("PLC_001", "EQP_STATUS_REPORT", "tester");
+
+        assertTrue(result.success());
+        assertEquals(1, gatewayPublisher.messages.size());
+        assertEquals("EQP_PLC_GROUP_START", gatewayPublisher.messages.getFirst().eventType().name());
+        // gateway accept(PASS) 후에만 enabled_poll_groups add (saga).
+        assertEquals(List.of("add:7:EQP_STATUS_REPORT"), pollGroupPort.calls);
+    }
+
+    @Test
+    void groupStartRejectedByGatewayDoesNotMutateEnabledPollGroups() {
+        eqpCrudPort.put(snapshot("PLC_001", 7L, "10.10.10.1", 502, "EQP_PARAM_V1", 3001L, 4001L));
+        gatewayPublisher.behavior = (message, source) ->
+                gatewayPublisher.replyFail(message, "EQP_NOT_CONNECTED", "설비가 연결되어 있지 않습니다.");
+
+        final EqpCommandResult result = service.executeGroupStart("PLC_001", "EQP_STATUS_REPORT", "tester");
+
+        assertFalse(result.success());
+        assertEquals("EQP_NOT_CONNECTED", result.errorCode());
+        // saga: gateway 거부 시 DB 변이 0.
+        assertTrue(pollGroupPort.calls.isEmpty());
+    }
+
+    @Test
+    void groupEndRemovesPollGroupAfterGatewayAccept() {
+        eqpCrudPort.put(snapshot("PLC_001", 7L, "10.10.10.1", 502, "EQP_PARAM_V1", 3001L, 4001L));
+
+        final EqpCommandResult result = service.executeGroupEnd("PLC_001", "EQP_STATUS_REPORT", "tester");
+
+        assertTrue(result.success());
+        assertEquals("EQP_PLC_GROUP_END", gatewayPublisher.messages.getFirst().eventType().name());
+        assertEquals(List.of("remove:7:EQP_STATUS_REPORT"), pollGroupPort.calls);
+    }
+
+    @Test
+    void groupCommandWithBlankNameIsRejectedBeforePublish() {
+        eqpCrudPort.put(snapshot("PLC_001", 7L, "10.10.10.1", 502, "EQP_PARAM_V1", 3001L, 4001L));
+
+        final EqpCommandResult result = service.executeGroupStart("PLC_001", "   ", "tester");
+
+        assertFalse(result.success());
+        assertEquals(400, result.statusCode());
+        assertTrue(gatewayPublisher.messages.isEmpty());
+        assertTrue(pollGroupPort.calls.isEmpty());
+    }
+
+    @Test
+    void endClearsEnabledPollGroupsAfterGatewayAccept() {
+        eqpCrudPort.put(snapshot("PLC_001", 7L, "10.10.10.1", 502, "EQP_PARAM_V1", 3001L, 4001L));
+
+        final EqpCommandResult result = service.executeEnd("PLC_001", "PLC", reasonUiMessage("USER_REQUEST"), "tester");
+
+        assertTrue(result.success());
+        // EQP_END(graceful) PASS 후 enabled_poll_groups clear (SPEC §2-6/§3).
+        assertEquals(List.of("clear:7"), pollGroupPort.calls);
+    }
+
     private EqpDirectScenarioService newService() {
         final UiDeployProperties deployProperties = new UiDeployProperties(
                 "/home/donggeon/workspace_nori/nori-tc-ui-backend/ui/tc-ui-core/src/main/resources/deploy-scenarios",
@@ -353,6 +418,7 @@ class EqpDirectScenarioServiceTest {
                 localMutationCoordinator,
                 runner,
                 new NoOpDemoJobCleanupPort(),
+                pollGroupPort,
                 modelDetailQueryPort,
                 objectMapper
         );
@@ -668,6 +734,27 @@ class EqpDirectScenarioServiceTest {
                     reloadReason
             );
             return latest;
+        }
+    }
+
+    /** enabled_poll_groups 변이 호출을 순서대로 기록하는 capturing 포트(saga DB 변이 검증용). */
+    private static final class RecordingPollGroupPort implements EqpPlcPollGroupPort {
+
+        private final List<String> calls = new ArrayList<>();
+
+        @Override
+        public void addPollGroup(final long eqpKey, final String groupMessageName) {
+            calls.add("add:" + eqpKey + ":" + groupMessageName);
+        }
+
+        @Override
+        public void removePollGroup(final long eqpKey, final String groupMessageName) {
+            calls.add("remove:" + eqpKey + ":" + groupMessageName);
+        }
+
+        @Override
+        public void clearPollGroups(final long eqpKey) {
+            calls.add("clear:" + eqpKey);
         }
     }
 

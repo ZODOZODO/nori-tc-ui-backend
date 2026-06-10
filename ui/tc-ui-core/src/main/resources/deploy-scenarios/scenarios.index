@@ -7,6 +7,8 @@ eqp-start.yaml
 eqp-end.yaml
 eqp-reconnect.yaml
 eqp-send-message.yaml
+eqp-plc-group-start.yaml
+eqp-plc-group-end.yaml
 eqp-gateway-jar-update.yaml
 eqp-business-jar-update.yaml
 register-model-only.yaml

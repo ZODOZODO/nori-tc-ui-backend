@@ -27,7 +27,8 @@ import java.util.Objects;
  *       {@link DualResponseRegistry}: Gateway와 Business 양쪽 응답을 수집하여
  *       DeferredResult 완료 처리</li>
  *   <li>EQP_START_REP / EQP_END_REP / EQP_RECONNECT_REP /
- *       EQP_SEND_MESSAGE_REP / EQP_PARAMETER_UPDATE_REP →
+ *       EQP_SEND_MESSAGE_REP / EQP_PARAMETER_UPDATE_REP /
+ *       EQP_PLC_GROUP_START_REP / EQP_PLC_GROUP_END_REP →
  *       {@link AsyncResultStorePort}: Gateway 단일 응답을 Redis에 저장,
  *       front가 polling으로 확인</li>
  * </ul>
@@ -97,7 +98,9 @@ public class UiCommandIngressService implements UiCommandIngressPort {
                  "EQP_END_REP",
                  "EQP_RECONNECT_REP",
                  "EQP_SEND_MESSAGE_REP",
-                 "EQP_PARAMETER_UPDATE_REP" ->
+                 "EQP_PARAMETER_UPDATE_REP",
+                 "EQP_PLC_GROUP_START_REP",
+                 "EQP_PLC_GROUP_END_REP" ->
                 handleAsyncResult(traceId, reply);
 
             default -> log.warn("처리되지 않은 eventType - 무시. eventType={}, traceId={}, source={}",

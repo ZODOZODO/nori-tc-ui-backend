@@ -200,6 +200,41 @@ public class EqpManagementService {
         );
     }
 
+    /**
+     * PLC 폴링 그룹 시작 명령을 scenario 경로로 비동기 실행하고 polling traceId를 반환합니다.
+     * gateway accept(PASS) 후 enabled_poll_groups add 까지는 {@link EqpDirectScenarioService#executeGroupStart} 가 수행합니다.
+     */
+    public EqpAsyncAcceptResult startPollingGroupAsync(
+            final String eqpId,
+            final String groupMessageName,
+            final long timeoutMs
+    ) {
+        return submitAsyncScenario(
+                eqpId,
+                null,
+                UiCommandEventType.EQP_PLC_GROUP_START,
+                timeoutMs,
+                () -> eqpDirectScenarioService.executeGroupStart(eqpId, groupMessageName, "SYSTEM")
+        );
+    }
+
+    /**
+     * PLC 폴링 그룹 중단 명령을 scenario 경로로 비동기 실행하고 polling traceId를 반환합니다.
+     */
+    public EqpAsyncAcceptResult endPollingGroupAsync(
+            final String eqpId,
+            final String groupMessageName,
+            final long timeoutMs
+    ) {
+        return submitAsyncScenario(
+                eqpId,
+                null,
+                UiCommandEventType.EQP_PLC_GROUP_END,
+                timeoutMs,
+                () -> eqpDirectScenarioService.executeGroupEnd(eqpId, groupMessageName, "SYSTEM")
+        );
+    }
+
     private EqpAsyncAcceptResult submitAsyncScenario(
             final String eqpId,
             final String interfaceType,

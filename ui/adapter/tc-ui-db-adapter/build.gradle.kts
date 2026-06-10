@@ -63,6 +63,17 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("org.mockito:mockito-core:5.2.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    /*
+     * EqpPlcPollGroupAdapter 의 @Version optimistic-lock 동시성(L1344) 검증 전용 test-scope 의존성.
+     * - 실 H2 + 공통 JPA store(TcEqpPlcJpaStore)로 단일 트랜잭션 read-modify-write + 충돌 재시도가
+     *   동시 GROUP_START lost-update 를 막는지 실 스레드로 증명한다(mock 으로는 @Version 1차캐시 의미를 못 살림).
+     * - production 무영향(test scope only) · common 무변경(이미 publishToMavenLocal 된 좌표 소비).
+     */
+    testImplementation("com.nori.tc:tc-db-jpa-common-schema:0.0.1-SNAPSHOT")
+    testImplementation(libs.spring.boot.starter.data.jpa)
+    testImplementation(libs.spring.boot.starter.test)
+    testRuntimeOnly("com.h2database:h2")
 }
 
 tasks.test {

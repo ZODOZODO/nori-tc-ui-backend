@@ -43,6 +43,15 @@ public enum DeployScenarioAction {
     DELETE_GATEWAY_MEMORY,
     DELETE_BUSINESS_BINDING,
     SEND_MESSAGE,
+    /**
+     * PLC 폴링 그룹 1건의 주기 폴링 타이머를 gateway 에서 시작하는 step(EQP_PLC_GROUP_START).
+     * groupMessageName 은 uiMessage 에 실려 전달되며, gateway 는 IMMEDIATE reply 만 발행한다(DB write 0).
+     */
+    START_PLC_POLL_GROUP,
+    /**
+     * PLC 폴링 그룹 1건의 주기 폴링 타이머를 gateway 에서 중단하는 step(EQP_PLC_GROUP_END).
+     */
+    END_PLC_POLL_GROUP,
     RESTORE_PREVIOUS_MODEL_BINDING,
     RESTORE_PREVIOUS_BUSINESS_RUNTIME,
     RESTORE_PREVIOUS_BUSINESS_PLUGIN,

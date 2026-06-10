@@ -1,0 +1,26 @@
+version: 1
+
+scenario:
+  code: EQP_PLC_GROUP_START
+  name: EQP PLC Group Start
+  summary: PLC 폴링 그룹 주기 폴링을 시작한다.
+
+appliesTo:
+  eventTypes:
+    - EQP_PLC_GROUP_START
+
+steps:
+  - order: 10
+    code: START_PLC_POLL_GROUP
+    name: PLC 폴링 그룹 시작
+    targetApp: GATEWAY
+    description: groupMessageName 그룹의 주기 폴링 타이머를 Gateway에서 시작한다(미연결 시 EQP_NOT_CONNECTED 거부).
+    run:
+      action: START_PLC_POLL_GROUP
+      timeoutMs: 30000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: false
