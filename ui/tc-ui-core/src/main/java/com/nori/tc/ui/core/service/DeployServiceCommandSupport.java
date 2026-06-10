@@ -641,6 +641,20 @@ final class DeployServiceCommandSupport {
         }
         final JsonNode modelInfo = stepUiMessage == null ? null : stepUiMessage.path("modelInfo");
         final Long resolvedModelVersionKey = longValue(modelInfo, "modelVersionKey");
+        final String plcProtocol = textValue(gatewayProfile, "plcProtocol");
+        final UiEquipmentProfileSnapshot.PlcSettingsSnapshot plcSettings = plcProtocol == null
+                ? null
+                : new UiEquipmentProfileSnapshot.PlcSettingsSnapshot(
+                        plcProtocol,
+                        textValue(gatewayProfile, "transport"),
+                        intValue(gatewayProfile, "unitId"),
+                        intValue(gatewayProfile, "pollTimeoutMs"),
+                        intValue(gatewayProfile, "reconnectMaxRetries"),
+                        List.of()
+                );
+        final String resolvedDesiredState = textValue(gatewayProfile, "desiredState") == null
+                ? "ENDED"
+                : textValue(gatewayProfile, "desiredState");
 
         return new UiEquipmentProfileSnapshot(
                 eqpKey,
@@ -662,7 +676,9 @@ final class DeployServiceCommandSupport {
                 List.of(),
                 null,
                 List.of(),
-                OffsetDateTime.now(ZoneOffset.UTC).toString()
+                OffsetDateTime.now(ZoneOffset.UTC).toString(),
+                resolvedDesiredState,
+                plcSettings
         );
     }
 
@@ -739,6 +755,19 @@ final class DeployServiceCommandSupport {
                         executionSnapshot.socket().maxFrameSizeBytes(),
                         executionSnapshot.socket().keepAliveEnabled()
                 );
+        final UiEquipmentProfileSnapshot.PlcSettingsSnapshot plcSettings =
+                executionSnapshot.plc() == null ? null : new UiEquipmentProfileSnapshot.PlcSettingsSnapshot(
+                        executionSnapshot.plc().plcProtocol(),
+                        executionSnapshot.plc().transport(),
+                        executionSnapshot.plc().unitId(),
+                        executionSnapshot.plc().pollTimeoutMs(),
+                        executionSnapshot.plc().reconnectMaxRetries(),
+                        executionSnapshot.plc().enabledPollGroups()
+                );
+        final String desiredState = executionSnapshot.runtimeState() == null
+                || executionSnapshot.runtimeState().desiredState() == null
+                ? "ENDED"
+                : executionSnapshot.runtimeState().desiredState();
         final UiEquipmentProfileSnapshot.CurrentStateSnapshot currentStateSnapshot =
                 executionSnapshot.runtimeState() == null ? null : new UiEquipmentProfileSnapshot.CurrentStateSnapshot(
                         executionSnapshot.runtimeState().controlState() == null ? null : executionSnapshot.runtimeState().controlState().name(),
@@ -788,7 +817,9 @@ final class DeployServiceCommandSupport {
                 portStatuses,
                 logPolicy,
                 params,
-                updatedAt.toString()
+                updatedAt.toString(),
+                desiredState,
+                plcSettings
         );
     }
 

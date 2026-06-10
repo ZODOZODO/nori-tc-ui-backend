@@ -4,6 +4,7 @@ import com.nori.tc.db.core.eqp.store.TcEqpHsmsStore;
 import com.nori.tc.db.core.eqp.store.TcEqpLogStore;
 import com.nori.tc.db.core.eqp.store.TcEqpParamStore;
 import com.nori.tc.db.core.eqp.store.TcEqpParamVersionStore;
+import com.nori.tc.db.core.eqp.store.TcEqpPlcStore;
 import com.nori.tc.db.core.eqp.store.TcEqpPortStatusStore;
 import com.nori.tc.db.core.eqp.store.TcEqpSocketStore;
 import com.nori.tc.db.core.eqp.store.TcEqpStateStore;
@@ -12,9 +13,12 @@ import com.nori.tc.db.core.model.store.TcModelParamStore;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqp;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpHsms;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpLog;
+import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpPlc;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpPortStatus;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpSocket;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpState;
+import com.nori.tc.db.domain.common.model.PlcProtocol;
+import com.nori.tc.db.domain.common.model.PlcTransport;
 import com.nori.tc.db.core.jar.store.TcJarBusinessStore;
 import com.nori.tc.db.core.jar.store.TcJarGatewayStore;
 import com.nori.tc.db.core.line.store.TcLineStore;
@@ -101,6 +105,7 @@ class JpaEqpCrudPortTest {
                 null,
                 null,
                 new EqpManagementCommand.HsmsSettings(null, null, null, null, null, null, null, null, null),
+                null,
                 null
         );
         final TcEqp storedEqp = eqp(
@@ -190,6 +195,7 @@ class JpaEqpCrudPortTest {
                 null,
                 null,
                 new EqpManagementCommand.HsmsSettings(null, null, null, null, null, null, null, null, null),
+                null,
                 null
         );
         final TcEqp storedEqp = eqp(
@@ -240,6 +246,7 @@ class JpaEqpCrudPortTest {
                 null,
                 null,
                 new EqpManagementCommand.HsmsSettings(null, null, null, null, null, null, null, null, null),
+                null,
                 null
         );
         final TcEqp storedEqp = eqp(
@@ -290,6 +297,7 @@ class JpaEqpCrudPortTest {
                 null,
                 null,
                 new EqpManagementCommand.HsmsSettings(null, null, null, null, null, null, null, null, null),
+                null,
                 null
         );
         final TcEqp storedEqp = eqp(
@@ -336,7 +344,8 @@ class JpaEqpCrudPortTest {
                 null,
                 null,
                 null,
-                new EqpManagementCommand.SocketSettings("JSON", null, null, null, null, null, null, null)
+                new EqpManagementCommand.SocketSettings("JSON", null, null, null, null, null, null, null),
+                null
         );
         final TcEqp storedEqp = eqp(
                 21L,
@@ -382,6 +391,94 @@ class JpaEqpCrudPortTest {
     }
 
     @Test
+    @DisplayName("PLC EQP 생성은 tc_eqp_plc에 저장하고 socket/hsms store에는 저장하지 않습니다")
+    void createPlcEqpPersistsPlcAndDeletesHsmsSocket() {
+        final Fixture fixture = new Fixture();
+        final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
+                "tester",
+                "EQP-PLC-001",
+                1L,
+                UiProtocolType.PLC,
+                "ACTIVE",
+                false,
+                1,
+                "10.30.0.1",
+                502,
+                301L,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                new EqpManagementCommand.PlcSettings("MODBUS_TCP", "TCP", 3, 3000, 5)
+        );
+        final TcEqp storedEqp = eqp(
+                51L,
+                command.eqpId(),
+                UiDomainEnumMapper.toDbProtocolType(command.interfaceType()),
+                "ACTIVE",
+                command.isDev(),
+                command.routePartition(),
+                command.eqpIp(),
+                command.eqpPort(),
+                command.modelVersionKey(),
+                "tester"
+        );
+
+        when(fixture.eqpStore.upsert(any())).thenReturn(storedEqp);
+        when(fixture.dbSupport.loadSnapshotByEqpId(command.eqpId())).thenReturn(Optional.of(snapshot(storedEqp)));
+
+        fixture.port.create(command);
+
+        final ArgumentCaptor<UpsertTcEqpPlc> plcCaptor = ArgumentCaptor.forClass(UpsertTcEqpPlc.class);
+        verify(fixture.eqpPlcStore).upsert(plcCaptor.capture());
+        assertEquals(51L, plcCaptor.getValue().eqpKey());
+        assertEquals(PlcProtocol.MODBUS_TCP, plcCaptor.getValue().plcProtocol());
+        assertEquals(PlcTransport.TCP, plcCaptor.getValue().transport());
+        assertEquals(3, plcCaptor.getValue().unitId());
+        assertEquals(3000, plcCaptor.getValue().pollTimeoutMs());
+        assertEquals(5, plcCaptor.getValue().reconnectMaxRetries());
+        // 신규 설비는 폴링 그룹 0 → 빈 집합. enabled_poll_groups 는 GROUP_START/END saga 가 관리한다.
+        assertEquals("[]", plcCaptor.getValue().enabledPollGroups());
+
+        // 이분 분기 오저장 회귀 차단: PLC 는 socket/hsms store 에 절대 upsert 하지 않고 정리(delete)만 한다.
+        verify(fixture.eqpSocketStore, never()).upsert(any());
+        verify(fixture.eqpHsmsStore, never()).upsert(any());
+        verify(fixture.eqpHsmsStore).deleteByEqpKey(51L);
+        verify(fixture.eqpSocketStore).deleteByEqpKey(51L);
+    }
+
+    @Test
+    @DisplayName("PLC EQP 생성은 plcSettings 누락 시 저장 전에 400으로 거부합니다")
+    void createPlcEqpRejectsMissingPlcSettings() {
+        final Fixture fixture = new Fixture();
+        final EqpManagementCommand.Create command = new EqpManagementCommand.Create(
+                "tester",
+                "EQP-PLC-NULL",
+                1L,
+                UiProtocolType.PLC,
+                "ACTIVE",
+                false,
+                1,
+                "10.30.0.1",
+                502,
+                301L,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        assertThrows(UiBadRequestException.class, () -> fixture.port.create(command));
+        verify(fixture.eqpStore, never()).upsert(any());
+        verify(fixture.eqpPlcStore, never()).upsert(any());
+    }
+
+    @Test
     @DisplayName("EQP 생성은 선택한 jar ref를 tc_eqp에 그대로 저장합니다")
     void createEqpPersistsSelectedJarRefs() {
         final Fixture fixture = new Fixture();
@@ -401,6 +498,7 @@ class JpaEqpCrudPortTest {
                 998L,
                 null,
                 new EqpManagementCommand.HsmsSettings(1, 45, 10, 5, 10, 5, true, 60, 10_485_760L),
+                null,
                 null
         );
         final TcEqp storedEqp = eqp(
@@ -474,6 +572,7 @@ class JpaEqpCrudPortTest {
                 null,
                 null,
                 new EqpManagementCommand.HsmsSettings(0, 45, 10, 5, 10, 5, true, 60, 10_485_760L),
+                null,
                 null
         );
         final EqpManagementSnapshot existingSnapshot = snapshot(eqp(
@@ -587,7 +686,8 @@ class JpaEqpCrudPortTest {
                 null,
                 null,
                 null,
-                new EqpManagementCommand.SocketSettings("LINE_DELIMITED", null, null, null, null, null, null, null)
+                new EqpManagementCommand.SocketSettings("LINE_DELIMITED", null, null, null, null, null, null, null),
+                null
         );
 
         when(fixture.dbSupport.findPassiveListenerGroupRoutePartitionConflict(
@@ -624,6 +724,7 @@ class JpaEqpCrudPortTest {
                 null,
                 null,
                 new EqpManagementCommand.HsmsSettings(0, 45, 10, 5, 10, 5, true, 60, 10_485_760L),
+                null,
                 null
         );
         final EqpManagementSnapshot existingSnapshot = snapshot(eqp(
@@ -678,6 +779,7 @@ class JpaEqpCrudPortTest {
                 null,
                 null,
                 new EqpManagementCommand.HsmsSettings(null, null, null, null, null, null, null, null, null),
+                null,
                 null
         );
 
@@ -695,6 +797,7 @@ class JpaEqpCrudPortTest {
         private final TcEqpStore eqpStore = mock(TcEqpStore.class);
         private final TcEqpHsmsStore eqpHsmsStore = mock(TcEqpHsmsStore.class);
         private final TcEqpSocketStore eqpSocketStore = mock(TcEqpSocketStore.class);
+        private final TcEqpPlcStore eqpPlcStore = mock(TcEqpPlcStore.class);
         private final TcEqpLogStore eqpLogStore = mock(TcEqpLogStore.class);
         private final TcEqpStateStore eqpStateStore = mock(TcEqpStateStore.class);
         private final TcEqpPortStatusStore eqpPortStatusStore = mock(TcEqpPortStatusStore.class);
@@ -711,6 +814,7 @@ class JpaEqpCrudPortTest {
                 eqpStore,
                 eqpHsmsStore,
                 eqpSocketStore,
+                eqpPlcStore,
                 eqpLogStore,
                 eqpStateStore,
                 eqpPortStatusStore,
@@ -831,6 +935,7 @@ class JpaEqpCrudPortTest {
     private static EqpManagementSnapshot snapshot(final TcEqp eqp) {
         return new EqpManagementSnapshot(
                 UiEqpDbMapper.toDomain(eqp),
+                null,
                 null,
                 null,
                 null,

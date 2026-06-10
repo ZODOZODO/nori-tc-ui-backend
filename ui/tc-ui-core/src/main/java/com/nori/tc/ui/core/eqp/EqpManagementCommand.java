@@ -79,6 +79,27 @@ public final class EqpManagementCommand {
     }
 
     /**
+     * PLC 전용 연결 튜닝 입력입니다(읽기 범위/주기/디코드는 model 의 plc-group/plc-register 소관, §Phase5).
+     *
+     * <p>{@code plcProtocol}/{@code transport} 는 socketProtocolType 선례처럼 String 으로 받고
+     * {@code EqpManagementCommandValidator} 가 PoC 범위(MODBUS_TCP+TCP) 및 조합을 검증합니다.</p>
+     *
+     * @param plcProtocol PLC 프로토콜(PoC=MODBUS_TCP)
+     * @param transport 전송 계층(TCP/UDP/SERIAL)
+     * @param unitId Modbus unit/slave id
+     * @param pollTimeoutMs per-poll timeout(ms)
+     * @param reconnectMaxRetries 연속 폴 실패 quarantine 임계 N
+     */
+    public record PlcSettings(
+            String plcProtocol,
+            String transport,
+            Integer unitId,
+            Integer pollTimeoutMs,
+            Integer reconnectMaxRetries
+    ) {
+    }
+
+    /**
      * EQP 생성 명령입니다.
      *
      * @param actor 요청 사용자
@@ -97,6 +118,7 @@ public final class EqpManagementCommand {
      * @param logSettings 로그 정책
      * @param hsmsSettings SECS 설정
      * @param socketSettings SOCKET 설정
+     * @param plcSettings PLC 설정
      */
     public record Create(
             String actor,
@@ -114,7 +136,8 @@ public final class EqpManagementCommand {
             Long businessJarRef,
             LogSettings logSettings,
             HsmsSettings hsmsSettings,
-            SocketSettings socketSettings
+            SocketSettings socketSettings,
+            PlcSettings plcSettings
     ) {
     }
 
@@ -135,6 +158,7 @@ public final class EqpManagementCommand {
      * @param logSettings 로그 정책
      * @param hsmsSettings SECS 설정
      * @param socketSettings SOCKET 설정
+     * @param plcSettings PLC 설정
      */
     public record Update(
             String actor,
@@ -150,7 +174,8 @@ public final class EqpManagementCommand {
             Long businessJarRef,
             LogSettings logSettings,
             HsmsSettings hsmsSettings,
-            SocketSettings socketSettings
+            SocketSettings socketSettings,
+            PlcSettings plcSettings
     ) {
     }
 }

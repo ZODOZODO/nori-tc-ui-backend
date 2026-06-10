@@ -117,6 +117,7 @@ class DemoControllerTest {
                 null,
                 null,
                 null,
+                null,
                 "CONNECTED",
                 java.util.Arrays.stream(portIds)
                         .map(portId -> new UiEqpPortStatus(1L, 1L, portId, null, "IDLE", null, null, null, OffsetDateTime.now()))

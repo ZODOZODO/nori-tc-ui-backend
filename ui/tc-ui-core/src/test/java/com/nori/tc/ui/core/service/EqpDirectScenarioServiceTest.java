@@ -451,6 +451,8 @@ class EqpDirectScenarioServiceTest {
                 null,
                 null,
                 null,
+                null,
+                "ENDED",
                 null
         );
     }
@@ -472,7 +474,8 @@ class EqpDirectScenarioServiceTest {
                 null,
                 new EqpManagementCommand.LogSettings(UiLogLevel.INFO, 7, "/tmp"),
                 null,
-                new EqpManagementCommand.SocketSettings("TEST01", "UTF-8", true, 30, 10, 10, 1024, true)
+                new EqpManagementCommand.SocketSettings("TEST01", "UTF-8", true, 30, 10, 10, 1024, true),
+                null
         );
     }
 
@@ -497,7 +500,8 @@ class EqpDirectScenarioServiceTest {
                 businessJarRef,
                 new EqpManagementCommand.LogSettings(UiLogLevel.INFO, 7, "/tmp"),
                 null,
-                new EqpManagementCommand.SocketSettings("TEST01", "UTF-8", true, 30, 10, 10, 1024, true)
+                new EqpManagementCommand.SocketSettings("TEST01", "UTF-8", true, 30, 10, 10, 1024, true),
+                null
         );
     }
 
@@ -592,6 +596,7 @@ class EqpDirectScenarioServiceTest {
                         now,
                         now
                 ),
+                null,
                 null,
                 null,
                 null,
@@ -922,6 +927,7 @@ class EqpDirectScenarioServiceTest {
                     null,
                     null,
                     null,
+                    null,
                     List.of(),
                     List.of(new UiEqpParam(
                             1L,
@@ -1011,6 +1017,7 @@ class EqpDirectScenarioServiceTest {
                             now,
                             now
                     ),
+                    null,
                     null,
                     null,
                     null,

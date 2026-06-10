@@ -750,6 +750,22 @@ public class DeployPlanningService {
                 baseProfile.socketSettings().maxFrameSizeBytes(),
                 baseProfile.socketSettings().keepAliveEnabled()
         );
+        // PLC 연결 튜닝은 gatewayProfile override 를 base 위에 병합한다. enabledPollGroups 는 saga 가 관리하는 base 의도를 보존.
+        final UiEquipmentProfileSnapshot.PlcSettingsSnapshot plcSettings = baseProfile.plcSettings() == null
+                ? null
+                : new UiEquipmentProfileSnapshot.PlcSettingsSnapshot(
+                textValue(gatewayProfile, "plcProtocol") != null
+                        ? textValue(gatewayProfile, "plcProtocol") : baseProfile.plcSettings().plcProtocol(),
+                textValue(gatewayProfile, "transport") != null
+                        ? textValue(gatewayProfile, "transport") : baseProfile.plcSettings().transport(),
+                intValue(gatewayProfile, "unitId") != null
+                        ? intValue(gatewayProfile, "unitId") : baseProfile.plcSettings().unitId(),
+                intValue(gatewayProfile, "pollTimeoutMs") != null
+                        ? intValue(gatewayProfile, "pollTimeoutMs") : baseProfile.plcSettings().pollTimeoutMs(),
+                intValue(gatewayProfile, "reconnectMaxRetries") != null
+                        ? intValue(gatewayProfile, "reconnectMaxRetries") : baseProfile.plcSettings().reconnectMaxRetries(),
+                baseProfile.plcSettings().enabledPollGroups()
+        );
 
         return new UiEquipmentProfileSnapshot(
                 baseProfile.eqpKey(),
@@ -771,7 +787,9 @@ public class DeployPlanningService {
                 baseProfile.portStatuses(),
                 baseProfile.logPolicy(),
                 baseProfile.params(),
-                java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).toString()
+                java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).toString(),
+                baseProfile.desiredState(),
+                plcSettings
         );
     }
 

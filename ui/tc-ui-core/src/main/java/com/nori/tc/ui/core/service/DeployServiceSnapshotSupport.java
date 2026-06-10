@@ -198,7 +198,9 @@ final class DeployServiceSnapshotSupport {
                 List.of(),
                 null,
                 List.of(),
-                capturedAt
+                capturedAt,
+                null,
+                null
         )));
         return root;
     }
@@ -469,7 +471,17 @@ final class DeployServiceSnapshotSupport {
                                 param.updatedAt() == null ? null : param.updatedAt().toString()
                         ))
                         .toList(),
-                snapshot.eqp().updatedAt() == null ? OffsetDateTime.now(ZoneOffset.UTC).toString() : snapshot.eqp().updatedAt().toString()
+                snapshot.eqp().updatedAt() == null ? OffsetDateTime.now(ZoneOffset.UTC).toString() : snapshot.eqp().updatedAt().toString(),
+                snapshot.runtimeState() == null || snapshot.runtimeState().desiredState() == null
+                        ? "ENDED" : snapshot.runtimeState().desiredState(),
+                snapshot.plc() == null ? null : new UiEquipmentProfileSnapshot.PlcSettingsSnapshot(
+                        snapshot.plc().plcProtocol(),
+                        snapshot.plc().transport(),
+                        snapshot.plc().unitId(),
+                        snapshot.plc().pollTimeoutMs(),
+                        snapshot.plc().reconnectMaxRetries(),
+                        snapshot.plc().enabledPollGroups()
+                )
         );
     }
 

@@ -100,6 +100,7 @@ class ManagementRequestValidationContractTest {
                 301L,
                 null,
                 null,
+                null,
                 null
         );
         final EqpUpdateRequest updateRequest = new EqpUpdateRequest(
@@ -109,6 +110,7 @@ class ManagementRequestValidationContractTest {
                 1,
                 "127.0.0.1",
                 5000,
+                null,
                 null,
                 null,
                 null
@@ -134,6 +136,7 @@ class ManagementRequestValidationContractTest {
                         101L,
                         0L,
                         0L,
+                        null,
                         null,
                         null,
                         null

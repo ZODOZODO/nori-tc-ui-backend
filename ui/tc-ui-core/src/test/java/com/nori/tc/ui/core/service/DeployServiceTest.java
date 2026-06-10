@@ -1204,7 +1204,9 @@ class DeployServiceTest {
                 List.of(),
                 null,
                 List.of(),
-                OffsetDateTime.now(ZoneOffset.UTC).toString()
+                OffsetDateTime.now(ZoneOffset.UTC).toString(),
+                "ENDED",
+                null
         );
     }
 
@@ -1497,6 +1499,7 @@ class DeployServiceTest {
                 null,
                 null,
                 null,
+                null,
                 List.of(),
                 List.of(new UiEqpParam(
                         1L,
@@ -1645,6 +1648,7 @@ class DeployServiceTest {
                     existing.model(),
                     existing.hsms(),
                     existing.socket(),
+                    existing.plc(),
                     existing.logPolicy(),
                     existing.runtimeState(),
                     existing.connectionState(),

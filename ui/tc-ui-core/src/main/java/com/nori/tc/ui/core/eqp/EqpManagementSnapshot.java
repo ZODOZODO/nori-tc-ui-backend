@@ -5,6 +5,7 @@ import com.nori.tc.ui.domain.eqp.UiEqpHsms;
 import com.nori.tc.ui.domain.eqp.UiEqpLogPolicy;
 import com.nori.tc.ui.domain.eqp.UiEqpParam;
 import com.nori.tc.ui.domain.eqp.UiEqpParamVersion;
+import com.nori.tc.ui.domain.eqp.UiEqpPlc;
 import com.nori.tc.ui.domain.eqp.UiEqpPortStatus;
 import com.nori.tc.ui.domain.eqp.UiEqpRuntimeState;
 import com.nori.tc.ui.domain.eqp.UiEqpSocket;
@@ -25,6 +26,7 @@ public record EqpManagementSnapshot(
         UiModel model,
         UiEqpHsms hsms,
         UiEqpSocket socket,
+        UiEqpPlc plc,
         UiEqpLogPolicy logPolicy,
         UiEqpRuntimeState runtimeState,
         String connectionState,

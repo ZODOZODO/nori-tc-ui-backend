@@ -47,7 +47,8 @@ public class EqpManagementCommandValidator {
                 command.modelVersionKey(),
                 command.interfaceType(),
                 command.hsmsSettings(),
-                command.socketSettings()
+                command.socketSettings(),
+                command.plcSettings()
         );
     }
 
@@ -69,7 +70,8 @@ public class EqpManagementCommandValidator {
                 command.modelVersionKey(),
                 existingSnapshot.eqp().commInterface(),
                 command.hsmsSettings(),
-                command.socketSettings()
+                command.socketSettings(),
+                command.plcSettings()
         );
     }
 
@@ -122,7 +124,8 @@ public class EqpManagementCommandValidator {
             final long modelVersionKey,
             final UiProtocolType interfaceType,
             final EqpManagementCommand.HsmsSettings hsmsSettings,
-            final EqpManagementCommand.SocketSettings socketSettings
+            final EqpManagementCommand.SocketSettings socketSettings,
+            final EqpManagementCommand.PlcSettings plcSettings
     ) {
         if (routePartition == null || routePartition < 0) {
             throw new UiBadRequestException("routePartition은 0 이상이어야 합니다.");
@@ -143,5 +146,55 @@ public class EqpManagementCommandValidator {
         if (interfaceType == UiProtocolType.SOCKET && socketSettings == null) {
             throw new UiBadRequestException("SOCKET 설비는 socketSettings가 필요합니다.");
         }
+        if (interfaceType == UiProtocolType.PLC) {
+            validatePlcSettings(plcSettings);
+        }
+    }
+
+    /**
+     * PLC 연결 튜닝 입력을 검증합니다(저장 경계 — DB CHECK 가 막지 못하는 PoC 범위/조합).
+     *
+     * <p>PoC = MODBUS_TCP + TCP 만 허용한다(§5.1·Phase0). plc_protocol≠MODBUS_TCP 또는
+     * 잘못된 protocol↔transport 조합(예 MODBUS_TCP+SERIAL)은 400 으로 거부한다 — gateway 기동 거부
+     * (codec 미등록 fail-loud)와 별개의 저장 경계 검증이다. poll_period_ms 하한(모델 group 편집 경계)은
+     * 본 검증이 아니라 plc-group 편집 경로 소관이다.</p>
+     */
+    private void validatePlcSettings(final EqpManagementCommand.PlcSettings plcSettings) {
+        if (plcSettings == null) {
+            throw new UiBadRequestException("PLC 설비는 plcSettings가 필요합니다.");
+        }
+        final String protocol = normalizeUpper(plcSettings.plcProtocol());
+        final String transport = normalizeUpper(plcSettings.transport());
+        if (protocol == null) {
+            throw new UiBadRequestException("plcProtocol은 필수입니다.");
+        }
+        if (transport == null) {
+            throw new UiBadRequestException("transport는 필수입니다.");
+        }
+        if (!"MODBUS_TCP".equals(protocol)) {
+            throw new UiBadRequestException(
+                    "현재 PoC 는 MODBUS_TCP 만 지원합니다. plcProtocol=" + plcSettings.plcProtocol());
+        }
+        if (!"TCP".equals(transport)) {
+            throw new UiBadRequestException(
+                    "MODBUS_TCP 는 TCP transport 조합만 허용합니다. transport=" + plcSettings.transport());
+        }
+        if (plcSettings.unitId() != null && (plcSettings.unitId() < 0 || plcSettings.unitId() > 255)) {
+            throw new UiBadRequestException("unitId는 0~255 범위여야 합니다. unitId=" + plcSettings.unitId());
+        }
+        if (plcSettings.pollTimeoutMs() != null && plcSettings.pollTimeoutMs() <= 0) {
+            throw new UiBadRequestException("pollTimeoutMs는 1 이상이어야 합니다.");
+        }
+        if (plcSettings.reconnectMaxRetries() != null && plcSettings.reconnectMaxRetries() < 1) {
+            throw new UiBadRequestException("reconnectMaxRetries는 1 이상이어야 합니다.");
+        }
+    }
+
+    private String normalizeUpper(final String value) {
+        if (value == null) {
+            return null;
+        }
+        final String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized.toUpperCase(java.util.Locale.ROOT);
     }
 }

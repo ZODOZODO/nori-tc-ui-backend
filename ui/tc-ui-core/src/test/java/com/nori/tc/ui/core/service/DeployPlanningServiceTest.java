@@ -333,6 +333,8 @@ class DeployPlanningServiceTest {
                 null,
                 null,
                 null,
+                null,
+                "ENDED",
                 null
         );
     }

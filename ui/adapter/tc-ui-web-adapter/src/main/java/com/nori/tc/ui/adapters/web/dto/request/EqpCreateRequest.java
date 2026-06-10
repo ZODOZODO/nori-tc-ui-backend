@@ -74,6 +74,9 @@ public record EqpCreateRequest(
         EqpManagementRequestSupport.HsmsSettingsRequest hsmsSettings,
 
         @Valid
-        EqpManagementRequestSupport.SocketSettingsRequest socketSettings
+        EqpManagementRequestSupport.SocketSettingsRequest socketSettings,
+
+        @Valid
+        EqpManagementRequestSupport.PlcSettingsRequest plcSettings
 ) {
 }

@@ -4,6 +4,7 @@ import com.nori.tc.db.core.eqp.store.TcEqpHsmsStore;
 import com.nori.tc.db.core.eqp.store.TcEqpLogStore;
 import com.nori.tc.db.core.eqp.store.TcEqpParamStore;
 import com.nori.tc.db.core.eqp.store.TcEqpParamVersionStore;
+import com.nori.tc.db.core.eqp.store.TcEqpPlcStore;
 import com.nori.tc.db.core.eqp.store.TcEqpPortStatusStore;
 import com.nori.tc.db.core.eqp.store.TcEqpSocketStore;
 import com.nori.tc.db.core.eqp.store.TcEqpStateStore;
@@ -15,6 +16,7 @@ import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpHsms;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpLog;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpParam;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpParamVersion;
+import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpPlc;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpPortStatus;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpSocket;
 import com.nori.tc.db.core.eqp.upsert.UpsertTcEqpState;
@@ -23,10 +25,15 @@ import com.nori.tc.db.core.jar.store.TcJarGatewayStore;
 import com.nori.tc.db.core.line.store.TcLineStore;
 import com.nori.tc.db.core.work.store.TcWorkStore;
 import com.nori.tc.db.domain.common.eqp.ControlState;
+import com.nori.tc.db.domain.common.eqp.DesiredState;
 import com.nori.tc.db.domain.common.eqp.EqpState;
+import com.nori.tc.db.domain.common.model.PlcProtocol;
+import com.nori.tc.db.domain.common.model.PlcTransport;
 import com.nori.tc.db.domain.eqp.TcEqp;
 import com.nori.tc.db.domain.eqp.TcEqpParam;
+import com.nori.tc.db.domain.eqp.TcEqpPlc;
 import com.nori.tc.db.domain.model.TcModelParam;
+import com.nori.tc.db.domain.plc.PlcEnabledPollGroupsCodec;
 import com.nori.tc.ui.adapter.db.mapper.UiDomainEnumMapper;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
@@ -63,6 +70,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
     private final TcEqpStore eqpStore;
     private final TcEqpHsmsStore eqpHsmsStore;
     private final TcEqpSocketStore eqpSocketStore;
+    private final TcEqpPlcStore eqpPlcStore;
     private final TcEqpLogStore eqpLogStore;
     private final TcEqpStateStore eqpStateStore;
     private final TcEqpPortStatusStore eqpPortStatusStore;
@@ -80,6 +88,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             final TcEqpStore eqpStore,
             final TcEqpHsmsStore eqpHsmsStore,
             final TcEqpSocketStore eqpSocketStore,
+            final TcEqpPlcStore eqpPlcStore,
             final TcEqpLogStore eqpLogStore,
             final TcEqpStateStore eqpStateStore,
             final TcEqpPortStatusStore eqpPortStatusStore,
@@ -96,6 +105,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         this.eqpStore = Objects.requireNonNull(eqpStore, "eqpStore is null");
         this.eqpHsmsStore = Objects.requireNonNull(eqpHsmsStore, "eqpHsmsStore is null");
         this.eqpSocketStore = Objects.requireNonNull(eqpSocketStore, "eqpSocketStore is null");
+        this.eqpPlcStore = Objects.requireNonNull(eqpPlcStore, "eqpPlcStore is null");
         this.eqpLogStore = Objects.requireNonNull(eqpLogStore, "eqpLogStore is null");
         this.eqpStateStore = Objects.requireNonNull(eqpStateStore, "eqpStateStore is null");
         this.eqpPortStatusStore = Objects.requireNonNull(eqpPortStatusStore, "eqpPortStatusStore is null");
@@ -145,7 +155,13 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             ));
 
             final long eqpKey = createdEqp.eqpKey();
-            upsertProtocolDetails(eqpKey, command.interfaceType(), command.hsmsSettings(), command.socketSettings());
+            upsertProtocolDetails(
+                    eqpKey,
+                    command.interfaceType(),
+                    command.hsmsSettings(),
+                    command.socketSettings(),
+                    command.plcSettings()
+            );
             upsertLogPolicy(eqpKey, resolveCreateLogSettings(command.logSettings()));
             upsertInitialState(eqpKey, command.interfaceType());
             upsertInitialPortStatuses(createdEqp, normalizeOptionalText(command.appliedParamVersion()));
@@ -199,7 +215,13 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             ));
 
             final long eqpKey = updatedEqp.eqpKey();
-            upsertProtocolDetails(eqpKey, existing.eqp().commInterface(), command.hsmsSettings(), command.socketSettings());
+            upsertProtocolDetails(
+                    eqpKey,
+                    existing.eqp().commInterface(),
+                    command.hsmsSettings(),
+                    command.socketSettings(),
+                    command.plcSettings()
+            );
             upsertLogPolicy(eqpKey, resolveUpdateLogSettings(command.logSettings(), existing.logPolicy()));
 
             return requireSnapshot(eqpId);
@@ -310,6 +332,9 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         if (command.socketSettings() == null && command.interfaceType() == UiProtocolType.SOCKET) {
             throw new UiBadRequestException("SOCKET 설비는 socketSettings가 필요합니다.");
         }
+        if (command.plcSettings() == null && command.interfaceType() == UiProtocolType.PLC) {
+            throw new UiBadRequestException("PLC 설비는 plcSettings가 필요합니다.");
+        }
     }
 
     /**
@@ -374,8 +399,10 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             final long eqpKey,
             final UiProtocolType interfaceType,
             final EqpManagementCommand.HsmsSettings hsmsSettings,
-            final EqpManagementCommand.SocketSettings socketSettings
+            final EqpManagementCommand.SocketSettings socketSettings,
+            final EqpManagementCommand.PlcSettings plcSettings
     ) {
+        // 프로토콜은 생성 후 불변(§7)이라 cross-delete 가 아니라 해당 프로토콜 store 선택 + 나머지 2개 정리다.
         if (interfaceType == UiProtocolType.SECS) {
             final EqpManagementCommand.HsmsSettings resolved = resolveHsmsSettings(hsmsSettings);
             eqpHsmsStore.upsert(new UpsertTcEqpHsms(
@@ -392,6 +419,28 @@ public class JpaEqpCrudPort implements EqpCrudPort {
                     null,
                     null
             ));
+            eqpSocketStore.deleteByEqpKey(eqpKey);
+            eqpPlcStore.deleteByEqpKey(eqpKey);
+            return;
+        }
+
+        if (interfaceType == UiProtocolType.PLC) {
+            final EqpManagementCommand.PlcSettings resolved = resolvePlcSettings(plcSettings);
+            // enabled_poll_groups 는 GROUP_START/END saga 가 단독 관리하는 상태다.
+            // 폼 편집(update)은 연결 튜닝만 바꾸므로 기존 폴링 그룹 집합을 보존한다(create 시 빈 집합).
+            final String enabledPollGroups = eqpPlcStore.findByEqpKey(eqpKey)
+                    .map(TcEqpPlc::enabledPollGroups)
+                    .orElse(PlcEnabledPollGroupsCodec.EMPTY);
+            eqpPlcStore.upsert(new UpsertTcEqpPlc(
+                    eqpKey,
+                    PlcProtocol.valueOf(resolved.plcProtocol()),
+                    PlcTransport.valueOf(resolved.transport()),
+                    resolved.unitId(),
+                    resolved.pollTimeoutMs(),
+                    resolved.reconnectMaxRetries(),
+                    enabledPollGroups
+            ));
+            eqpHsmsStore.deleteByEqpKey(eqpKey);
             eqpSocketStore.deleteByEqpKey(eqpKey);
             return;
         }
@@ -411,6 +460,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
                 null
         ));
         eqpHsmsStore.deleteByEqpKey(eqpKey);
+        eqpPlcStore.deleteByEqpKey(eqpKey);
     }
 
     private void upsertLogPolicy(final long eqpKey, final EqpManagementCommand.LogSettings logSettings) {
@@ -540,10 +590,12 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             eqpState = EqpState.SERVICE_UNAVAILABLE;
         }
 
+        // 신규 설비의 연결 의도는 ENDED(never-started) — STARTED 전이는 EQP_START 시 gateway 가 영속(§3 단일 writer).
         return new UpsertTcEqpState(
                 eqpKey,
                 controlState,
                 eqpState,
+                DesiredState.ENDED,
                 resolvedTimestamp,
                 "EQP_CREATED",
                 "EQP created by UI management service",
@@ -586,6 +638,22 @@ public class JpaEqpCrudPort implements EqpCrudPort {
                     snapshot.socket().updatedAt()
             ));
             eqpHsmsStore.deleteByEqpKey(eqpKey);
+            eqpPlcStore.deleteByEqpKey(eqpKey);
+            return;
+        }
+
+        if (snapshot.eqp().commInterface() == UiProtocolType.PLC && snapshot.plc() != null) {
+            eqpPlcStore.upsert(new UpsertTcEqpPlc(
+                    eqpKey,
+                    PlcProtocol.valueOf(snapshot.plc().plcProtocol()),
+                    PlcTransport.valueOf(snapshot.plc().transport()),
+                    snapshot.plc().unitId(),
+                    snapshot.plc().pollTimeoutMs(),
+                    snapshot.plc().reconnectMaxRetries(),
+                    PlcEnabledPollGroupsCodec.serialize(snapshot.plc().enabledPollGroups())
+            ));
+            eqpHsmsStore.deleteByEqpKey(eqpKey);
+            eqpSocketStore.deleteByEqpKey(eqpKey);
         }
     }
 
@@ -613,6 +681,9 @@ public class JpaEqpCrudPort implements EqpCrudPort {
                 eqpKey,
                 UiDomainEnumMapper.toDbControlState(snapshot.runtimeState().controlState()),
                 UiDomainEnumMapper.toDbEqpState(snapshot.runtimeState().eqpState()),
+                snapshot.runtimeState().desiredState() == null
+                        ? DesiredState.ENDED
+                        : DesiredState.valueOf(snapshot.runtimeState().desiredState()),
                 snapshot.runtimeState().sinceAt(),
                 snapshot.runtimeState().reasonCode(),
                 snapshot.runtimeState().reasonDetail(),
@@ -705,6 +776,28 @@ public class JpaEqpCrudPort implements EqpCrudPort {
                 input.writeTimeout() == null ? 0 : input.writeTimeout(),
                 input.maxFrameSizeBytes() == null ? 8192 : input.maxFrameSizeBytes(),
                 input.keepAliveEnabled() == null || input.keepAliveEnabled()
+        );
+    }
+
+    /**
+     * PLC 연결 튜닝 입력의 누락 필드를 안전한 기본값으로 보정합니다.
+     *
+     * <p>protocol/transport 의 PoC 범위(MODBUS_TCP+TCP)·조합 검증은 {@code EqpManagementCommandValidator}
+     * 가 선행하므로, 여기서는 enum 변환 가능한 정규화 문자열과 정수 기본값만 채웁니다.
+     * reconnectMaxRetries 기본 N=3 은 Plan §5 #8(측정 아닌 안전 초기값)입니다.</p>
+     */
+    private EqpManagementCommand.PlcSettings resolvePlcSettings(final EqpManagementCommand.PlcSettings input) {
+        if (input == null) {
+            throw new UiBadRequestException("PLC 설비는 plcSettings가 필요합니다.");
+        }
+        final String protocol = normalizeOptionalText(input.plcProtocol());
+        final String transport = normalizeOptionalText(input.transport());
+        return new EqpManagementCommand.PlcSettings(
+                protocol == null ? "MODBUS_TCP" : protocol.toUpperCase(),
+                transport == null ? "TCP" : transport.toUpperCase(),
+                input.unitId() == null ? 1 : input.unitId(),
+                input.pollTimeoutMs() == null ? 3000 : input.pollTimeoutMs(),
+                input.reconnectMaxRetries() == null ? 3 : input.reconnectMaxRetries()
         );
     }
 

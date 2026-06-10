@@ -165,7 +165,17 @@ public class DeployPlanningStateJdbcPort implements DeployPlanningStatePort {
                                 param.updatedAt() == null ? null : param.updatedAt().toString()
                         ))
                         .toList(),
-                snapshot.eqp().updatedAt() == null ? null : snapshot.eqp().updatedAt().toString()
+                snapshot.eqp().updatedAt() == null ? null : snapshot.eqp().updatedAt().toString(),
+                snapshot.runtimeState() == null || snapshot.runtimeState().desiredState() == null
+                        ? "ENDED" : snapshot.runtimeState().desiredState(),
+                snapshot.plc() == null ? null : new UiEquipmentProfileSnapshot.PlcSettingsSnapshot(
+                        snapshot.plc().plcProtocol(),
+                        snapshot.plc().transport(),
+                        snapshot.plc().unitId(),
+                        snapshot.plc().pollTimeoutMs(),
+                        snapshot.plc().reconnectMaxRetries(),
+                        snapshot.plc().enabledPollGroups()
+                )
         );
     }
 

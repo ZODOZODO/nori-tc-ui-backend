@@ -7,6 +7,7 @@ import com.nori.tc.db.core.eqp.store.TcEqpParamStore;
 import com.nori.tc.db.core.eqp.store.TcEqpParamVersionStore;
 import com.nori.tc.db.core.eqp.store.TcEqpPortStatusStore;
 import com.nori.tc.db.core.eqp.store.TcEqpSocketProtocolTypeStore;
+import com.nori.tc.db.core.eqp.store.TcEqpPlcStore;
 import com.nori.tc.db.core.eqp.store.TcEqpSocketStore;
 import com.nori.tc.db.core.eqp.store.TcEqpStateHistStore;
 import com.nori.tc.db.core.eqp.store.TcEqpStateStore;
@@ -96,6 +97,7 @@ class EqpManagementDbSupportTest {
         private final TcEqpStore eqpStore = mock(TcEqpStore.class);
         private final TcEqpHsmsStore eqpHsmsStore = mock(TcEqpHsmsStore.class);
         private final TcEqpSocketStore eqpSocketStore = mock(TcEqpSocketStore.class);
+        private final TcEqpPlcStore eqpPlcStore = mock(TcEqpPlcStore.class);
         private final TcEqpLogStore eqpLogStore = mock(TcEqpLogStore.class);
         private final TcEqpStateStore eqpStateStore = mock(TcEqpStateStore.class);
         private final TcEqpStateHistStore eqpStateHistStore = mock(TcEqpStateHistStore.class);
@@ -111,6 +113,7 @@ class EqpManagementDbSupportTest {
                 eqpStore,
                 eqpHsmsStore,
                 eqpSocketStore,
+                eqpPlcStore,
                 eqpLogStore,
                 eqpStateStore,
                 eqpStateHistStore,

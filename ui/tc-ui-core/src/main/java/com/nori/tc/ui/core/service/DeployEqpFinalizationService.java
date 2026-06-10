@@ -96,6 +96,15 @@ final class DeployEqpFinalizationService {
                         snapshot.socket().maxFrameSizeBytes(),
                         snapshot.socket().keepAliveEnabled()
                 )
+                        : null,
+                interfaceType == UiProtocolType.PLC && snapshot.plc() != null
+                        ? new EqpManagementCommand.PlcSettings(
+                        snapshot.plc().plcProtocol(),
+                        snapshot.plc().transport(),
+                        snapshot.plc().unitId(),
+                        snapshot.plc().pollTimeoutMs(),
+                        snapshot.plc().reconnectMaxRetries()
+                )
                         : null
         );
     }
