@@ -5,6 +5,7 @@ import com.nori.tc.ui.adapters.redis.comm.CommLogRedisQueryAdapter;
 import com.nori.tc.ui.adapters.redis.coordination.DeployExecutionRedisAdapter;
 import com.nori.tc.ui.adapters.redis.dlq.BusinessDlqRedisService;
 import com.nori.tc.ui.adapters.redis.dlq.GatewayDlqRedisService;
+import com.nori.tc.ui.adapters.redis.lease.GatewayShardLeaseRedisAdapter;
 import com.nori.tc.ui.adapters.redis.registry.DeployTracePubSubListener;
 import com.nori.tc.ui.adapters.redis.registry.DeployTraceRedisAdapter;
 import com.nori.tc.ui.adapters.redis.registry.DualResponsePubSubListener;
@@ -27,6 +28,7 @@ import org.springframework.context.annotation.Import;
         DeployTraceRedisAdapter.class,
         BusinessDlqRedisService.class,
         GatewayDlqRedisService.class,
+        GatewayShardLeaseRedisAdapter.class,
         DualResponsePubSubListener.class,
         DualResponseRedisAdapter.class,
         RedisEqpRepairTaskStore.class,

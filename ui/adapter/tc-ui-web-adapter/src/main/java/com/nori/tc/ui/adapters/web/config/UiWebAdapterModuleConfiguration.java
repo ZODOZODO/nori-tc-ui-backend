@@ -16,6 +16,7 @@ import com.nori.tc.ui.adapters.web.controller.DeployScenarioAdminController;
 import com.nori.tc.ui.adapters.web.controller.DlqController;
 import com.nori.tc.ui.adapters.web.controller.EqpController;
 import com.nori.tc.ui.adapters.web.controller.EqpParamController;
+import com.nori.tc.ui.adapters.web.controller.GatewayShardLeaseController;
 import com.nori.tc.ui.adapters.web.controller.GroupController;
 import com.nori.tc.ui.adapters.web.controller.LineController;
 import com.nori.tc.ui.adapters.web.controller.LiveMapController;
@@ -60,6 +61,7 @@ import org.springframework.context.annotation.Import;
         DlqController.class,
         EqpController.class,
         EqpParamController.class,
+        GatewayShardLeaseController.class,
         GroupController.class,
         LineController.class,
         LiveMapController.class,

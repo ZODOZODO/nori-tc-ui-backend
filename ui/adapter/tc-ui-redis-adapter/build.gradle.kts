@@ -51,6 +51,12 @@ dependencies {
     implementation("com.nori.tc:tc-db-domain:0.0.1-SNAPSHOT")
 
     /*
+     * 공유 shard-group 매핑(tc.shard-groups[*]) — Gateway shard lease 점유 현황 조회에서
+     * group id / owned-partitions 정의를 Gateway와 동일한 properties로 읽습니다.
+     */
+    implementation("com.nori.tc:tc-common-shard:0.0.1-SNAPSHOT")
+
+    /*
      * Spring Data Redis: RedisTemplate, LettuceConnectionFactory, RedisSerializer 등
      * - spring.data.redis.* 표준 설정을 읽되, RedisConnectionFactory 빈은 직접 구성합니다.
      * - gatewayRedisTemplate, businessRedisTemplate은 논리 역할별 템플릿 이름입니다.
