@@ -885,7 +885,7 @@ final class DeployServiceCommandSupport {
                         null,
                         textValue(item, "name"),
                         version,
-                        item.path("value").asText(""),
+                        item.path("value").asString(""),
                         null
                 ))
                 .filter(param -> param.paramName() != null && !param.paramName().isBlank())

@@ -301,9 +301,9 @@ class DeployServiceTest {
                 eqpParamUpdateCommand("PHOTO_001").commonRequest().uiMessage()
         );
 
-        assertEquals("EQP_PARAM_V1", eqpParamMessage.path("eqpParams").path("version").asText());
-        assertEquals("PPID", eqpParamMessage.path("eqpParams").path("items").get(0).path("name").asText());
-        assertEquals("P1001", eqpParamMessage.path("eqpParams").path("items").get(0).path("value").asText());
+        assertEquals("EQP_PARAM_V1", eqpParamMessage.path("eqpParams").path("version").asString());
+        assertEquals("PPID", eqpParamMessage.path("eqpParams").path("items").get(0).path("name").asString());
+        assertEquals("P1001", eqpParamMessage.path("eqpParams").path("items").get(0).path("value").asString());
     }
 
     @Test

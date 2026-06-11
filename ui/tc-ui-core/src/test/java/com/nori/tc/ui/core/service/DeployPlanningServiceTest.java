@@ -275,8 +275,8 @@ class DeployPlanningServiceTest {
         final var plcSettings = equipmentProfile.path("plcSettings");
 
         assertFalse(plcSettings.isMissingNode() || plcSettings.isNull(), "deploy 경로 equipmentProfile.plcSettings 누락");
-        assertEquals("MODBUS_TCP", plcSettings.path("plcProtocol").asText());
-        assertEquals("TCP", plcSettings.path("transport").asText());
+        assertEquals("MODBUS_TCP", plcSettings.path("plcProtocol").asString());
+        assertEquals("TCP", plcSettings.path("transport").asString());
         assertEquals(3, plcSettings.path("unitId").asInt());
         assertEquals(3000, plcSettings.path("pollTimeoutMs").asInt());
         assertEquals(5, plcSettings.path("reconnectMaxRetries").asInt());

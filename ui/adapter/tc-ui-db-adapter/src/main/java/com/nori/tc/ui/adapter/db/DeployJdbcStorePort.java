@@ -1094,7 +1094,7 @@ public class DeployJdbcStorePort implements DeployStorePort {
             if (deltaKindNode == null || deltaKindNode.isNull()) {
                 continue;
             }
-            final String rawValue = support.normalizeOptionalText(deltaKindNode.asText());
+            final String rawValue = support.normalizeOptionalText(deltaKindNode.asString());
             if (rawValue == null) {
                 continue;
             }

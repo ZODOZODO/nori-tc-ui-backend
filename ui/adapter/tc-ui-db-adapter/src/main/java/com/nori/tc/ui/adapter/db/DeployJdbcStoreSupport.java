@@ -373,7 +373,7 @@ final class DeployJdbcStoreSupport {
                 resultSet.getLong("deploy_key"),
                 resultSet.getString("deploy_name"),
                 UiCommandEventType.fromText(resultSet.getString("event_type")),
-                normalizeOptionalText(commonState.path("resolvedScenarioCode").asText(null)),
+                normalizeOptionalText(commonState.path("resolvedScenarioCode").asString(null)),
                 DeployStatus.valueOf(resultSet.getString("deploy_status")),
                 resultSet.getBoolean("pause_requested"),
                 DeployExecutionPolicy.fromText(resultSet.getString("execution_policy")),

@@ -239,11 +239,11 @@ public class DeployService {
 
             if (snapshot != null && snapshot.snapshotData() != null) {
                 final JsonNode snapshotData = snapshot.snapshotData();
-                addIfPresent(interfaceTypes, snapshotData.path("interfaceType").asText(null));
-                addIfPresent(modelNames, snapshotData.path("modelInfo").path("modelName").asText(null));
-                addIfPresent(modelVersions, snapshotData.path("modelInfo").path("modelVersion").asText(null));
-                addIfPresent(businessJarNames, snapshotData.path("businessJar").path("jarFileName").asText(null));
-                addIfPresent(eqpParamVersions, snapshotData.path("eqpParams").path("version").asText(null));
+                addIfPresent(interfaceTypes, snapshotData.path("interfaceType").asString(null));
+                addIfPresent(modelNames, snapshotData.path("modelInfo").path("modelName").asString(null));
+                addIfPresent(modelVersions, snapshotData.path("modelInfo").path("modelVersion").asString(null));
+                addIfPresent(businessJarNames, snapshotData.path("businessJar").path("jarFileName").asString(null));
+                addIfPresent(eqpParamVersions, snapshotData.path("eqpParams").path("version").asString(null));
                 continue;
             }
             addIfPresent(interfaceTypes, resolveInterfaceType(target.eqpId()));
