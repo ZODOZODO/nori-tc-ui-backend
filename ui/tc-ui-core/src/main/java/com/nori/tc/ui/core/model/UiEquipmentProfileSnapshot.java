@@ -29,12 +29,33 @@ public record UiEquipmentProfileSnapshot(
         List<PortStatusSnapshot> portStatuses,
         LogPolicySnapshot logPolicy,
         List<ParamSnapshot> params,
-        String updatedAt
+        String updatedAt,
+        String desiredState,
+        PlcSettingsSnapshot plcSettings
 ) {
 
     public UiEquipmentProfileSnapshot {
         portStatuses = portStatuses == null ? List.of() : List.copyOf(portStatuses);
         params = params == null ? List.of() : List.copyOf(params);
+    }
+
+    /**
+     * PLC 연결 튜닝 + 폴링 그룹 의도 스냅샷입니다(PLC 설비 전용 — SECS/SOCKET 은 null).
+     *
+     * <p>그룹/레지스터 디코드 스펙(groups)은 gateway 가 부팅/hot-reload 시 {@code tc_model_plc_*} 를
+     * DB 직독(A안 §2/§3)하므로 ui-backend 는 운반하지 않는다. 연결 튜닝과 폴링 의도(enabledPollGroups)만 운반한다.</p>
+     */
+    public record PlcSettingsSnapshot(
+            String plcProtocol,
+            String transport,
+            Integer unitId,
+            Integer pollTimeoutMs,
+            Integer reconnectMaxRetries,
+            List<String> enabledPollGroups
+    ) {
+        public PlcSettingsSnapshot {
+            enabledPollGroups = enabledPollGroups == null ? List.of() : List.copyOf(enabledPollGroups);
+        }
     }
 
     public record HsmsSettingsSnapshot(

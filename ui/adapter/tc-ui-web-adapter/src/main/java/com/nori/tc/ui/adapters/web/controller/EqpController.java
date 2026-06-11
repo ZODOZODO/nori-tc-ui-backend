@@ -376,6 +376,58 @@ public class EqpController {
     }
 
     /**
+     * PLC 폴링 그룹 시작 명령을 Gateway에 전송합니다(EQP_PLC_GROUP_START).
+     *
+     * <p>경로가 {@code /api/eqp/**} 하위라 기존 {@code EQP_WRITE}(PREFIX /api/eqp, 전 메서드) 권한이 자동 커버합니다.</p>
+     *
+     * @param eqpId 설비 ID
+     * @param groupMessageName 폴링 그룹 messageName
+     * @return 202 Accepted 응답
+     */
+    @PostMapping("/{eqpId}/polling-group/{groupMessageName}/start")
+    public ResponseEntity<ApiResponse<AsyncAcceptResponse>> startPollingGroup(
+            @PathVariable final String eqpId,
+            @PathVariable final String groupMessageName
+    ) {
+        final EqpAsyncAcceptResult acceptResult = eqpManagementService.startPollingGroupAsync(
+                eqpId,
+                groupMessageName,
+                dualRequestProperties.getDualRequestTimeoutMs()
+        );
+
+        try (MdcTraceScope ignored = openTraceMdcScope(acceptResult.traceId())) {
+            log.info("EQP_PLC_GROUP_START 요청. eqpId={}, group={}, traceId={}",
+                    eqpId, groupMessageName, acceptResult.traceId());
+            return toAsyncAcceptResponse(acceptResult);
+        }
+    }
+
+    /**
+     * PLC 폴링 그룹 중단 명령을 Gateway에 전송합니다(EQP_PLC_GROUP_END).
+     *
+     * @param eqpId 설비 ID
+     * @param groupMessageName 폴링 그룹 messageName
+     * @return 202 Accepted 응답
+     */
+    @PostMapping("/{eqpId}/polling-group/{groupMessageName}/end")
+    public ResponseEntity<ApiResponse<AsyncAcceptResponse>> endPollingGroup(
+            @PathVariable final String eqpId,
+            @PathVariable final String groupMessageName
+    ) {
+        final EqpAsyncAcceptResult acceptResult = eqpManagementService.endPollingGroupAsync(
+                eqpId,
+                groupMessageName,
+                dualRequestProperties.getDualRequestTimeoutMs()
+        );
+
+        try (MdcTraceScope ignored = openTraceMdcScope(acceptResult.traceId())) {
+            log.info("EQP_PLC_GROUP_END 요청. eqpId={}, group={}, traceId={}",
+                    eqpId, groupMessageName, acceptResult.traceId());
+            return toAsyncAcceptResponse(acceptResult);
+        }
+    }
+
+    /**
      * 관리 명령 future를 HTTP 응답으로 변환합니다.
      *
      * @param future 처리 future

@@ -36,7 +36,8 @@ public final class EqpControllerCommandSupport {
                 request.businessJarRef(),
                 toLogSettings(request.logSettings()),
                 toHsmsSettings(request.hsmsSettings()),
-                toSocketSettings(request.socketSettings())
+                toSocketSettings(request.socketSettings()),
+                toPlcSettings(request.plcSettings())
         );
     }
 
@@ -59,7 +60,8 @@ public final class EqpControllerCommandSupport {
                 existingSnapshot.eqp().businessJarKey(),
                 toLogSettings(request.logSettings()),
                 toHsmsSettings(request.hsmsSettings()),
-                toSocketSettings(request.socketSettings())
+                toSocketSettings(request.socketSettings()),
+                toPlcSettings(request.plcSettings())
         );
     }
 
@@ -125,6 +127,21 @@ public final class EqpControllerCommandSupport {
                 request.writeTimeout(),
                 request.maxFrameSizeBytes(),
                 request.keepAliveEnabled()
+        );
+    }
+
+    private static EqpManagementCommand.PlcSettings toPlcSettings(
+            final EqpManagementRequestSupport.PlcSettingsRequest request
+    ) {
+        if (request == null) {
+            return null;
+        }
+        return new EqpManagementCommand.PlcSettings(
+                request.plcProtocol(),
+                request.transport(),
+                request.unitId(),
+                request.pollTimeoutMs(),
+                request.reconnectMaxRetries()
         );
     }
 }

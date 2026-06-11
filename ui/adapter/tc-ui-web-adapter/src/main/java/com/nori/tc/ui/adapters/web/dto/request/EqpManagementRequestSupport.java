@@ -74,4 +74,22 @@ public final class EqpManagementRequestSupport {
             Boolean keepAliveEnabled
     ) {
     }
+
+    /**
+     * PLC 전용 연결 튜닝 요청 DTO입니다(읽기 범위/주기/디코드는 model 소관).
+     *
+     * @param plcProtocol PLC 프로토콜(PoC=MODBUS_TCP)
+     * @param transport 전송 계층(TCP/UDP/SERIAL)
+     * @param unitId Modbus unit/slave id
+     * @param pollTimeoutMs per-poll timeout(ms)
+     * @param reconnectMaxRetries 연속 폴 실패 quarantine 임계 N
+     */
+    public record PlcSettingsRequest(
+            String plcProtocol,
+            String transport,
+            Integer unitId,
+            Integer pollTimeoutMs,
+            Integer reconnectMaxRetries
+    ) {
+    }
 }

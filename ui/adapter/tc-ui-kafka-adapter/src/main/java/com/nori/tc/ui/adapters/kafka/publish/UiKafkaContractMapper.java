@@ -42,7 +42,27 @@ final class UiKafkaContractMapper {
                 snapshot.params().stream()
                         .map(UiKafkaContractMapper::toParam)
                         .toList(),
-                snapshot.updatedAt()
+                snapshot.updatedAt(),
+                snapshot.desiredState(),
+                toPlcSettings(snapshot.plcSettings())
+        );
+    }
+
+    private static GatewayEquipmentProfileSnapshot.PlcSettingsSnapshot toPlcSettings(
+            final UiEquipmentProfileSnapshot.PlcSettingsSnapshot snapshot
+    ) {
+        if (snapshot == null) {
+            return null;
+        }
+        // groups(디코드 스펙)는 gateway 가 tc_model_plc_* 를 DB 직독(A안)하므로 ui-backend 는 빈 리스트로 둔다.
+        return new GatewayEquipmentProfileSnapshot.PlcSettingsSnapshot(
+                snapshot.plcProtocol(),
+                snapshot.transport(),
+                snapshot.unitId(),
+                snapshot.pollTimeoutMs(),
+                snapshot.reconnectMaxRetries(),
+                snapshot.enabledPollGroups(),
+                java.util.List.of()
         );
     }
 

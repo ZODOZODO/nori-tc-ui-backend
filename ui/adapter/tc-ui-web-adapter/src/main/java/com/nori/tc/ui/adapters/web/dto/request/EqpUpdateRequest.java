@@ -52,6 +52,9 @@ public record EqpUpdateRequest(
         EqpManagementRequestSupport.HsmsSettingsRequest hsmsSettings,
 
         @Valid
-        EqpManagementRequestSupport.SocketSettingsRequest socketSettings
+        EqpManagementRequestSupport.SocketSettingsRequest socketSettings,
+
+        @Valid
+        EqpManagementRequestSupport.PlcSettingsRequest plcSettings
 ) {
 }

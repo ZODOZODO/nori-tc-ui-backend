@@ -15,6 +15,7 @@ import org.springframework.context.annotation.Import;
         DeployPlanningStateJdbcPort.class,
         DeployScenarioCatalogMetaJdbcPort.class,
         EqpManagementDbSupport.class,
+        EqpPlcPollGroupAdapter.class,
         JpaDeployRegisterQueryPort.class,
         JpaApiPermissionPort.class,
         JpaEqpCrudPort.class,

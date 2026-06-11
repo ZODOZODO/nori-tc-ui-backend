@@ -25,6 +25,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -244,6 +245,70 @@ class DeployPlanningServiceTest {
         );
     }
 
+    @Test
+    void planUpdateMergesPlcSettingsIntoEquipmentProfile() {
+        // L1337 deploy(update) 경로 — 빌더 ⓑ DeployPlanningService.mergeEquipmentProfile 가 base profile 의
+        // plcSettings 를 mergedUiMessage.equipmentProfile 로 운반하는지 검증(누락 시 PLC 설비가 폴링 스펙 없이 기동).
+        final DeployScenarioCatalogService catalogService = new DeployScenarioCatalogService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                new InMemoryCatalogMetaPort(),
+                objectMapper
+        );
+        catalogService.initializeCatalog();
+        final DeployPlanningService plcPlanningService = new DeployPlanningService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                eqpId -> Optional.of(plcCurrentState(eqpId)),
+                catalogService,
+                objectMapper
+        );
+
+        final DeployPlanCommand command = new DeployPlanCommand(
+                "PLC Update",
+                UiCommandEventType.EQP_UPDATE,
+                DeployExecutionPolicy.BEST_EFFORT,
+                new DeployPlanCommand.CommonRequest("PLC", plcUpdateUiMessage(), null),
+                List.of(new DeployPlanCommand.TargetRequest("PLC_001", objectMapper.createObjectNode()))
+        );
+
+        final var target = plcPlanningService.plan(command).targets().getFirst();
+        final var equipmentProfile = target.desiredState().mergedUiMessage().path("equipmentProfile");
+        final var plcSettings = equipmentProfile.path("plcSettings");
+
+        assertFalse(plcSettings.isMissingNode() || plcSettings.isNull(), "deploy 경로 equipmentProfile.plcSettings 누락");
+        assertEquals("MODBUS_TCP", plcSettings.path("plcProtocol").asText());
+        assertEquals("TCP", plcSettings.path("transport").asText());
+        assertEquals(3, plcSettings.path("unitId").asInt());
+        assertEquals(3000, plcSettings.path("pollTimeoutMs").asInt());
+        assertEquals(5, plcSettings.path("reconnectMaxRetries").asInt());
+    }
+
+    private DeployCurrentState plcCurrentState(final String eqpId) {
+        return new DeployCurrentState(
+                1L, eqpId, "PLC", "ACTIVE", "10.30.0.1", 502, 1001L, "EQP_PARAM_V1", 3001L, 4001L,
+                null, null, 0, plcEquipmentProfile(eqpId)
+        );
+    }
+
+    private UiEquipmentProfileSnapshot plcEquipmentProfile(final String eqpId) {
+        return new UiEquipmentProfileSnapshot(
+                1L, eqpId, "PLC", null, null, "10.30.0.1", 502, 1001L, 3001L, 4001L, "ACTIVE", 0, true,
+                null, null,
+                new UiEquipmentProfileSnapshot.CurrentStateSnapshot("REMOTE", null, null, null, null, null),
+                null, null, null, null, "STARTED",
+                new UiEquipmentProfileSnapshot.PlcSettingsSnapshot(
+                        "MODBUS_TCP", "TCP", 3, 3000, 5, List.of("EQP_STATUS_REPORT"))
+        );
+    }
+
+    private ObjectNode plcUpdateUiMessage() {
+        final ObjectNode root = objectMapper.createObjectNode();
+        root.putObject("gatewayProfile")
+                .put("connectionMode", "ACTIVE")
+                .put("eqpIp", "10.30.0.1")
+                .put("eqpPort", 502);
+        return root;
+    }
+
     private ObjectNode updateUiMessage() {
         final ObjectNode root = objectMapper.createObjectNode();
         root.putObject("gatewayProfile")
@@ -333,6 +398,8 @@ class DeployPlanningServiceTest {
                 null,
                 null,
                 null,
+                null,
+                "ENDED",
                 null
         );
     }

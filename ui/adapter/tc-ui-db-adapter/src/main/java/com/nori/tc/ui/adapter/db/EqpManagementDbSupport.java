@@ -6,6 +6,7 @@ import com.nori.tc.db.core.eqp.store.TcEqpHsmsStore;
 import com.nori.tc.db.core.eqp.store.TcEqpLogStore;
 import com.nori.tc.db.core.eqp.store.TcEqpParamStore;
 import com.nori.tc.db.core.eqp.store.TcEqpParamVersionStore;
+import com.nori.tc.db.core.eqp.store.TcEqpPlcStore;
 import com.nori.tc.db.core.eqp.store.TcEqpPortStatusStore;
 import com.nori.tc.db.core.eqp.store.TcEqpSocketProtocolTypeStore;
 import com.nori.tc.db.core.eqp.store.TcEqpSocketStore;
@@ -21,6 +22,7 @@ import com.nori.tc.db.domain.eqp.TcEqpHsms;
 import com.nori.tc.db.domain.eqp.TcEqpLog;
 import com.nori.tc.db.domain.eqp.TcEqpParam;
 import com.nori.tc.db.domain.eqp.TcEqpParamVersion;
+import com.nori.tc.db.domain.eqp.TcEqpPlc;
 import com.nori.tc.db.domain.eqp.TcEqpSocket;
 import com.nori.tc.db.domain.eqp.TcEqpSocketProtocolType;
 import com.nori.tc.db.domain.eqp.TcEqpState;
@@ -61,6 +63,7 @@ class EqpManagementDbSupport {
     private final TcEqpStore eqpStore;
     private final TcEqpHsmsStore eqpHsmsStore;
     private final TcEqpSocketStore eqpSocketStore;
+    private final TcEqpPlcStore eqpPlcStore;
     private final TcEqpLogStore eqpLogStore;
     private final TcEqpStateStore eqpStateStore;
     private final TcEqpStateHistStore eqpStateHistStore;
@@ -77,6 +80,7 @@ class EqpManagementDbSupport {
             final TcEqpStore eqpStore,
             final TcEqpHsmsStore eqpHsmsStore,
             final TcEqpSocketStore eqpSocketStore,
+            final TcEqpPlcStore eqpPlcStore,
             final TcEqpLogStore eqpLogStore,
             final TcEqpStateStore eqpStateStore,
             final TcEqpStateHistStore eqpStateHistStore,
@@ -92,6 +96,7 @@ class EqpManagementDbSupport {
         this.eqpStore = Objects.requireNonNull(eqpStore, "eqpStore is null");
         this.eqpHsmsStore = Objects.requireNonNull(eqpHsmsStore, "eqpHsmsStore is null");
         this.eqpSocketStore = Objects.requireNonNull(eqpSocketStore, "eqpSocketStore is null");
+        this.eqpPlcStore = Objects.requireNonNull(eqpPlcStore, "eqpPlcStore is null");
         this.eqpLogStore = Objects.requireNonNull(eqpLogStore, "eqpLogStore is null");
         this.eqpStateStore = Objects.requireNonNull(eqpStateStore, "eqpStateStore is null");
         this.eqpStateHistStore = Objects.requireNonNull(eqpStateHistStore, "eqpStateHistStore is null");
@@ -117,6 +122,7 @@ class EqpManagementDbSupport {
         final TcModel model = modelStore.findByModelVersionKey(eqp.modelVersionKey()).orElse(null);
         final TcEqpHsms hsms = eqpHsmsStore.findByEqpKey(eqpKey).orElse(null);
         final TcEqpSocket socket = eqpSocketStore.findByEqpKey(eqpKey).orElse(null);
+        final TcEqpPlc plc = eqpPlcStore.findByEqpKey(eqpKey).orElse(null);
         final TcEqpLog logPolicy = eqpLogStore.findByEqpKey(eqpKey).orElse(null);
         final TcEqpState runtimeState = eqpStateStore.findByEqpKey(eqpKey).orElse(null);
         final String connectionState = resolveLatestConnectionState(eqpKey);
@@ -135,6 +141,7 @@ class EqpManagementDbSupport {
                 UiModelDbMapper.toDomain(model),
                 UiEqpDbMapper.toDomain(hsms),
                 UiEqpDbMapper.toDomain(socket),
+                UiEqpDbMapper.toDomain(plc),
                 UiEqpDbMapper.toDomain(logPolicy),
                 UiEqpDbMapper.toDomain(runtimeState),
                 connectionState,

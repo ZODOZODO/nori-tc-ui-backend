@@ -5,16 +5,19 @@ import com.nori.tc.db.domain.eqp.TcEqpHsms;
 import com.nori.tc.db.domain.eqp.TcEqpLog;
 import com.nori.tc.db.domain.eqp.TcEqpParam;
 import com.nori.tc.db.domain.eqp.TcEqpParamVersion;
+import com.nori.tc.db.domain.eqp.TcEqpPlc;
 import com.nori.tc.db.domain.eqp.TcEqpPortStatus;
 import com.nori.tc.db.domain.eqp.TcEqpSocket;
 import com.nori.tc.db.domain.eqp.TcEqpState;
 import com.nori.tc.db.domain.jar.TcJarBusiness;
 import com.nori.tc.db.domain.jar.TcJarGateway;
+import com.nori.tc.db.domain.plc.PlcEnabledPollGroupsCodec;
 import com.nori.tc.ui.domain.eqp.UiEqp;
 import com.nori.tc.ui.domain.eqp.UiEqpHsms;
 import com.nori.tc.ui.domain.eqp.UiEqpLogPolicy;
 import com.nori.tc.ui.domain.eqp.UiEqpParam;
 import com.nori.tc.ui.domain.eqp.UiEqpParamVersion;
+import com.nori.tc.ui.domain.eqp.UiEqpPlc;
 import com.nori.tc.ui.domain.eqp.UiEqpPortStatus;
 import com.nori.tc.ui.domain.eqp.UiEqpRuntimeState;
 import com.nori.tc.ui.domain.eqp.UiEqpSocket;
@@ -115,9 +118,28 @@ public final class UiEqpDbMapper {
                 source.eqpKey(),
                 UiDomainEnumMapper.toUiControlState(source.controlState()),
                 UiDomainEnumMapper.toUiEqpState(source.eqpState()),
+                source.desiredState() == null ? null : source.desiredState().name(),
                 source.sinceAt(),
                 source.reasonCode(),
                 source.reasonDetail(),
+                source.updatedAt()
+        );
+    }
+
+    public static UiEqpPlc toDomain(final TcEqpPlc source) {
+        if (source == null) {
+            return null;
+        }
+        return new UiEqpPlc(
+                source.eqpKey(),
+                source.plcProtocol() == null ? null : source.plcProtocol().name(),
+                source.transport() == null ? null : source.transport().name(),
+                source.unitId(),
+                source.pollTimeoutMs(),
+                source.reconnectMaxRetries(),
+                PlcEnabledPollGroupsCodec.deserialize(source.enabledPollGroups()),
+                source.version(),
+                source.createdAt(),
                 source.updatedAt()
         );
     }

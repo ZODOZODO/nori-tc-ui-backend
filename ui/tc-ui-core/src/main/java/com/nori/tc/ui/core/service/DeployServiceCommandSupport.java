@@ -440,6 +440,8 @@ final class DeployServiceCommandSupport {
             case END_GATEWAY_RUNTIME, END_EQP_IF_RUNNING -> UiCommandEventType.EQP_END;
             case RECONNECT_GATEWAY -> UiCommandEventType.EQP_RECONNECT;
             case SEND_MESSAGE -> UiCommandEventType.EQP_SEND_MESSAGE;
+            case START_PLC_POLL_GROUP -> UiCommandEventType.EQP_PLC_GROUP_START;
+            case END_PLC_POLL_GROUP -> UiCommandEventType.EQP_PLC_GROUP_END;
             case UPDATE_EQP_PARAM -> UiCommandEventType.EQP_PARAMETER_UPDATE;
             case RELOAD_GATEWAY_PLUGIN -> UiCommandEventType.EQP_GATEWAY_JARFILE_UPDATE;
             case RELOAD_BUSINESS_PLUGIN -> UiCommandEventType.EQP_BUSINESS_JARFILE_UPDATE;
@@ -569,6 +571,8 @@ final class DeployServiceCommandSupport {
             // Gateway는 EQP_UPDATE 처리 시 createOrUpdateContext에서 DB를 다시 읽어 GatewayEquipmentInfo를 적재합니다.
             case UPDATE_GATEWAY_RUNTIME_METADATA -> copyFields(destination, mergedUiMessage, "gatewayProfile");
             case SEND_MESSAGE -> copyAllFields(destination, mergedUiMessage);
+            // 그룹 명령은 uiMessage 에 실린 groupMessageName 을 그대로 gateway 로 전달한다(SEND_MESSAGE 와 동일).
+            case START_PLC_POLL_GROUP, END_PLC_POLL_GROUP -> copyAllFields(destination, mergedUiMessage);
             case RESTORE_PREVIOUS_MODEL_BINDING,
                  RESTORE_PREVIOUS_BUSINESS_RUNTIME,
                  RESTORE_PREVIOUS_BUSINESS_PLUGIN,
@@ -641,6 +645,20 @@ final class DeployServiceCommandSupport {
         }
         final JsonNode modelInfo = stepUiMessage == null ? null : stepUiMessage.path("modelInfo");
         final Long resolvedModelVersionKey = longValue(modelInfo, "modelVersionKey");
+        final String plcProtocol = textValue(gatewayProfile, "plcProtocol");
+        final UiEquipmentProfileSnapshot.PlcSettingsSnapshot plcSettings = plcProtocol == null
+                ? null
+                : new UiEquipmentProfileSnapshot.PlcSettingsSnapshot(
+                        plcProtocol,
+                        textValue(gatewayProfile, "transport"),
+                        intValue(gatewayProfile, "unitId"),
+                        intValue(gatewayProfile, "pollTimeoutMs"),
+                        intValue(gatewayProfile, "reconnectMaxRetries"),
+                        List.of()
+                );
+        final String resolvedDesiredState = textValue(gatewayProfile, "desiredState") == null
+                ? "ENDED"
+                : textValue(gatewayProfile, "desiredState");
 
         return new UiEquipmentProfileSnapshot(
                 eqpKey,
@@ -662,7 +680,9 @@ final class DeployServiceCommandSupport {
                 List.of(),
                 null,
                 List.of(),
-                OffsetDateTime.now(ZoneOffset.UTC).toString()
+                OffsetDateTime.now(ZoneOffset.UTC).toString(),
+                resolvedDesiredState,
+                plcSettings
         );
     }
 
@@ -739,6 +759,19 @@ final class DeployServiceCommandSupport {
                         executionSnapshot.socket().maxFrameSizeBytes(),
                         executionSnapshot.socket().keepAliveEnabled()
                 );
+        final UiEquipmentProfileSnapshot.PlcSettingsSnapshot plcSettings =
+                executionSnapshot.plc() == null ? null : new UiEquipmentProfileSnapshot.PlcSettingsSnapshot(
+                        executionSnapshot.plc().plcProtocol(),
+                        executionSnapshot.plc().transport(),
+                        executionSnapshot.plc().unitId(),
+                        executionSnapshot.plc().pollTimeoutMs(),
+                        executionSnapshot.plc().reconnectMaxRetries(),
+                        executionSnapshot.plc().enabledPollGroups()
+                );
+        final String desiredState = executionSnapshot.runtimeState() == null
+                || executionSnapshot.runtimeState().desiredState() == null
+                ? "ENDED"
+                : executionSnapshot.runtimeState().desiredState();
         final UiEquipmentProfileSnapshot.CurrentStateSnapshot currentStateSnapshot =
                 executionSnapshot.runtimeState() == null ? null : new UiEquipmentProfileSnapshot.CurrentStateSnapshot(
                         executionSnapshot.runtimeState().controlState() == null ? null : executionSnapshot.runtimeState().controlState().name(),
@@ -788,7 +821,9 @@ final class DeployServiceCommandSupport {
                 portStatuses,
                 logPolicy,
                 params,
-                updatedAt.toString()
+                updatedAt.toString(),
+                desiredState,
+                plcSettings
         );
     }
 

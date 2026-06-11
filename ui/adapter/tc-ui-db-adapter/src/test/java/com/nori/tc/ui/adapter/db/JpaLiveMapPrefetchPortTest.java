@@ -98,8 +98,8 @@ class JpaLiveMapPrefetchPortTest {
         when(eqpStore.findAll(any(PageRequest.class))).thenReturn(List.of(eqp1, eqp2, eqpDisabled));
 
         when(eqpStateStore.findAllByEqpKeyIn(anyCollection())).thenReturn(List.of(
-                new TcEqpState(1L, ControlState.REMOTE, EqpState.RUN, null, null, null, null),
-                new TcEqpState(2L, ControlState.LOCAL, EqpState.IDLE, null, null, null, null)
+                new TcEqpState(1L, ControlState.REMOTE, EqpState.RUN, null, null, null, null, null),
+                new TcEqpState(2L, ControlState.LOCAL, EqpState.IDLE, null, null, null, null, null)
         ));
 
         final OffsetDateTime ts = OffsetDateTime.parse("2026-05-14T05:00:00Z");

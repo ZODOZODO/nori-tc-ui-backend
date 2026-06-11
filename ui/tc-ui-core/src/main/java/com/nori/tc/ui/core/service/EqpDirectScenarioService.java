@@ -13,6 +13,7 @@ import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.port.db.DemoJobCleanupPort;
+import com.nori.tc.ui.core.port.db.EqpPlcPollGroupPort;
 import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import org.slf4j.Logger;
@@ -41,6 +42,7 @@ public class EqpDirectScenarioService {
     private final EqpDirectScenarioLocalMutationCoordinator localMutationCoordinator;
     private final EqpDirectScenarioRunner runner;
     private final DemoJobCleanupPort demoJobCleanupPort;
+    private final EqpPlcPollGroupPort pollGroupPort;
     private final ObjectMapper objectMapper;
     private final ModelParamPayloadSupport modelParamPayloadSupport;
 
@@ -51,6 +53,7 @@ public class EqpDirectScenarioService {
             final EqpDirectScenarioLocalMutationCoordinator localMutationCoordinator,
             final EqpDirectScenarioRunner runner,
             final DemoJobCleanupPort demoJobCleanupPort,
+            final EqpPlcPollGroupPort pollGroupPort,
             final ModelDetailQueryPort modelDetailQueryPort,
             final ObjectMapper objectMapper
     ) {
@@ -60,6 +63,7 @@ public class EqpDirectScenarioService {
         this.localMutationCoordinator = Objects.requireNonNull(localMutationCoordinator, "localMutationCoordinator is null");
         this.runner = Objects.requireNonNull(runner, "runner is null");
         this.demoJobCleanupPort = Objects.requireNonNull(demoJobCleanupPort, "demoJobCleanupPort is null");
+        this.pollGroupPort = Objects.requireNonNull(pollGroupPort, "pollGroupPort is null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is null");
         this.modelParamPayloadSupport = new ModelParamPayloadSupport(
                 Objects.requireNonNull(modelDetailQueryPort, "modelDetailQueryPort is null"),
@@ -268,6 +272,70 @@ public class EqpDirectScenarioService {
         return executeExistingStateEvent(UiCommandEventType.EQP_RECONNECT, eqpId, requestedInterfaceType, actor, ensureObject(uiMessage));
     }
 
+    /**
+     * PLC 폴링 그룹 시작 — gateway 가 accept(PASS reply)하면 {@code enabled_poll_groups} 에 그룹을 add 합니다.
+     *
+     * <p>saga(gateway-confirm-then-DB): {@code runner.run} 이 gateway 응답까지 블로킹하고 PASS/FAIL 을 반영하므로
+     * (미연결 시 gateway 가 EQP_NOT_CONNECTED 로 거부 → throw), PASS 직후에만 DB 변이를 수행한다. groupMessageName 이
+     * 이 메서드 scope 에 있어 ingress reply 가 그룹명을 운반할 필요가 없다(SPEC §2-4).</p>
+     */
+    public EqpCommandResult executeGroupStart(
+            final String eqpId,
+            final String groupMessageName,
+            final String actor
+    ) {
+        return executeGroupCommand(UiCommandEventType.EQP_PLC_GROUP_START, eqpId, groupMessageName, actor);
+    }
+
+    /**
+     * PLC 폴링 그룹 중단 — gateway 가 accept 하면 {@code enabled_poll_groups} 에서 그룹을 remove 합니다(멱등).
+     */
+    public EqpCommandResult executeGroupEnd(
+            final String eqpId,
+            final String groupMessageName,
+            final String actor
+    ) {
+        return executeGroupCommand(UiCommandEventType.EQP_PLC_GROUP_END, eqpId, groupMessageName, actor);
+    }
+
+    private EqpCommandResult executeGroupCommand(
+            final UiCommandEventType eventType,
+            final String eqpId,
+            final String groupMessageName,
+            final String actor
+    ) {
+        try {
+            validator.validateEqpId(eqpId);
+            final String group = requireGroupMessageName(groupMessageName);
+            final EqpManagementSnapshot existingSnapshot = requireExistingSnapshot(eqpId);
+            final String interfaceType = existingSnapshot.eqp().commInterface().name();
+            final JsonNode uiMessage = groupUiMessage(group);
+            final DeployTargetPlanDraft planDraft = planner.plan(eventType, eqpId, interfaceType, uiMessage);
+            final EqpDirectScenarioContext context = localMutationCoordinator.prepareExistingStateEvent(
+                    newExecutionId(),
+                    eventType,
+                    eqpId,
+                    interfaceType,
+                    actor,
+                    uiMessage,
+                    planDraft,
+                    existingSnapshot
+            );
+            // gateway 응답까지 블로킹. 거부(EQP_NOT_CONNECTED 등)/timeout 이면 예외 → catch → DB 변이 없음.
+            runner.run(context);
+            // gateway PASS(accept) 직후에만 enabled_poll_groups 변이.
+            final long eqpKey = existingSnapshot.eqp().eqpKey();
+            if (eventType == UiCommandEventType.EQP_PLC_GROUP_START) {
+                pollGroupPort.addPollGroup(eqpKey, group);
+            } else {
+                pollGroupPort.removePollGroup(eqpKey, group);
+            }
+            return EqpCommandResult.ok();
+        } catch (Exception exception) {
+            return toCommandResult(exception);
+        }
+    }
+
     public EqpCommandResult executeGatewayJarUpdate(
             final String eqpId,
             final Long gatewayJarRef,
@@ -324,10 +392,28 @@ public class EqpDirectScenarioService {
                     existingSnapshot
             );
             runner.run(context);
+            // EQP_END(graceful) PASS 후 폴링 그룹 의도 clear(SPEC §2-6/§3). 비-PLC 설비는 port 가 no-op.
+            // involuntary 끊김(POLLING_TIMEOUT 등)은 ui-backend 에 안 오므로 여기서 clear 되지 않는다(set 유지=재개 근거).
+            if (eventType == UiCommandEventType.EQP_END) {
+                pollGroupPort.clearPollGroups(existingSnapshot.eqp().eqpKey());
+            }
             return EqpCommandResult.ok();
         } catch (Exception exception) {
             return toCommandResult(exception);
         }
+    }
+
+    private String requireGroupMessageName(final String groupMessageName) {
+        if (groupMessageName == null || groupMessageName.isBlank()) {
+            throw new UiBadRequestException("groupMessageName은 비어 있을 수 없습니다.");
+        }
+        return groupMessageName.trim();
+    }
+
+    private JsonNode groupUiMessage(final String groupMessageName) {
+        final ObjectNode root = objectMapper.createObjectNode();
+        root.put("groupMessageName", groupMessageName);
+        return root;
     }
 
     private EqpManagementSnapshot requireExistingSnapshot(final String eqpId) {

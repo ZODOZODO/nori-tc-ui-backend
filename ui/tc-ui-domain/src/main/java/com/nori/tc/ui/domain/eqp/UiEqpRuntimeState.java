@@ -12,6 +12,7 @@ public record UiEqpRuntimeState(
         long eqpKey,
         UiControlState controlState,
         UiEqpState eqpState,
+        String desiredState,
         OffsetDateTime sinceAt,
         String reasonCode,
         String reasonDetail,

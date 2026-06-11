@@ -5,5 +5,6 @@ package com.nori.tc.ui.domain.common.model;
  */
 public enum UiProtocolType {
     SECS,
-    SOCKET
+    SOCKET,
+    PLC
 }
