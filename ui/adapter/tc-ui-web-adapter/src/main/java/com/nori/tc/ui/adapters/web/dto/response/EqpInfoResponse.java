@@ -15,6 +15,7 @@ import java.time.OffsetDateTime;
  *
  * @param eqpKey 설비 PK
  * @param eqpId 설비 비즈니스 ID
+ * @param lineKey 설비 소속 라인 키 (tc_eqp.line_key, 라인 스코프 필터 기준)
  * @param commInterface 통신 인터페이스 타입
  * @param commMode 통신 모드
  * @param isDev 개발 장비 여부
@@ -31,6 +32,7 @@ import java.time.OffsetDateTime;
 public record EqpInfoResponse(
         Long eqpKey,
         String eqpId,
+        long lineKey,
         UiProtocolType commInterface,
         String commMode,
         boolean isDev,

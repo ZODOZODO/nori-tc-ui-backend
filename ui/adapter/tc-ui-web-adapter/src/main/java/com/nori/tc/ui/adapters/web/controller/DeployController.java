@@ -94,6 +94,7 @@ public class DeployController {
      * @param modelName model name 필터
      * @param modelVersionKey model version key 필터
      * @param eqpId eqp id 부분 검색 필터
+     * @param lineKey 설비 소속 라인 필터 (null 이면 전체 라인)
      * @param offset 페이지 시작 위치
      * @param limit 페이지 크기
      * @return 대상 설비 페이지 응답
@@ -103,6 +104,7 @@ public class DeployController {
             @RequestParam(name = "modelName", required = false) final String modelName,
             @RequestParam(name = "modelVersionKey", required = false) final Long modelVersionKey,
             @RequestParam(name = "eqpId", required = false) final String eqpId,
+            @RequestParam(name = "lineKey", required = false) final Long lineKey,
             @RequestParam(name = "offset", required = false) final Integer offset,
             @RequestParam(name = "limit", required = false) final Integer limit
     ) {
@@ -111,6 +113,7 @@ public class DeployController {
                 modelName,
                 modelVersionKey,
                 eqpId,
+                lineKey,
                 pageRequest
         );
 

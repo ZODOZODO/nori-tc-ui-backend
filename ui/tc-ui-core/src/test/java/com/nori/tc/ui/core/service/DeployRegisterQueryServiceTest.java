@@ -27,22 +27,22 @@ class DeployRegisterQueryServiceTest {
     @Test
     void findRegisterTargetsNormalizesBlankInputsBeforeDelegation() {
         final UiPageRequest pageRequest = UiPageRequest.of(0, 50);
-        when(deployRegisterQueryPort.findRegisterTargets(null, 2401L, null, pageRequest))
+        when(deployRegisterQueryPort.findRegisterTargets(null, 2401L, null, 11L, pageRequest))
                 .thenReturn(PagedResponse.of(List.<DeployRegisterTargetView>of(), 0, 50, 0L));
 
-        deployRegisterQueryService.findRegisterTargets("   ", 2401L, "   ", pageRequest);
+        deployRegisterQueryService.findRegisterTargets("   ", 2401L, "   ", 11L, pageRequest);
 
-        verify(deployRegisterQueryPort).findRegisterTargets(null, 2401L, null, pageRequest);
+        verify(deployRegisterQueryPort).findRegisterTargets(null, 2401L, null, 11L, pageRequest);
     }
 
     @Test
     void findRegisterTargetsTrimsTextFiltersAndUsesDefaultPageWhenPageIsNull() {
         final UiPageRequest defaultPage = UiPageRequest.defaultPage();
-        when(deployRegisterQueryPort.findRegisterTargets("PHOTO", null, "EQP-01", defaultPage))
+        when(deployRegisterQueryPort.findRegisterTargets("PHOTO", null, "EQP-01", null, defaultPage))
                 .thenReturn(PagedResponse.of(List.<DeployRegisterTargetView>of(), defaultPage.offset(), defaultPage.limit(), 0L));
 
-        deployRegisterQueryService.findRegisterTargets(" PHOTO ", null, " EQP-01 ", null);
+        deployRegisterQueryService.findRegisterTargets(" PHOTO ", null, " EQP-01 ", null, null);
 
-        verify(deployRegisterQueryPort).findRegisterTargets("PHOTO", null, "EQP-01", defaultPage);
+        verify(deployRegisterQueryPort).findRegisterTargets("PHOTO", null, "EQP-01", null, defaultPage);
     }
 }

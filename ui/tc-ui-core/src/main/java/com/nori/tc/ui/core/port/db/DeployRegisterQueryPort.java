@@ -15,6 +15,7 @@ public interface DeployRegisterQueryPort {
      * @param modelName 현재 연결 model name 필터
      * @param modelVersionKey 현재 연결 model version key 필터
      * @param eqpId eqp id 부분 검색 필터
+     * @param lineKey 설비 소속 라인 필터 (null 이면 전체 라인)
      * @param pageRequest 페이지 요청
      * @return 대상 설비 페이지
      */
@@ -22,6 +23,7 @@ public interface DeployRegisterQueryPort {
             String modelName,
             Long modelVersionKey,
             String eqpId,
+            Long lineKey,
             UiPageRequest pageRequest
     );
 }

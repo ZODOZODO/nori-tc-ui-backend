@@ -29,6 +29,7 @@ public class DeployRegisterQueryService {
      * @param modelName model name 필터
      * @param modelVersionKey model version key 필터
      * @param eqpId eqp id 필터
+     * @param lineKey 설비 소속 라인 필터 (null 이면 전체 라인)
      * @param pageRequest 페이지 요청
      * @return 조회 결과 페이지
      */
@@ -36,6 +37,7 @@ public class DeployRegisterQueryService {
             final String modelName,
             final Long modelVersionKey,
             final String eqpId,
+            final Long lineKey,
             final UiPageRequest pageRequest
     ) {
         final UiPageRequest effectivePageRequest = pageRequest == null ? UiPageRequest.defaultPage() : pageRequest;
@@ -44,6 +46,7 @@ public class DeployRegisterQueryService {
                 normalizeText(modelName),
                 modelVersionKey,
                 normalizeText(eqpId),
+                lineKey,
                 effectivePageRequest
         );
     }

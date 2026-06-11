@@ -140,7 +140,7 @@ class DeployControllerTest {
     @Test
     void getRegisterTargetsReturnsPagedResult() throws Exception {
         final UiPageRequest pageRequest = UiPageRequest.of(0, 50);
-        when(deployRegisterQueryService.findRegisterTargets("PhotoCell-A", 2401L, "PHOTO", pageRequest))
+        when(deployRegisterQueryService.findRegisterTargets("PhotoCell-A", 2401L, "PHOTO", 11L, pageRequest))
                 .thenReturn(PagedResponse.of(
                         List.of(new DeployRegisterTargetView(
                                 101L,
@@ -169,6 +169,7 @@ class DeployControllerTest {
                         .param("modelName", "PhotoCell-A")
                         .param("modelVersionKey", "2401")
                         .param("eqpId", "PHOTO")
+                        .param("lineKey", "11")
                         .param("offset", "0")
                         .param("limit", "50"))
                 .andExpect(status().isOk())
@@ -184,7 +185,7 @@ class DeployControllerTest {
                 .andExpect(jsonPath("$.data.items[0].activeRequestedBy").value("ops-user"))
                 .andExpect(jsonPath("$.data.count").value(1));
 
-        verify(deployRegisterQueryService).findRegisterTargets("PhotoCell-A", 2401L, "PHOTO", pageRequest);
+        verify(deployRegisterQueryService).findRegisterTargets("PhotoCell-A", 2401L, "PHOTO", 11L, pageRequest);
     }
 
     @Test

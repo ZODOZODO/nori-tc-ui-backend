@@ -291,6 +291,7 @@ public final class EqpControllerResponseSupport {
         return new EqpInfoResponse(
                 eqp.eqpKey(),
                 eqp.eqpId(),
+                eqp.lineKey(),
                 eqp.commInterface(),
                 eqp.commMode(),
                 eqp.isDev(),

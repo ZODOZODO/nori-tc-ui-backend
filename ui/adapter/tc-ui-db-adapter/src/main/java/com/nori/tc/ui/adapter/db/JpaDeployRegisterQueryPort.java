@@ -42,6 +42,7 @@ public class JpaDeployRegisterQueryPort implements DeployRegisterQueryPort {
             final String modelName,
             final Long modelVersionKey,
             final String eqpId,
+            final Long lineKey,
             final UiPageRequest pageRequest
     ) {
         final UiPageRequest effectivePageRequest = pageRequest == null ? UiPageRequest.defaultPage() : pageRequest;
@@ -58,7 +59,9 @@ public class JpaDeployRegisterQueryPort implements DeployRegisterQueryPort {
                         Function.identity(),
                         (left, right) -> left
                 ));
-        final List<UiEqp> allEqps = dbSupport.loadAllEqps();
+        final List<UiEqp> allEqps = dbSupport.loadAllEqps().stream()
+                .filter(eqp -> lineKey == null || eqp.lineKey() == lineKey.longValue())
+                .toList();
         final Map<String, DeployActiveEqpConflict> activeConflictByEqpId = deployStoreSupport.findActiveEqpConflicts(
                         allEqps.stream()
                                 .map(UiEqp::eqpId)
