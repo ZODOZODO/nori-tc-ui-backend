@@ -11,6 +11,8 @@ import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelStore;
 import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
+import com.nori.tc.db.core.model.store.TcModelPlcGroupStore;
+import com.nori.tc.db.core.model.store.TcModelPlcRegisterStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModel;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMdf;
@@ -84,7 +86,9 @@ public class JpaModelManagementPort implements ModelRootCommandPort, ModelBranch
             final TcModelEventIdStore modelEventIdStore,
             final TcModelMessageFlowStore modelMessageFlowStore,
             final TcModelMdfStore modelMdfStore,
-            final TcModelDcopItemStore modelDcopItemStore
+            final TcModelDcopItemStore modelDcopItemStore,
+            final TcModelPlcGroupStore modelPlcGroupStore,
+            final TcModelPlcRegisterStore modelPlcRegisterStore
     ) {
         this.modelStore = Objects.requireNonNull(modelStore, "modelStore is null");
         this.modelMdfStore = Objects.requireNonNull(modelMdfStore, "modelMdfStore is null");
@@ -100,7 +104,9 @@ public class JpaModelManagementPort implements ModelRootCommandPort, ModelBranch
                 modelEventIdStore,
                 modelMessageFlowStore,
                 modelMdfStore,
-                modelDcopItemStore
+                modelDcopItemStore,
+                modelPlcGroupStore,
+                modelPlcRegisterStore
         );
     }
 

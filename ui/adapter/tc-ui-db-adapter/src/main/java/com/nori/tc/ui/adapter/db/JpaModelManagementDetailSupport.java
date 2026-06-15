@@ -11,6 +11,8 @@ import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
 import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
+import com.nori.tc.db.core.model.store.TcModelPlcGroupStore;
+import com.nori.tc.db.core.model.store.TcModelPlcRegisterStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelDcopItem;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelEventId;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMdf;
@@ -21,6 +23,8 @@ import com.nori.tc.db.core.model.upsert.UpsertTcModelSecsMessage;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelSocketMessage;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelVariableId;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMessageFlow;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelPlcGroup;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelPlcRegister;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
 import com.nori.tc.db.domain.model.TcModelEventId;
 import com.nori.tc.db.domain.model.TcModelMdf;
@@ -31,10 +35,13 @@ import com.nori.tc.db.domain.model.TcModelSecsMessage;
 import com.nori.tc.db.domain.model.TcModelSocketMessage;
 import com.nori.tc.db.domain.model.TcModelVariableId;
 import com.nori.tc.db.domain.model.TcModelMessageFlow;
+import com.nori.tc.db.domain.model.TcModelPlcGroup;
+import com.nori.tc.db.domain.model.TcModelPlcRegister;
 import com.nori.tc.ui.core.port.db.ModelParentCommitPort;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -59,6 +66,8 @@ final class JpaModelManagementDetailSupport {
     private final TcModelMessageFlowStore modelMessageFlowStore;
     private final TcModelMdfStore modelMdfStore;
     private final TcModelDcopItemStore modelDcopItemStore;
+    private final TcModelPlcGroupStore modelPlcGroupStore;
+    private final TcModelPlcRegisterStore modelPlcRegisterStore;
 
     JpaModelManagementDetailSupport(
             final TcModelParamStore modelParamStore,
@@ -70,7 +79,9 @@ final class JpaModelManagementDetailSupport {
             final TcModelEventIdStore modelEventIdStore,
             final TcModelMessageFlowStore modelMessageFlowStore,
             final TcModelMdfStore modelMdfStore,
-            final TcModelDcopItemStore modelDcopItemStore
+            final TcModelDcopItemStore modelDcopItemStore,
+            final TcModelPlcGroupStore modelPlcGroupStore,
+            final TcModelPlcRegisterStore modelPlcRegisterStore
     ) {
         this.modelParamStore = Objects.requireNonNull(modelParamStore, "modelParamStore is null");
         this.modelSecsMessageStore = Objects.requireNonNull(modelSecsMessageStore, "modelSecsMessageStore is null");
@@ -82,6 +93,8 @@ final class JpaModelManagementDetailSupport {
         this.modelMessageFlowStore = Objects.requireNonNull(modelMessageFlowStore, "modelMessageFlowStore is null");
         this.modelMdfStore = Objects.requireNonNull(modelMdfStore, "modelMdfStore is null");
         this.modelDcopItemStore = Objects.requireNonNull(modelDcopItemStore, "modelDcopItemStore is null");
+        this.modelPlcGroupStore = Objects.requireNonNull(modelPlcGroupStore, "modelPlcGroupStore is null");
+        this.modelPlcRegisterStore = Objects.requireNonNull(modelPlcRegisterStore, "modelPlcRegisterStore is null");
     }
 
     void cloneModelDetails(final long sourceModelVersionKey, final long targetModelVersionKey) {
@@ -163,6 +176,55 @@ final class JpaModelManagementDetailSupport {
                 dcopItem.calculationRule(),
                 dcopItem.orderRule()
         )));
+        clonePlcDetails(snapshot, targetModelVersionKey);
+    }
+
+    /**
+     * plc-group / plc-register 를 타깃 버전으로 복제합니다.
+     *
+     * <p>register 는 group_key FK 라 단순 row 복제가 불가하다. 그룹을 타깃 버전에 새로 생성하면 새 group_key 가
+     * 부여되므로, sourceGroupKey → newGroupKey 매핑을 만든 뒤 각 register 를 새 group_key 로 재삽입한다.
+     * register 는 loadSnapshot 에서 그룹 평탄화로 적재되어 모든 register 의 group_key 는 snapshot.plcGroups() 안에 존재한다.</p>
+     */
+    private void clonePlcDetails(
+            final JpaModelManagementSupport.ModelDetailSnapshot snapshot,
+            final long targetModelVersionKey
+    ) {
+        final Map<Long, Long> groupKeyMapping = new HashMap<>();
+        snapshot.plcGroups().forEach(group -> {
+            final TcModelPlcGroup created = modelPlcGroupStore.upsert(new UpsertTcModelPlcGroup(
+                    null,
+                    targetModelVersionKey,
+                    group.messageName(),
+                    group.area(),
+                    group.startAddress(),
+                    group.readCount(),
+                    group.addressQualifier(),
+                    group.pollPeriodMs(),
+                    group.description()
+            ));
+            groupKeyMapping.put(group.groupKey(), created.groupKey());
+        });
+
+        snapshot.plcRegisters().forEach(register -> {
+            final long targetGroupKey = groupKeyMapping.get(register.groupKey());
+            modelPlcRegisterStore.upsert(new UpsertTcModelPlcRegister(
+                    null,
+                    targetGroupKey,
+                    register.wordOffset(),
+                    register.variableName(),
+                    register.dataType(),
+                    register.length(),
+                    register.bitIndex(),
+                    register.byteIndex(),
+                    register.byteOrder(),
+                    register.wordOrder(),
+                    register.scale(),
+                    register.bcdSigned(),
+                    register.charEncoding(),
+                    register.description()
+            ));
+        });
     }
 
     List<ModelParentCommitPort.DiffSection> buildDiffSections(
@@ -229,11 +291,28 @@ final class JpaModelManagementDetailSupport {
                         JpaModelManagementSupport.DCOP_ITEM_COLUMNS,
                         branchSnapshot.dcopItems().stream().map(this::toDcopItemRow).toList(),
                         parentSnapshot.dcopItems().stream().map(this::toDcopItemRow).toList()
+                ),
+                buildDiffSection(
+                        "plc-group",
+                        JpaModelManagementSupport.PLC_GROUP_COLUMNS,
+                        branchSnapshot.plcGroups().stream().map(this::toPlcGroupRow).toList(),
+                        parentSnapshot.plcGroups().stream().map(this::toPlcGroupRow).toList()
+                ),
+                buildDiffSection(
+                        "plc-register",
+                        JpaModelManagementSupport.PLC_REGISTER_COLUMNS,
+                        toPlcRegisterRows(branchSnapshot.plcGroups(), branchSnapshot.plcRegisters()),
+                        toPlcRegisterRows(parentSnapshot.plcGroups(), parentSnapshot.plcRegisters())
                 )
         );
     }
 
     JpaModelManagementSupport.ModelDetailSnapshot loadSnapshot(final long modelVersionKey) {
+        final List<TcModelPlcGroup> plcGroups = modelPlcGroupStore.findAllByModelVersionKey(modelVersionKey);
+        final List<TcModelPlcRegister> plcRegisters = new ArrayList<>();
+        for (TcModelPlcGroup group : plcGroups) {
+            plcRegisters.addAll(modelPlcRegisterStore.findAllByGroupKey(group.groupKey()));
+        }
         return new JpaModelManagementSupport.ModelDetailSnapshot(
                 loadAllByModelVersionKey(modelVersionKey, modelParamStore::findAllByModelVersionKey),
                 loadAllByModelVersionKey(modelVersionKey, modelSecsMessageStore::findAllByModelVersionKey),
@@ -244,7 +323,9 @@ final class JpaModelManagementDetailSupport {
                 loadAllByModelVersionKey(modelVersionKey, modelEventIdStore::findAllByModelVersionKey),
                 loadAllByModelVersionKey(modelVersionKey, modelMessageFlowStore::findAllByModelVersionKey),
                 loadAllByModelVersionKey(modelVersionKey, modelMdfStore::findAllByModelVersionKey),
-                loadAllByModelVersionKey(modelVersionKey, modelDcopItemStore::findAllByModelVersionKey)
+                loadAllByModelVersionKey(modelVersionKey, modelDcopItemStore::findAllByModelVersionKey),
+                plcGroups,
+                plcRegisters
         );
     }
 
@@ -435,6 +516,59 @@ final class JpaModelManagementDetailSupport {
         );
     }
 
+    private JpaModelManagementSupport.DiffRow toPlcGroupRow(final TcModelPlcGroup group) {
+        return new JpaModelManagementSupport.DiffRow(
+                normalizeOptionalText(group.messageName()),
+                List.of(
+                        safe(group.messageName()),
+                        safe(group.area() == null ? null : group.area().name()),
+                        String.valueOf(group.startAddress()),
+                        String.valueOf(group.readCount()),
+                        String.valueOf(group.pollPeriodMs()),
+                        safe(group.addressQualifier()),
+                        safe(group.description())
+                )
+        );
+    }
+
+    private List<JpaModelManagementSupport.DiffRow> toPlcRegisterRows(
+            final List<TcModelPlcGroup> groups,
+            final List<TcModelPlcRegister> registers
+    ) {
+        final Map<Long, String> groupNameByKey = new HashMap<>();
+        for (TcModelPlcGroup group : groups) {
+            groupNameByKey.put(group.groupKey(), group.messageName());
+        }
+        return registers.stream()
+                .map(register -> toPlcRegisterRow(register, groupNameByKey.getOrDefault(register.groupKey(), "")))
+                .toList();
+    }
+
+    private JpaModelManagementSupport.DiffRow toPlcRegisterRow(
+            final TcModelPlcRegister register,
+            final String groupMessageName
+    ) {
+        // register 의 col0(Group)은 비고유 — identity 는 (group message_name, variable_name) 자연키로 잡아야 그룹별 충돌이 없다.
+        return new JpaModelManagementSupport.DiffRow(
+                safe(groupMessageName) + "|" + safe(register.variableName()),
+                List.of(
+                        safe(groupMessageName),
+                        String.valueOf(register.wordOffset()),
+                        safe(register.variableName()),
+                        safe(register.dataType() == null ? null : register.dataType().name()),
+                        numberToText(register.length()),
+                        numberToText(register.bitIndex()),
+                        numberToText(register.byteIndex()),
+                        safe(register.byteOrder()),
+                        safe(register.wordOrder()),
+                        numberToText(register.scale()),
+                        booleanToText(register.bcdSigned()),
+                        safe(register.charEncoding()),
+                        safe(register.description())
+                )
+        );
+    }
+
     private String normalizeOptionalText(final String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -444,6 +578,14 @@ final class JpaModelManagementDetailSupport {
 
     private String safe(final String value) {
         return value == null ? "" : value;
+    }
+
+    private String numberToText(final Number value) {
+        return value == null ? "" : value.toString();
+    }
+
+    private String booleanToText(final Boolean value) {
+        return value == null ? "" : value.toString();
     }
 
     @FunctionalInterface

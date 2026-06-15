@@ -13,10 +13,16 @@ import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
 import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
+import com.nori.tc.db.core.model.store.TcModelPlcGroupStore;
+import com.nori.tc.db.core.model.store.TcModelPlcRegisterStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModel;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMdf;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelParam;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelPlcGroup;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelPlcRegister;
 import com.nori.tc.db.domain.common.model.ModelStatus;
+import com.nori.tc.db.domain.common.model.PlcArea;
+import com.nori.tc.db.domain.common.model.PlcDataType;
 import com.nori.tc.db.domain.common.model.ProtocolType;
 import com.nori.tc.db.domain.common.model.VariableIdType;
 import com.nori.tc.db.domain.eqp.TcEqp;
@@ -31,6 +37,8 @@ import com.nori.tc.db.domain.model.TcModelSecsMessage;
 import com.nori.tc.db.domain.model.TcModelSocketMessage;
 import com.nori.tc.db.domain.model.TcModelVariableId;
 import com.nori.tc.db.domain.model.TcModelMessageFlow;
+import com.nori.tc.db.domain.model.TcModelPlcGroup;
+import com.nori.tc.db.domain.model.TcModelPlcRegister;
 import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
 import com.nori.tc.ui.core.port.db.ModelBranchCommandPort;
 import com.nori.tc.ui.core.port.db.ModelParentCommitPort;
@@ -339,6 +347,87 @@ class JpaModelManagementPortTest {
     }
 
     @Test
+    @DisplayName("branch checkin은 plc-group/register를 새 버전으로 복제하고 register의 group_key를 새 그룹키로 재매핑합니다")
+    void checkinClonesPlcGroupsAndRemapsRegisterGroupKey() {
+        final Fixture fixture = new Fixture();
+        final TcModel branchEdit = model(3402L, 7401L, "PLC_feature_tester", "PLC", "EDIT", ProtocolType.PLC, ModelStatus.DEVELOP);
+        final TcModel checkedIn = model(3403L, 7401L, "PLC_feature_tester", "PLC", dailyVersion(FIXED_VERSION_DATE, 1), ProtocolType.PLC, ModelStatus.DEVELOP);
+
+        fixture.allModels.add(branchEdit);
+        fixture.plcGroupsByVersion.put(branchEdit.modelVersionKey(), List.of(
+                plcGroup(10L, branchEdit.modelVersionKey(), "POLL_A"),
+                plcGroup(20L, branchEdit.modelVersionKey(), "POLL_B")
+        ));
+        fixture.plcRegistersByGroupKey.put(10L, List.of(
+                plcRegister(101L, 10L, 0, "VAR_A1"),
+                plcRegister(102L, 10L, 1, "VAR_A2")
+        ));
+        fixture.plcRegistersByGroupKey.put(20L, List.of(
+                plcRegister(201L, 20L, 0, "VAR_B1")
+        ));
+
+        when(fixture.modelStore.upsert(any())).thenReturn(checkedIn);
+        when(fixture.modelPlcGroupStore.upsert(any())).thenAnswer(invocation -> {
+            final UpsertTcModelPlcGroup cmd = invocation.getArgument(0);
+            final long newKey = "POLL_A".equals(cmd.messageName()) ? 1010L : 1020L;
+            return new TcModelPlcGroup(newKey, cmd.modelVersionKey(), cmd.messageName(), cmd.area(),
+                    cmd.startAddress(), cmd.readCount(), cmd.addressQualifier(), cmd.pollPeriodMs(), cmd.description(),
+                    OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
+        });
+
+        fixture.port.checkinBranchEditVersion(
+                new ModelBranchCommandPort.CheckinBranchEditVersionCommand(branchEdit.modelVersionKey(), "checked in", "SYSTEM"));
+
+        final ArgumentCaptor<UpsertTcModelPlcGroup> groupCaptor = ArgumentCaptor.forClass(UpsertTcModelPlcGroup.class);
+        verify(fixture.modelPlcGroupStore, times(2)).upsert(groupCaptor.capture());
+        assertTrue(groupCaptor.getAllValues().stream().allMatch(cmd -> cmd.modelVersionKey() == checkedIn.modelVersionKey()),
+                "복제된 group 은 새 commit 버전 키로 저장되어야 함");
+        assertTrue(groupCaptor.getAllValues().stream().allMatch(cmd -> cmd.groupKey() == null),
+                "복제는 자연키 신규 생성(groupKey=null)이어야 함");
+
+        final ArgumentCaptor<UpsertTcModelPlcRegister> registerCaptor = ArgumentCaptor.forClass(UpsertTcModelPlcRegister.class);
+        verify(fixture.modelPlcRegisterStore, times(3)).upsert(registerCaptor.capture());
+
+        final Map<String, Long> groupKeyByVariable = new HashMap<>();
+        registerCaptor.getAllValues().forEach(cmd -> groupKeyByVariable.put(cmd.variableName(), cmd.groupKey()));
+        assertEquals(1010L, groupKeyByVariable.get("VAR_A1").longValue());
+        assertEquals(1010L, groupKeyByVariable.get("VAR_A2").longValue());
+        assertEquals(1020L, groupKeyByVariable.get("VAR_B1").longValue());
+    }
+
+    @Test
+    @DisplayName("parent commit preview는 plc-group/plc-register diff 섹션을 포함하고 register identity가 그룹별로 충돌하지 않습니다")
+    void previewIncludesPlcSectionsWithoutRegisterCollision() {
+        final Fixture fixture = new Fixture();
+        final TcModel parentLatest = model(4401L, 8401L, "PLC", null, "1.0.0", ProtocolType.PLC, ModelStatus.OPERATE);
+        final TcModel branchLatest = model(5401L, 8501L, "PLC_feature_tester", "PLC", "EDIT", ProtocolType.PLC, ModelStatus.DEVELOP);
+        fixture.allModels.add(parentLatest);
+        fixture.allModels.add(branchLatest);
+
+        fixture.plcGroupsByVersion.put(parentLatest.modelVersionKey(), List.of(plcGroup(30L, parentLatest.modelVersionKey(), "POLL_A")));
+        fixture.plcGroupsByVersion.put(branchLatest.modelVersionKey(), List.of(plcGroup(40L, branchLatest.modelVersionKey(), "POLL_A")));
+        fixture.plcRegistersByGroupKey.put(30L, List.of(plcRegister(301L, 30L, 0, "VAR_1")));
+        fixture.plcRegistersByGroupKey.put(40L, List.of(
+                plcRegister(401L, 40L, 0, "VAR_1"),
+                plcRegister(402L, 40L, 1, "VAR_2")
+        ));
+
+        final ModelParentCommitPort.CommitParentResult result = fixture.port.previewOrCommit(
+                new ModelParentCommitPort.CommitParentCommand(branchLatest.modelKey(), false, null, "tester"));
+
+        final ModelParentCommitPort.DiffSection groupSection = result.sections().stream()
+                .filter(section -> "plc-group".equals(section.detailNode())).findFirst().orElseThrow();
+        final ModelParentCommitPort.DiffSection registerSection = result.sections().stream()
+                .filter(section -> "plc-register".equals(section.detailNode())).findFirst().orElseThrow();
+
+        // POLL_A 그룹 속성 동일 → 그룹 섹션 변경 없음. register 는 VAR_2 만 신규(그룹명 충돌 없이 변수별 식별).
+        assertEquals(0, groupSection.added().size());
+        assertEquals(0, groupSection.changed().size());
+        assertEquals(1, registerSection.added().size());
+        assertEquals("POLL_A|VAR_2", registerSection.added().getFirst().identity());
+    }
+
+    @Test
     @DisplayName("parent commit preview는 추가/변경/삭제 diff를 모두 계산합니다")
     void previewCommitCalculatesAddedChangedDeleted() {
         final Fixture fixture = new Fixture();
@@ -597,6 +686,14 @@ class JpaModelManagementPortTest {
         return new TcModelDcopItem(1L, modelVersionKey, name, "EVT_01", "VID_TEMP", null, null, 1, OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
     }
 
+    private static TcModelPlcGroup plcGroup(final long groupKey, final long modelVersionKey, final String messageName) {
+        return new TcModelPlcGroup(groupKey, modelVersionKey, messageName, PlcArea.HOLDING_REGISTER, 0, 10, null, 1000, "desc", OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
+    }
+
+    private static TcModelPlcRegister plcRegister(final long registerKey, final long groupKey, final int wordOffset, final String variableName) {
+        return new TcModelPlcRegister(registerKey, groupKey, wordOffset, variableName, PlcDataType.UINT16, null, null, null, null, null, null, null, null, "desc", OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
+    }
+
     private static TcEqp eqp(final long eqpKey, final String eqpId, final long modelVersionKey) {
         final OffsetDateTime now = OffsetDateTime.parse("2026-03-11T10:15:30+09:00");
         return new TcEqp(
@@ -642,6 +739,8 @@ class JpaModelManagementPortTest {
         private final TcModelMessageFlowStore modelMessageFlowStore = mock(TcModelMessageFlowStore.class);
         private final TcModelMdfStore modelMdfStore = mock(TcModelMdfStore.class);
         private final TcModelDcopItemStore modelDcopItemStore = mock(TcModelDcopItemStore.class);
+        private final TcModelPlcGroupStore modelPlcGroupStore = mock(TcModelPlcGroupStore.class);
+        private final TcModelPlcRegisterStore modelPlcRegisterStore = mock(TcModelPlcRegisterStore.class);
 
         private final List<TcModel> allModels = new ArrayList<>();
         private final List<TcEqp> allEqps = new ArrayList<>();
@@ -655,6 +754,8 @@ class JpaModelManagementPortTest {
         private final Map<Long, List<TcModelMessageFlow>> messageFlowsByVersion = new HashMap<>();
         private final Map<Long, List<TcModelMdf>> mdfsByVersion = new HashMap<>();
         private final Map<Long, List<TcModelDcopItem>> dcopItemsByVersion = new HashMap<>();
+        private final Map<Long, List<TcModelPlcGroup>> plcGroupsByVersion = new HashMap<>();
+        private final Map<Long, List<TcModelPlcRegister>> plcRegistersByGroupKey = new HashMap<>();
 
         private final JpaModelManagementPort port = new JpaModelManagementPort(
                 modelStore,
@@ -668,7 +769,9 @@ class JpaModelManagementPortTest {
                 modelEventIdStore,
                 modelMessageFlowStore,
                 modelMdfStore,
-                modelDcopItemStore
+                modelDcopItemStore,
+                modelPlcGroupStore,
+                modelPlcRegisterStore
         ) {
             @Override
             LocalDate resolveCurrentVersionDate() {
@@ -710,6 +813,13 @@ class JpaModelManagementPortTest {
             );
             when(modelDcopItemStore.findAllByModelVersionKey(anyLong(), any())).thenAnswer(invocation ->
                     paginate(dcopItemsByVersion.getOrDefault(invocation.getArgument(0), List.of()), invocation.getArgument(1))
+            );
+            // PLC store 는 페이지 계약이 아닌 List 직접 반환(group=by modelVersionKey, register=by groupKey).
+            when(modelPlcGroupStore.findAllByModelVersionKey(anyLong())).thenAnswer(invocation ->
+                    plcGroupsByVersion.getOrDefault(invocation.getArgument(0), List.of())
+            );
+            when(modelPlcRegisterStore.findAllByGroupKey(anyLong())).thenAnswer(invocation ->
+                    plcRegistersByGroupKey.getOrDefault(invocation.getArgument(0), List.of())
             );
         }
 

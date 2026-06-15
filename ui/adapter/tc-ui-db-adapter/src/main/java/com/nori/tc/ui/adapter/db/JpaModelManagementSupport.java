@@ -12,6 +12,8 @@ import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelStore;
 import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
+import com.nori.tc.db.core.model.store.TcModelPlcGroupStore;
+import com.nori.tc.db.core.model.store.TcModelPlcRegisterStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModel;
 import com.nori.tc.db.domain.common.model.ModelStatus;
@@ -22,6 +24,8 @@ import com.nori.tc.db.domain.model.TcModelEventId;
 import com.nori.tc.db.domain.model.TcModelMdf;
 import com.nori.tc.db.domain.model.TcModelMesMessage;
 import com.nori.tc.db.domain.model.TcModelParam;
+import com.nori.tc.db.domain.model.TcModelPlcGroup;
+import com.nori.tc.db.domain.model.TcModelPlcRegister;
 import com.nori.tc.db.domain.model.TcModelReportId;
 import com.nori.tc.db.domain.model.TcModelSecsMessage;
 import com.nori.tc.db.domain.model.TcModelSocketMessage;
@@ -109,6 +113,31 @@ final class JpaModelManagementSupport {
             "Calculation Rule",
             "Order Rule"
     );
+    // ModelDetailResponseSupport.PLC_GROUP_COLUMNS / PLC_REGISTER_COLUMNS 와 라벨/순서 동일해야 한다(diff 컬럼 헤더 = 상세 노드 헤더).
+    static final List<String> PLC_GROUP_COLUMNS = List.of(
+            "Message Name",
+            "Area",
+            "Start Address",
+            "Read Count",
+            "Poll Period (ms)",
+            "Address Qualifier",
+            "Description"
+    );
+    static final List<String> PLC_REGISTER_COLUMNS = List.of(
+            "Group",
+            "Word Offset",
+            "Variable Name",
+            "Data Type",
+            "Length",
+            "Bit Index",
+            "Byte Index",
+            "Byte Order",
+            "Word Order",
+            "Scale",
+            "BCD Signed",
+            "Char Encoding",
+            "Description"
+    );
 
     private final TcModelStore modelStore;
     private final TcEqpStore eqpStore;
@@ -126,7 +155,9 @@ final class JpaModelManagementSupport {
             final TcModelEventIdStore modelEventIdStore,
             final TcModelMessageFlowStore modelMessageFlowStore,
             final TcModelMdfStore modelMdfStore,
-            final TcModelDcopItemStore modelDcopItemStore
+            final TcModelDcopItemStore modelDcopItemStore,
+            final TcModelPlcGroupStore modelPlcGroupStore,
+            final TcModelPlcRegisterStore modelPlcRegisterStore
     ) {
         this.modelStore = Objects.requireNonNull(modelStore, "modelStore is null");
         this.eqpStore = Objects.requireNonNull(eqpStore, "eqpStore is null");
@@ -140,7 +171,9 @@ final class JpaModelManagementSupport {
                 Objects.requireNonNull(modelEventIdStore, "modelEventIdStore is null"),
                 Objects.requireNonNull(modelMessageFlowStore, "modelMessageFlowStore is null"),
                 Objects.requireNonNull(modelMdfStore, "modelMdfStore is null"),
-                Objects.requireNonNull(modelDcopItemStore, "modelDcopItemStore is null")
+                Objects.requireNonNull(modelDcopItemStore, "modelDcopItemStore is null"),
+                Objects.requireNonNull(modelPlcGroupStore, "modelPlcGroupStore is null"),
+                Objects.requireNonNull(modelPlcRegisterStore, "modelPlcRegisterStore is null")
         );
     }
 
@@ -549,7 +582,9 @@ final class JpaModelManagementSupport {
             List<TcModelEventId> eventIds,
             List<TcModelMessageFlow> messageFlows,
             List<TcModelMdf> mdfs,
-            List<TcModelDcopItem> dcopItems
+            List<TcModelDcopItem> dcopItems,
+            List<TcModelPlcGroup> plcGroups,
+            List<TcModelPlcRegister> plcRegisters
     ) {
     }
 }
