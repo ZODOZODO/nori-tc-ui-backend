@@ -16,6 +16,8 @@ import com.nori.tc.ui.domain.model.UiModelEventId;
 import com.nori.tc.ui.domain.model.UiModelMdf;
 import com.nori.tc.ui.domain.model.UiModelMesMessage;
 import com.nori.tc.ui.domain.model.UiModelParam;
+import com.nori.tc.ui.domain.model.UiModelPlcGroup;
+import com.nori.tc.ui.domain.model.UiModelPlcRegister;
 import com.nori.tc.ui.domain.model.UiModelReportId;
 import com.nori.tc.ui.domain.model.UiModelSecsMessage;
 import com.nori.tc.ui.domain.model.UiModelSocketMessage;
@@ -94,6 +96,30 @@ public final class ModelDetailResponseSupport {
             "Collection Rule",
             "Calculation Rule",
             "Order Rule"
+    );
+    private static final List<String> PLC_GROUP_COLUMNS = List.of(
+            "Message Name",
+            "Area",
+            "Start Address",
+            "Read Count",
+            "Poll Period (ms)",
+            "Address Qualifier",
+            "Description"
+    );
+    private static final List<String> PLC_REGISTER_COLUMNS = List.of(
+            "Group",
+            "Word Offset",
+            "Variable Name",
+            "Data Type",
+            "Length",
+            "Bit Index",
+            "Byte Index",
+            "Byte Order",
+            "Word Order",
+            "Scale",
+            "BCD Signed",
+            "Char Encoding",
+            "Description"
     );
 
     private ModelDetailResponseSupport() {
@@ -191,6 +217,20 @@ public final class ModelDetailResponseSupport {
                         List.of()
                 );
             }
+            case "plc-group" -> new ModelDetailDataResponse(
+                    PLC_GROUP_COLUMNS,
+                    modelDetailQueryPort.findPlcGroupsByModelVersionKey(modelVersionKey).stream()
+                            .map(ModelDetailResponseSupport::toPlcGroupRow)
+                            .toList(),
+                    List.of()
+            );
+            case "plc-register" -> new ModelDetailDataResponse(
+                    PLC_REGISTER_COLUMNS,
+                    modelDetailQueryPort.findPlcRegistersByModelVersionKey(modelVersionKey).stream()
+                            .map(ModelDetailResponseSupport::toPlcRegisterRow)
+                            .toList(),
+                    List.of()
+            );
             default -> null;
         };
     }
@@ -380,6 +420,36 @@ public final class ModelDetailResponseSupport {
         return new ModelDetailRowResponse(modelRowId("dcop", dcopItem.dcopItemKey()), values);
     }
 
+    private static ModelDetailRowResponse toPlcGroupRow(final UiModelPlcGroup group) {
+        return new ModelDetailRowResponse(modelRowId("plcgroup", group.groupKey()), List.of(
+                nullToEmpty(group.messageName()),
+                nullToEmpty(group.area()),
+                Integer.toString(group.startAddress()),
+                Integer.toString(group.readCount()),
+                Integer.toString(group.pollPeriodMs()),
+                nullToEmpty(group.addressQualifier()),
+                nullToEmpty(group.description())
+        ));
+    }
+
+    private static ModelDetailRowResponse toPlcRegisterRow(final UiModelPlcRegister register) {
+        return new ModelDetailRowResponse(modelRowId("plcregister", register.registerKey()), List.of(
+                nullToEmpty(register.groupMessageName()),
+                Integer.toString(register.wordOffset()),
+                nullToEmpty(register.variableName()),
+                nullToEmpty(register.dataType()),
+                numberToEmpty(register.length()),
+                numberToEmpty(register.bitIndex()),
+                numberToEmpty(register.byteIndex()),
+                nullToEmpty(register.byteOrder()),
+                nullToEmpty(register.wordOrder()),
+                numberToEmpty(register.scale()),
+                booleanToEmpty(register.bcdSigned()),
+                nullToEmpty(register.charEncoding()),
+                nullToEmpty(register.description())
+        ));
+    }
+
     public static ModelMdfContentResponse toMdfContent(final UiModelMdf mdf) {
         final byte[] mdfFile = (mdf.mdfFile() == null) ? new byte[0] : mdf.mdfFile();
         final String xml = new String(mdfFile, StandardCharsets.UTF_8);
@@ -395,5 +465,13 @@ public final class ModelDetailResponseSupport {
 
     private static String nullToEmpty(final String value) {
         return value == null ? "" : value;
+    }
+
+    private static String numberToEmpty(final Number value) {
+        return value == null ? "" : value.toString();
+    }
+
+    private static String booleanToEmpty(final Boolean value) {
+        return value == null ? "" : value.toString();
     }
 }

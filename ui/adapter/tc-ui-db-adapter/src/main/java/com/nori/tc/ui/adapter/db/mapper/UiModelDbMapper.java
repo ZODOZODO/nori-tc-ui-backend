@@ -6,6 +6,8 @@ import com.nori.tc.db.domain.model.TcModelEventId;
 import com.nori.tc.db.domain.model.TcModelMdf;
 import com.nori.tc.db.domain.model.TcModelMesMessage;
 import com.nori.tc.db.domain.model.TcModelParam;
+import com.nori.tc.db.domain.model.TcModelPlcGroup;
+import com.nori.tc.db.domain.model.TcModelPlcRegister;
 import com.nori.tc.db.domain.model.TcModelReportId;
 import com.nori.tc.db.domain.model.TcModelSecsMessage;
 import com.nori.tc.db.domain.model.TcModelSocketMessage;
@@ -19,6 +21,8 @@ import com.nori.tc.ui.domain.model.UiModelEventId;
 import com.nori.tc.ui.domain.model.UiModelMdf;
 import com.nori.tc.ui.domain.model.UiModelMesMessage;
 import com.nori.tc.ui.domain.model.UiModelParam;
+import com.nori.tc.ui.domain.model.UiModelPlcGroup;
+import com.nori.tc.ui.domain.model.UiModelPlcRegister;
 import com.nori.tc.ui.domain.model.UiModelReportId;
 import com.nori.tc.ui.domain.model.UiModelSecsMessage;
 import com.nori.tc.ui.domain.model.UiModelSocketMessage;
@@ -197,6 +201,54 @@ public final class UiModelDbMapper {
                 UiDomainEnumMapper.toUiDcopCollectionRule(source.collectionRule()),
                 source.calculationRule(),
                 source.orderRule(),
+                source.updatedAt()
+        );
+    }
+
+    public static UiModelPlcGroup toDomain(final TcModelPlcGroup source) {
+        if (source == null) {
+            return null;
+        }
+        return new UiModelPlcGroup(
+                source.groupKey(),
+                source.modelVersionKey(),
+                source.messageName(),
+                source.area() == null ? null : source.area().name(),
+                source.startAddress(),
+                source.readCount(),
+                source.addressQualifier(),
+                source.pollPeriodMs(),
+                source.description(),
+                source.updatedAt()
+        );
+    }
+
+    /**
+     * tc_model_plc_register row 1 개를 UI 도메인으로 변환합니다.
+     *
+     * <p>레지스터 자체에는 그룹 message_name 이 없으므로(group_key FK 만 보유), 평면 테이블 표현을 위해
+     * 호출 측이 소속 그룹의 message_name 을 함께 전달합니다.</p>
+     */
+    public static UiModelPlcRegister toDomain(final TcModelPlcRegister source, final String groupMessageName) {
+        if (source == null) {
+            return null;
+        }
+        return new UiModelPlcRegister(
+                source.registerKey(),
+                source.groupKey(),
+                groupMessageName,
+                source.wordOffset(),
+                source.variableName(),
+                source.dataType() == null ? null : source.dataType().name(),
+                source.length(),
+                source.bitIndex(),
+                source.byteIndex(),
+                source.byteOrder(),
+                source.wordOrder(),
+                source.scale(),
+                source.bcdSigned(),
+                source.charEncoding(),
+                source.description(),
                 source.updatedAt()
         );
     }

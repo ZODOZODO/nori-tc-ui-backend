@@ -5,6 +5,8 @@ import com.nori.tc.ui.domain.model.UiModelEventId;
 import com.nori.tc.ui.domain.model.UiModelMdf;
 import com.nori.tc.ui.domain.model.UiModelMesMessage;
 import com.nori.tc.ui.domain.model.UiModelParam;
+import com.nori.tc.ui.domain.model.UiModelPlcGroup;
+import com.nori.tc.ui.domain.model.UiModelPlcRegister;
 import com.nori.tc.ui.domain.model.UiModelReportId;
 import com.nori.tc.ui.domain.model.UiModelSecsMessage;
 import com.nori.tc.ui.domain.model.UiModelSocketMessage;
@@ -82,4 +84,16 @@ public interface ModelDetailQueryPort {
      * model_version_key 기준 Dcop Itemes 목록을 조회합니다.
      */
     List<UiModelDcopItem> findDcopItemsByModelVersionKey(long modelVersionKey);
+
+    /**
+     * model_version_key 기준 PLC 폴링 그룹 목록을 조회합니다(tc_model_plc_group).
+     */
+    List<UiModelPlcGroup> findPlcGroupsByModelVersionKey(long modelVersionKey);
+
+    /**
+     * model_version_key 기준 PLC 레지스터 목록을 조회합니다(tc_model_plc_register).
+     *
+     * <p>모델의 모든 그룹을 가로질러 평탄화하며, 각 레지스터에 소속 그룹의 message_name 을 함께 담습니다.</p>
+     */
+    List<UiModelPlcRegister> findPlcRegistersByModelVersionKey(long modelVersionKey);
 }

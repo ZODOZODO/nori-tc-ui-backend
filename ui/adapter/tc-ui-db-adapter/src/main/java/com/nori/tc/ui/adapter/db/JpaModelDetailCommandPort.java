@@ -11,6 +11,8 @@ import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelStore;
 import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
+import com.nori.tc.db.core.model.store.TcModelPlcGroupStore;
+import com.nori.tc.db.core.model.store.TcModelPlcRegisterStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelDcopItem;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelEventId;
@@ -21,10 +23,18 @@ import com.nori.tc.db.core.model.upsert.UpsertTcModelMesMessage;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelSecsMessage;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelSocketMessage;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMessageFlow;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelPlcGroup;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelPlcRegister;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelVariableId;
+import com.nori.tc.db.domain.common.model.PlcArea;
+import com.nori.tc.db.domain.common.model.PlcDataType;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
 import com.nori.tc.db.domain.model.TcModelMdf;
 import com.nori.tc.db.domain.model.TcModelMessageFlow;
+import com.nori.tc.db.domain.model.TcModelPlcGroup;
+import com.nori.tc.db.domain.model.TcModelPlcRegister;
+import com.nori.tc.db.domain.plc.PlcAreaDataTypeValidator;
+import com.nori.tc.db.domain.plc.PlcRegisterLayoutValidator;
 import com.nori.tc.ui.adapter.db.mapper.UiDomainEnumMapper;
 import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
@@ -51,7 +61,10 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -59,6 +72,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -73,6 +87,13 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
     private static final Logger log = LoggerFactory.getLogger(JpaModelDetailCommandPort.class);
     private static final int DETAIL_PAGE_LIMIT = 500;
 
+    // plc-group message_name 은 gateway 가 Kafka eventType(metadata.eventType)으로 그대로 발행하고
+    // Business 가 KafkaEventTypeNamingPolicy 로 검증한다 — 위반 시 Business 가 폴링 메시지를 거부(silent drop)한다.
+    // 그래서 저장 시점에 동일 규칙으로 선검증해 잘못된 이름이 저장되는 것을 막는다.
+    // 원본 패턴: com.nori.tc.messaging.domain.kafka.policy.KafkaEventTypeNamingPolicy.DEFAULT_EVENT_TYPE_PATTERN
+    private static final Pattern PLC_GROUP_MESSAGE_NAME_PATTERN =
+            Pattern.compile("^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$");
+
     private final TcModelStore modelStore;
     private final TcModelParamStore modelParamStore;
     private final TcModelSecsMessageStore modelSecsMessageStore;
@@ -84,6 +105,8 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
     private final TcModelMessageFlowStore modelMessageFlowStore;
     private final TcModelMdfStore modelMdfStore;
     private final TcModelDcopItemStore modelDcopItemStore;
+    private final TcModelPlcGroupStore modelPlcGroupStore;
+    private final TcModelPlcRegisterStore modelPlcRegisterStore;
 
     /**
      * 필수 의존성을 초기화합니다.
@@ -99,7 +122,9 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
             final TcModelEventIdStore modelEventIdStore,
             final TcModelMessageFlowStore modelMessageFlowStore,
             final TcModelMdfStore modelMdfStore,
-            final TcModelDcopItemStore modelDcopItemStore
+            final TcModelDcopItemStore modelDcopItemStore,
+            final TcModelPlcGroupStore modelPlcGroupStore,
+            final TcModelPlcRegisterStore modelPlcRegisterStore
     ) {
         this.modelStore = Objects.requireNonNull(modelStore, "modelStore is null");
         this.modelParamStore = Objects.requireNonNull(modelParamStore, "modelParamStore is null");
@@ -112,6 +137,8 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
         this.modelMessageFlowStore = Objects.requireNonNull(modelMessageFlowStore, "modelMessageFlowStore is null");
         this.modelMdfStore = Objects.requireNonNull(modelMdfStore, "modelMdfStore is null");
         this.modelDcopItemStore = Objects.requireNonNull(modelDcopItemStore, "modelDcopItemStore is null");
+        this.modelPlcGroupStore = Objects.requireNonNull(modelPlcGroupStore, "modelPlcGroupStore is null");
+        this.modelPlcRegisterStore = Objects.requireNonNull(modelPlcRegisterStore, "modelPlcRegisterStore is null");
         log.info("JpaModelDetailCommandPort initialized.");
     }
 
@@ -141,6 +168,8 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
             case "eventides" -> replaceEventIds(modelVersionKey, normalizedRows);
             case "workflow" -> replaceWorkflows(modelVersionKey, normalizedRows);
             case "dcop-itemes" -> replaceDcopItems(modelVersionKey, normalizedRows);
+            case "plc-group" -> replacePlcGroups(modelVersionKey, normalizedRows);
+            case "plc-register" -> replacePlcRegisters(modelVersionKey, normalizedRows);
             case "mdf" -> throw new UiBadRequestException("MDF는 upload API를 사용해 주세요.");
             default -> throw new UiBadRequestException("지원하지 않는 상세 노드입니다.");
         }
@@ -378,6 +407,124 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
     }
 
     /**
+     * plc-group node 를 message_name(자연키) 기준으로 저장합니다.
+     *
+     * <p>tc_model_plc_group 은 자식 tc_model_plc_register 를 FK CASCADE 로 가지므로 일반 노드의
+     * "전체 삭제 후 재삽입" 방식을 쓰면 그룹 저장 시 레지스터가 전부 사라진다. 그래서 surrogate key
+     * 가 아닌 <b>(model_version_key, message_name) 자연키 upsert</b> 로 처리해, 동일 message_name 의
+     * 기존 그룹은 UPDATE(group_key 보존 → 자식 레지스터 생존) 하고, 요청에 없는 그룹만 삭제한다(삭제 시
+     * 그 그룹의 레지스터는 CASCADE 로 함께 제거 — 의도된 동작).</p>
+     *
+     * <p>한계: 그룹 rename(같은 행의 message_name 변경)은 신규 그룹 생성 + 옛 그룹 삭제로 처리되어 옛
+     * 그룹의 레지스터가 CASCADE 삭제된다(PoC 수용 — register 노드에서 재정의).</p>
+     *
+     * <p>컬럼 인덱스: [0]=messageName, [1]=area, [2]=startAddress, [3]=readCount,
+     * [4]=pollPeriodMs, [5]=addressQualifier, [6]=description</p>
+     */
+    private void replacePlcGroups(final long modelVersionKey, final List<DetailRowCommand> rows) {
+        final Set<String> requestMessageNames = new LinkedHashSet<>();
+        for (final DetailRowCommand row : rows) {
+            final String messageName = requiredCell(row, 0, "messageName");
+            if (!PLC_GROUP_MESSAGE_NAME_PATTERN.matcher(messageName).matches()) {
+                throw new UiBadRequestException(
+                        "PLC 그룹 message_name 형식이 올바르지 않습니다(대문자로 시작, 대문자/숫자/언더스코어만 허용): " + messageName);
+            }
+            if (!requestMessageNames.add(messageName)) {
+                throw new UiBadRequestException("PLC 그룹 message_name 이 중복되었습니다: " + messageName);
+            }
+            modelPlcGroupStore.upsert(new UpsertTcModelPlcGroup(
+                    null,
+                    modelVersionKey,
+                    messageName,
+                    parseRequiredEnum(requiredCell(row, 1, "area"), PlcArea.class, "area"),
+                    parseRequiredInteger(requiredCell(row, 2, "startAddress"), "startAddress"),
+                    parseRequiredInteger(requiredCell(row, 3, "readCount"), "readCount"),
+                    optionalCell(row, 5),
+                    parseRequiredInteger(requiredCell(row, 4, "pollPeriodMs"), "pollPeriodMs"),
+                    optionalCell(row, 6)
+            ));
+        }
+
+        modelPlcGroupStore.findAllByModelVersionKey(modelVersionKey).stream()
+                .filter(group -> !requestMessageNames.contains(group.messageName()))
+                .forEach(group -> modelPlcGroupStore.deleteByGroupKey(group.groupKey()));
+    }
+
+    /**
+     * plc-register node 를 저장합니다.
+     *
+     * <p>UI 평면 테이블의 각 행 첫 컬럼은 소속 그룹의 message_name 이며, 이를 모델의 group_key 로 해석한다.
+     * register 는 leaf 라 그룹 단위 "전체 삭제 후 재삽입" 으로 저장한다 — 모델의 모든 그룹 레지스터를 비우고
+     * 요청 행으로 재구성(authoritative reset).</p>
+     *
+     * <p>저장 전 검증: 그룹마다 (a) {@link PlcAreaDataTypeValidator}(area↔data_type 호환, 선행),
+     * (b) {@link PlcRegisterLayoutValidator}(word_offset 윈도우/겹침/상한). 위반 시 {@link UiBadRequestException}.</p>
+     *
+     * <p>컬럼 인덱스: [0]=group(messageName), [1]=wordOffset, [2]=variableName, [3]=dataType,
+     * [4]=length, [5]=bitIndex, [6]=byteIndex, [7]=byteOrder, [8]=wordOrder, [9]=scale,
+     * [10]=bcdSigned, [11]=charEncoding, [12]=description</p>
+     */
+    private void replacePlcRegisters(final long modelVersionKey, final List<DetailRowCommand> rows) {
+        final List<TcModelPlcGroup> groups = modelPlcGroupStore.findAllByModelVersionKey(modelVersionKey);
+        final Map<String, TcModelPlcGroup> groupsByName = groups.stream()
+                .collect(Collectors.toMap(TcModelPlcGroup::messageName, Function.identity()));
+        final Map<Long, TcModelPlcGroup> groupsByKey = groups.stream()
+                .collect(Collectors.toMap(TcModelPlcGroup::groupKey, Function.identity()));
+
+        // 그룹별 검증용 도메인 목록과 upsert 입력을 함께 만든다(검증 통과 후에만 영속).
+        final Map<Long, List<TcModelPlcRegister>> registersByGroupKey = new LinkedHashMap<>();
+        final List<UpsertTcModelPlcRegister> upserts = new ArrayList<>();
+        for (final DetailRowCommand row : rows) {
+            final String groupMessageName = requiredCell(row, 0, "group");
+            final TcModelPlcGroup group = groupsByName.get(groupMessageName);
+            if (group == null) {
+                throw new UiBadRequestException(
+                        "존재하지 않는 PLC 그룹입니다: " + groupMessageName + ". 먼저 PLC Group 을 저장해 주세요.");
+            }
+
+            final int wordOffset = parseRequiredInteger(requiredCell(row, 1, "wordOffset"), "wordOffset");
+            final String variableName = requiredCell(row, 2, "variableName");
+            final PlcDataType dataType = parseRequiredEnum(
+                    requiredCell(row, 3, "dataType"), PlcDataType.class, "dataType");
+            final Integer length = parseOptionalInteger(optionalCell(row, 4), "length");
+            final Integer bitIndex = parseOptionalInteger(optionalCell(row, 5), "bitIndex");
+            final Integer byteIndex = parseOptionalInteger(optionalCell(row, 6), "byteIndex");
+            final String byteOrder = optionalCell(row, 7);
+            final String wordOrder = optionalCell(row, 8);
+            final Double scale = parseOptionalDouble(optionalCell(row, 9), "scale");
+            final Boolean bcdSigned = parseOptionalBoolean(optionalCell(row, 10), "bcdSigned");
+            final String charEncoding = optionalCell(row, 11);
+            final String description = optionalCell(row, 12);
+
+            try {
+                PlcAreaDataTypeValidator.validate(group.area(), dataType, bitIndex);
+            } catch (IllegalArgumentException e) {
+                throw new UiBadRequestException("PLC register area/data_type 검증 실패: " + e.getMessage(), e);
+            }
+
+            registersByGroupKey.computeIfAbsent(group.groupKey(), key -> new ArrayList<>())
+                    .add(new TcModelPlcRegister(
+                            0L, group.groupKey(), wordOffset, variableName, dataType, length, bitIndex,
+                            byteIndex, byteOrder, wordOrder, scale, bcdSigned, charEncoding, description, null));
+            upserts.add(new UpsertTcModelPlcRegister(
+                    null, group.groupKey(), wordOffset, variableName, dataType, length, bitIndex,
+                    byteIndex, byteOrder, wordOrder, scale, bcdSigned, charEncoding, description));
+        }
+
+        for (final Map.Entry<Long, List<TcModelPlcRegister>> entry : registersByGroupKey.entrySet()) {
+            final TcModelPlcGroup group = groupsByKey.get(entry.getKey());
+            try {
+                PlcRegisterLayoutValidator.validate(group.area(), group.readCount(), entry.getValue());
+            } catch (IllegalArgumentException e) {
+                throw new UiBadRequestException("PLC register 레이아웃 검증 실패: " + e.getMessage(), e);
+            }
+        }
+
+        groups.forEach(group -> modelPlcRegisterStore.deleteAllByGroupKey(group.groupKey()));
+        upserts.forEach(modelPlcRegisterStore::upsert);
+    }
+
+    /**
      * 요청 row 의 id 를 기존 PK 집합 안에서 해석한다.
      *
      * <p>id 가 null/blank 이면 신규 INSERT 로 간주해 null 반환. 숫자 파싱 실패 시 400,
@@ -504,6 +651,49 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
         } catch (NumberFormatException e) {
             throw new UiBadRequestException(fieldName + " 값이 올바르지 않습니다.", e);
         }
+    }
+
+    /**
+     * 필수 정수 셀을 파싱합니다.
+     */
+    private static int parseRequiredInteger(final String value, final String fieldName) {
+        try {
+            return Integer.parseInt(normalizeRequiredText(value, fieldName));
+        } catch (NumberFormatException e) {
+            throw new UiBadRequestException(fieldName + " 값이 올바르지 않습니다.", e);
+        }
+    }
+
+    /**
+     * 선택 실수 셀을 파싱합니다.
+     */
+    private static Double parseOptionalDouble(final String value, final String fieldName) {
+        final String normalized = normalizeOptionalText(value);
+        if (normalized == null) {
+            return null;
+        }
+
+        try {
+            return Double.parseDouble(normalized);
+        } catch (NumberFormatException e) {
+            throw new UiBadRequestException(fieldName + " 값이 올바르지 않습니다.", e);
+        }
+    }
+
+    /**
+     * 선택 boolean 셀을 파싱합니다(빈값이면 null).
+     */
+    private static Boolean parseOptionalBoolean(final String value, final String fieldName) {
+        final String normalized = normalizeOptionalText(value);
+        if (normalized == null) {
+            return null;
+        }
+
+        return switch (normalized.toLowerCase(Locale.ROOT)) {
+            case "true", "1", "y", "yes" -> Boolean.TRUE;
+            case "false", "0", "n", "no" -> Boolean.FALSE;
+            default -> throw new UiBadRequestException(fieldName + " 값이 올바르지 않습니다.");
+        };
     }
 
     /**

@@ -10,6 +10,8 @@ import com.nori.tc.db.core.model.store.TcModelMesMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
+import com.nori.tc.db.core.model.store.TcModelPlcGroupStore;
+import com.nori.tc.db.core.model.store.TcModelPlcRegisterStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
 import com.nori.tc.db.domain.model.TcModelEventId;
@@ -19,6 +21,7 @@ import com.nori.tc.db.domain.model.TcModelMesMessage;
 import com.nori.tc.db.domain.model.TcModelSecsMessage;
 import com.nori.tc.db.domain.model.TcModelSocketMessage;
 import com.nori.tc.db.domain.model.TcModelMessageFlow;
+import com.nori.tc.db.domain.model.TcModelPlcGroup;
 import com.nori.tc.db.domain.model.TcModelVariableId;
 import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
@@ -28,6 +31,8 @@ import com.nori.tc.ui.domain.model.UiModelEventId;
 import com.nori.tc.ui.domain.model.UiModelMdf;
 import com.nori.tc.ui.domain.model.UiModelMesMessage;
 import com.nori.tc.ui.domain.model.UiModelParam;
+import com.nori.tc.ui.domain.model.UiModelPlcGroup;
+import com.nori.tc.ui.domain.model.UiModelPlcRegister;
 import com.nori.tc.ui.domain.model.UiModelReportId;
 import com.nori.tc.ui.domain.model.UiModelSecsMessage;
 import com.nori.tc.ui.domain.model.UiModelSocketMessage;
@@ -66,6 +71,8 @@ public class JpaModelDetailQueryPort implements ModelDetailQueryPort {
     private final TcModelMessageFlowStore modelMessageFlowStore;
     private final TcModelMdfStore modelMdfStore;
     private final TcModelDcopItemStore modelDcopItemStore;
+    private final TcModelPlcGroupStore modelPlcGroupStore;
+    private final TcModelPlcRegisterStore modelPlcRegisterStore;
 
     /**
      * 필수 의존성을 초기화합니다.
@@ -80,7 +87,9 @@ public class JpaModelDetailQueryPort implements ModelDetailQueryPort {
             final TcModelEventIdStore modelEventIdStore,
             final TcModelMessageFlowStore modelMessageFlowStore,
             final TcModelMdfStore modelMdfStore,
-            final TcModelDcopItemStore modelDcopItemStore
+            final TcModelDcopItemStore modelDcopItemStore,
+            final TcModelPlcGroupStore modelPlcGroupStore,
+            final TcModelPlcRegisterStore modelPlcRegisterStore
     ) {
         this.modelParamStore = Objects.requireNonNull(modelParamStore, "modelParamStore is null");
         this.modelSecsMessageStore = Objects.requireNonNull(modelSecsMessageStore, "modelSecsMessageStore is null");
@@ -92,6 +101,8 @@ public class JpaModelDetailQueryPort implements ModelDetailQueryPort {
         this.modelMessageFlowStore = Objects.requireNonNull(modelMessageFlowStore, "modelMessageFlowStore is null");
         this.modelMdfStore = Objects.requireNonNull(modelMdfStore, "modelMdfStore is null");
         this.modelDcopItemStore = Objects.requireNonNull(modelDcopItemStore, "modelDcopItemStore is null");
+        this.modelPlcGroupStore = Objects.requireNonNull(modelPlcGroupStore, "modelPlcGroupStore is null");
+        this.modelPlcRegisterStore = Objects.requireNonNull(modelPlcRegisterStore, "modelPlcRegisterStore is null");
         log.info("JpaModelDetailQueryPort initialized.");
     }
 
@@ -189,6 +200,27 @@ public class JpaModelDetailQueryPort implements ModelDetailQueryPort {
                 .stream()
                 .sorted(Comparator.comparing(TcModelDcopItem::dcopItemKey, Comparator.nullsLast(Long::compareTo)))
                 .map(UiModelDbMapper::toDomain)
+                .toList();
+    }
+
+    @Override
+    public List<UiModelPlcGroup> findPlcGroupsByModelVersionKey(final long modelVersionKey) {
+        validateModelVersionKey(modelVersionKey);
+        return modelPlcGroupStore.findAllByModelVersionKey(modelVersionKey).stream()
+                .sorted(Comparator.comparingLong(TcModelPlcGroup::groupKey))
+                .map(UiModelDbMapper::toDomain)
+                .toList();
+    }
+
+    @Override
+    public List<UiModelPlcRegister> findPlcRegistersByModelVersionKey(final long modelVersionKey) {
+        validateModelVersionKey(modelVersionKey);
+        // 모델의 모든 그룹을 그룹키 순으로 순회하며 각 그룹의 레지스터를 평탄화. 소속 그룹 message_name 을 함께 운반.
+        return modelPlcGroupStore.findAllByModelVersionKey(modelVersionKey).stream()
+                .sorted(Comparator.comparingLong(TcModelPlcGroup::groupKey))
+                .flatMap(group -> modelPlcRegisterStore.findAllByGroupKey(group.groupKey()).stream()
+                        .sorted(Comparator.comparingLong(register -> register.registerKey()))
+                        .map(register -> UiModelDbMapper.toDomain(register, group.messageName())))
                 .toList();
     }
 

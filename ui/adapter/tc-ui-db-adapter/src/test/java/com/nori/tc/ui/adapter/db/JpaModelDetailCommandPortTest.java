@@ -12,16 +12,23 @@ import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
 import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
+import com.nori.tc.db.core.model.store.TcModelPlcGroupStore;
+import com.nori.tc.db.core.model.store.TcModelPlcRegisterStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelDcopItem;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMdf;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMessageFlow;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelPlcGroup;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelPlcRegister;
 import com.nori.tc.db.domain.common.model.DcopCollectionRule;
 import com.nori.tc.db.domain.common.model.ModelStatus;
+import com.nori.tc.db.domain.common.model.PlcArea;
+import com.nori.tc.db.domain.common.model.PlcDataType;
 import com.nori.tc.db.domain.common.model.ProtocolType;
 import com.nori.tc.db.domain.model.TcModel;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
 import com.nori.tc.db.domain.model.TcModelMdf;
 import com.nori.tc.db.domain.model.TcModelMessageFlow;
+import com.nori.tc.db.domain.model.TcModelPlcGroup;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.core.port.db.ModelDetailCommandPort;
@@ -39,6 +46,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
@@ -369,6 +377,194 @@ class JpaModelDetailCommandPortTest {
         verify(fixture.modelDcopItemStore, never()).upsert(any());
     }
 
+    // =================================================================================
+    // plc-group / plc-register 노드 저장 검증
+    // =================================================================================
+
+    @Test
+    @DisplayName("plc-group 저장은 message_name 자연키로 upsert(groupKey=null)하고 요청에 없는 그룹은 삭제")
+    void replacePlcGroups_naturalKeyUpsert_deletesAbsent() {
+        final Fixture fixture = new Fixture();
+        when(fixture.modelStore.findByModelVersionKey(101L)).thenReturn(Optional.of(model(101L)));
+        when(fixture.modelPlcGroupStore.findAllByModelVersionKey(101L)).thenReturn(List.of(
+                plcGroup(7L, 101L, "STATUS_REPORT"),
+                plcGroup(8L, 101L, "OLD_GROUP")
+        ));
+
+        fixture.port.saveDetailRows(
+                101L,
+                "plc-group",
+                List.of(new ModelDetailCommandPort.DetailRowCommand(
+                        "plcgroup:7",
+                        Arrays.asList("STATUS_REPORT", "HOLDING_REGISTER", "0", "10", "1000", null, "desc")
+                ))
+        );
+
+        final ArgumentCaptor<UpsertTcModelPlcGroup> captor = ArgumentCaptor.forClass(UpsertTcModelPlcGroup.class);
+        verify(fixture.modelPlcGroupStore).upsert(captor.capture());
+        assertNull(captor.getValue().groupKey());
+        assertEquals("STATUS_REPORT", captor.getValue().messageName());
+        assertEquals(PlcArea.HOLDING_REGISTER, captor.getValue().area());
+        assertEquals(10, captor.getValue().readCount());
+        assertEquals(1000, captor.getValue().pollPeriodMs());
+        verify(fixture.modelPlcGroupStore).deleteByGroupKey(8L);
+        verify(fixture.modelPlcGroupStore, never()).deleteByGroupKey(7L);
+    }
+
+    @Test
+    @DisplayName("plc-group 저장 시 message_name이 중복되면 400으로 거부")
+    void replacePlcGroups_duplicateMessageName_throwsBadRequest() {
+        final Fixture fixture = new Fixture();
+        when(fixture.modelStore.findByModelVersionKey(101L)).thenReturn(Optional.of(model(101L)));
+
+        final UiBadRequestException exception = assertThrows(
+                UiBadRequestException.class,
+                () -> fixture.port.saveDetailRows(
+                        101L,
+                        "plc-group",
+                        List.of(
+                                new ModelDetailCommandPort.DetailRowCommand(
+                                        null,
+                                        Arrays.asList("DUP", "HOLDING_REGISTER", "0", "10", "1000", null, null)),
+                                new ModelDetailCommandPort.DetailRowCommand(
+                                        null,
+                                        Arrays.asList("DUP", "HOLDING_REGISTER", "10", "5", "1000", null, null))
+                        )
+                )
+        );
+
+        assertTrue(exception.getMessage().contains("중복"));
+    }
+
+    @Test
+    @DisplayName("plc-group 저장 시 message_name이 eventType 네이밍(UPPER_SNAKE_CASE)을 어기면 400으로 거부")
+    void replacePlcGroups_invalidMessageNameFormat_throwsBadRequest() {
+        final Fixture fixture = new Fixture();
+        when(fixture.modelStore.findByModelVersionKey(101L)).thenReturn(Optional.of(model(101L)));
+
+        final UiBadRequestException exception = assertThrows(
+                UiBadRequestException.class,
+                () -> fixture.port.saveDetailRows(
+                        101L,
+                        "plc-group",
+                        List.of(new ModelDetailCommandPort.DetailRowCommand(
+                                null,
+                                Arrays.asList("status_report", "HOLDING_REGISTER", "0", "10", "1000", null, null)))
+                )
+        );
+
+        assertTrue(exception.getMessage().contains("형식"));
+        verify(fixture.modelPlcGroupStore, never()).upsert(any());
+    }
+
+    @Test
+    @DisplayName("plc-register 저장 시 word_offset이 read_count 윈도우 밖이면 400으로 거부(삭제/upsert 없음)")
+    void replacePlcRegisters_offsetOutsideWindow_throwsBadRequest() {
+        final Fixture fixture = new Fixture();
+        when(fixture.modelStore.findByModelVersionKey(101L)).thenReturn(Optional.of(model(101L)));
+        when(fixture.modelPlcGroupStore.findAllByModelVersionKey(101L)).thenReturn(List.of(
+                plcGroupFull(7L, 101L, "STATUS_REPORT", PlcArea.HOLDING_REGISTER, 0, 2, 1000)
+        ));
+
+        final UiBadRequestException exception = assertThrows(
+                UiBadRequestException.class,
+                () -> fixture.port.saveDetailRows(
+                        101L,
+                        "plc-register",
+                        List.of(new ModelDetailCommandPort.DetailRowCommand(
+                                null,
+                                Arrays.asList("STATUS_REPORT", "5", "TEMP", "INT16",
+                                        null, null, null, null, null, null, null, null, null)
+                        ))
+                )
+        );
+
+        assertTrue(exception.getMessage().contains("레이아웃 검증 실패"));
+        verify(fixture.modelPlcRegisterStore, never()).upsert(any());
+        verify(fixture.modelPlcRegisterStore, never()).deleteAllByGroupKey(anyLong());
+    }
+
+    @Test
+    @DisplayName("plc-register 저장 시 존재하지 않는 그룹을 참조하면 400으로 거부")
+    void replacePlcRegisters_unknownGroup_throwsBadRequest() {
+        final Fixture fixture = new Fixture();
+        when(fixture.modelStore.findByModelVersionKey(101L)).thenReturn(Optional.of(model(101L)));
+        when(fixture.modelPlcGroupStore.findAllByModelVersionKey(101L)).thenReturn(List.of());
+
+        final UiBadRequestException exception = assertThrows(
+                UiBadRequestException.class,
+                () -> fixture.port.saveDetailRows(
+                        101L,
+                        "plc-register",
+                        List.of(new ModelDetailCommandPort.DetailRowCommand(
+                                null,
+                                Arrays.asList("NO_SUCH_GROUP", "0", "VAR", "INT16",
+                                        null, null, null, null, null, null, null, null, null)
+                        ))
+                )
+        );
+
+        assertTrue(exception.getMessage().contains("존재하지 않는 PLC 그룹"));
+        verify(fixture.modelPlcRegisterStore, never()).upsert(any());
+    }
+
+    @Test
+    @DisplayName("plc-register 유효 저장은 그룹 레지스터를 비우고(deleteAllByGroupKey) 재삽입(upsert)")
+    void replacePlcRegisters_valid_deletesThenUpserts() {
+        final Fixture fixture = new Fixture();
+        when(fixture.modelStore.findByModelVersionKey(101L)).thenReturn(Optional.of(model(101L)));
+        when(fixture.modelPlcGroupStore.findAllByModelVersionKey(101L)).thenReturn(List.of(
+                plcGroupFull(7L, 101L, "STATUS_REPORT", PlcArea.HOLDING_REGISTER, 0, 10, 1000)
+        ));
+
+        fixture.port.saveDetailRows(
+                101L,
+                "plc-register",
+                List.of(new ModelDetailCommandPort.DetailRowCommand(
+                        null,
+                        Arrays.asList("STATUS_REPORT", "1", "TEMP", "INT16",
+                                null, null, null, null, null, "0.1", null, null, "temp var")
+                ))
+        );
+
+        verify(fixture.modelPlcRegisterStore).deleteAllByGroupKey(7L);
+        final ArgumentCaptor<UpsertTcModelPlcRegister> captor = ArgumentCaptor.forClass(UpsertTcModelPlcRegister.class);
+        verify(fixture.modelPlcRegisterStore).upsert(captor.capture());
+        assertNull(captor.getValue().registerKey());
+        assertEquals(7L, captor.getValue().groupKey());
+        assertEquals(1, captor.getValue().wordOffset());
+        assertEquals("TEMP", captor.getValue().variableName());
+        assertEquals(PlcDataType.INT16, captor.getValue().dataType());
+        assertEquals(0.1, captor.getValue().scale(), 0.0);
+    }
+
+    private static TcModelPlcGroup plcGroup(final long groupKey, final long modelVersionKey, final String messageName) {
+        return plcGroupFull(groupKey, modelVersionKey, messageName, PlcArea.HOLDING_REGISTER, 0, 10, 1000);
+    }
+
+    private static TcModelPlcGroup plcGroupFull(
+            final long groupKey,
+            final long modelVersionKey,
+            final String messageName,
+            final PlcArea area,
+            final int startAddress,
+            final int readCount,
+            final int pollPeriodMs
+    ) {
+        return new TcModelPlcGroup(
+                groupKey,
+                modelVersionKey,
+                messageName,
+                area,
+                startAddress,
+                readCount,
+                null,
+                pollPeriodMs,
+                null,
+                OffsetDateTime.parse("2026-03-13T10:15:30+09:00")
+        );
+    }
+
     private static TcModel model(final long modelVersionKey) {
         final OffsetDateTime now = OffsetDateTime.parse("2026-03-13T10:15:30+09:00");
         return new TcModel(
@@ -458,6 +654,8 @@ class JpaModelDetailCommandPortTest {
         private final TcModelMessageFlowStore modelMessageFlowStore = mock(TcModelMessageFlowStore.class);
         private final TcModelMdfStore modelMdfStore = mock(TcModelMdfStore.class);
         private final TcModelDcopItemStore modelDcopItemStore = mock(TcModelDcopItemStore.class);
+        private final TcModelPlcGroupStore modelPlcGroupStore = mock(TcModelPlcGroupStore.class);
+        private final TcModelPlcRegisterStore modelPlcRegisterStore = mock(TcModelPlcRegisterStore.class);
         private final JpaModelDetailCommandPort port = new JpaModelDetailCommandPort(
                 modelStore,
                 modelParamStore,
@@ -469,7 +667,9 @@ class JpaModelDetailCommandPortTest {
                 modelEventIdStore,
                 modelMessageFlowStore,
                 modelMdfStore,
-                modelDcopItemStore
+                modelDcopItemStore,
+                modelPlcGroupStore,
+                modelPlcRegisterStore
         );
     }
 }
