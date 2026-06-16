@@ -44,6 +44,7 @@ import org.springframework.context.annotation.Import;
 @Configuration(proxyBeanMethods = false)
 @Import({
         UiDemoTesterConfiguration.class,
+        UiSimulatorConfiguration.class,
         UiSecurityPolicyConfiguration.class,
         GroupAdminAssembler.class,
         GroupAdminFacade.class,

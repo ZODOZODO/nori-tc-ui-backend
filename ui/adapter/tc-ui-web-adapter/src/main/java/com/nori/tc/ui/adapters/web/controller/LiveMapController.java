@@ -8,10 +8,15 @@ import com.nori.tc.ui.adapters.web.demo.DemoScenarioCatalogItemResponse;
 import com.nori.tc.ui.adapters.web.demo.DemoTesterClient;
 import com.nori.tc.ui.adapters.web.demo.DemoTesterCreateJobsRequest;
 import com.nori.tc.ui.adapters.web.dto.request.LiveMapDemoJobCreateRequest;
+import com.nori.tc.ui.adapters.web.dto.request.LiveMapSimulatorRunCreateRequest;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.adapters.web.dto.response.LiveMapResponse;
+import com.nori.tc.ui.adapters.web.simulator.LiveMapSimulatorRunFacade;
+import com.nori.tc.ui.adapters.web.simulator.SimulatorRunResponse;
+import com.nori.tc.ui.adapters.web.simulator.SimulatorScenarioCatalogItem;
 import com.nori.tc.ui.core.service.LiveMapQueryService;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,13 +38,16 @@ public class LiveMapController {
 
     private final LiveMapQueryService liveMapQueryService;
     private final DemoTesterClient demoTesterClient;
+    private final LiveMapSimulatorRunFacade simulatorRunFacade;
 
     public LiveMapController(
             final LiveMapQueryService liveMapQueryService,
-            final DemoTesterClient demoTesterClient
+            final DemoTesterClient demoTesterClient,
+            final LiveMapSimulatorRunFacade simulatorRunFacade
     ) {
         this.liveMapQueryService = Objects.requireNonNull(liveMapQueryService, "liveMapQueryService is null");
         this.demoTesterClient = Objects.requireNonNull(demoTesterClient, "demoTesterClient is null");
+        this.simulatorRunFacade = Objects.requireNonNull(simulatorRunFacade, "simulatorRunFacade is null");
     }
 
     @GetMapping
@@ -90,5 +98,55 @@ public class LiveMapController {
             @PathVariable final String jobId
     ) {
         return ResponseEntity.ok(ApiResponse.success(demoTesterClient.cancelJob(jobId)));
+    }
+
+    // ===== 신규 simulator orchestrator Run 경로(R-1) — demo-tester job 경로와 병행(토글). =====
+
+    @PostMapping("/demo-runs")
+    public ResponseEntity<ApiResponse<SimulatorRunResponse>> startSimulatorRun(
+            @Valid @RequestBody final LiveMapSimulatorRunCreateRequest request
+    ) {
+        if (!simulatorRunFacade.isEnabled()) {
+            return simulatorDisabled();
+        }
+        final SimulatorRunResponse response = simulatorRunFacade.startRun(
+                request.testType(), request.scenarioId(), request.eqpIds());
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @GetMapping("/demo-runs/{runId}")
+    public ResponseEntity<ApiResponse<SimulatorRunResponse>> getSimulatorRun(
+            @PathVariable final String runId
+    ) {
+        if (!simulatorRunFacade.isEnabled()) {
+            return simulatorDisabled();
+        }
+        return ResponseEntity.ok(ApiResponse.success(simulatorRunFacade.getRun(runId)));
+    }
+
+    @PostMapping("/demo-runs/{runId}/stop")
+    public ResponseEntity<ApiResponse<SimulatorRunResponse>> stopSimulatorRun(
+            @PathVariable final String runId
+    ) {
+        if (!simulatorRunFacade.isEnabled()) {
+            return simulatorDisabled();
+        }
+        return ResponseEntity.ok(ApiResponse.success(simulatorRunFacade.stopRun(runId)));
+    }
+
+    @GetMapping("/demo-runs/scenarios")
+    public ResponseEntity<ApiResponse<List<SimulatorScenarioCatalogItem>>> getSimulatorScenarios(
+            @RequestParam(required = false) final String mode
+    ) {
+        if (!simulatorRunFacade.isEnabled()) {
+            return simulatorDisabled();
+        }
+        return ResponseEntity.ok(ApiResponse.success(simulatorRunFacade.getScenarios(mode)));
+    }
+
+    /** 토글 off — 신규 orchestrator Run 경로 비활성. 503 으로 프론트가 기존 job 경로(demo-tester)로 폴백(R-8 롤백). */
+    private static <T> ResponseEntity<ApiResponse<T>> simulatorDisabled() {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiResponse.error("SIMULATOR_DISABLED", "신규 simulator Run 경로가 비활성화되어 있습니다."));
     }
 }
