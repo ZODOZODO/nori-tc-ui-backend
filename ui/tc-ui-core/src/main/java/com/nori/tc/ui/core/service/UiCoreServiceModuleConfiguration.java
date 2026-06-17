@@ -19,6 +19,7 @@ import org.springframework.context.annotation.Import;
         DeployServiceCommandSupport.class,
         DeployTraceRecorder.class,
         DeployTraceRegistry.class,
+        DemoRunConnectionGate.class,
         EqpDirectScenarioLocalMutationCoordinator.class,
         EqpDirectScenarioPlanner.class,
         EqpDirectScenarioRollbackService.class,

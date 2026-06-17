@@ -7,6 +7,8 @@ import com.nori.tc.ui.core.eqp.EqpCommandResult;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementOptions;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
+import com.nori.tc.ui.core.eqp.StartOutcome;
+import com.nori.tc.ui.core.model.AsyncResultEntry;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.model.UiCommandReply;
 import com.nori.tc.ui.core.port.db.EqpManageQueryPort;
@@ -37,6 +39,7 @@ public class EqpManagementService {
     private static final Logger log = LoggerFactory.getLogger(EqpManagementService.class);
     public static final String EQP_MANAGEMENT_EXECUTOR_BEAN_NAME = "uiEqpManagementExecutor";
     private static final String DIRECT_ASYNC_SOURCE = "TC-UI-APP";
+    private static final long ASYNC_POLL_INTERVAL_MS = 100L;
     private final EqpManageQueryPort eqpManageQueryPort;
     private final EqpOptionsQueryPort eqpOptionsQueryPort;
     private final EqpDirectScenarioService eqpDirectScenarioService;
@@ -233,6 +236,58 @@ public class EqpManagementService {
                 timeoutMs,
                 () -> eqpDirectScenarioService.executeGroupEnd(eqpId, groupMessageName, "SYSTEM")
         );
+    }
+
+    /**
+     * 비동기 EQP 명령 traceId 가 종료 상태(PASS/FAIL/TIMEOUT)에 도달할 때까지 polling 으로 대기합니다.
+     *
+     * <p>front 의 polling API({@code GET /api/async/{traceId}})를 호출자 스레드에서 대신 소화하는 server-side 대기입니다.
+     * 데모-run 연결 게이트처럼 "EQP_START 발행 후 gateway 연결(PASS)을 확인한 뒤에만 다음 단계로 진행"해야 하는 흐름이
+     * 사용합니다. {@code deadline} 까지 {@link AsyncResultStorePort#getWithStatus} 를 짧은 간격으로 조회하며,
+     * COMPLETED 면 reply 의 PASS/FAIL 을, TIMEOUT 이면 TIMEOUT 을 반환합니다. deadline 초과(저장소가 PENDING 에 머묾)도
+     * TIMEOUT 입니다.</p>
+     *
+     * @param traceId 대기할 작업 추적 ID
+     * @param timeoutMs 최대 대기 시간(ms). 이 시간 내 종료 상태 미도달 시 TIMEOUT
+     * @return PASS/FAIL/TIMEOUT 결과
+     */
+    public StartOutcome awaitAsyncResult(final String traceId, final long timeoutMs) {
+        if (traceId == null || traceId.isBlank()) {
+            throw new com.nori.tc.ui.core.exception.UiBadRequestException("traceId는 비어 있을 수 없습니다.");
+        }
+        final long deadlineMs = System.currentTimeMillis() + Math.max(0L, timeoutMs);
+        while (true) {
+            final Optional<AsyncResultEntry> entry = asyncResultStorePort.getWithStatus(traceId);
+            if (entry.isPresent()) {
+                final AsyncResultEntry result = entry.get();
+                switch (result.status()) {
+                    case COMPLETED -> {
+                        final UiCommandReply reply = result.reply();
+                        return reply != null && reply.isSuccess()
+                                ? StartOutcome.pass()
+                                : StartOutcome.fail(
+                                        reply == null ? null : reply.errorCode(),
+                                        reply == null ? null : reply.errorMsg());
+                    }
+                    case TIMEOUT -> {
+                        return StartOutcome.timeout();
+                    }
+                    case PENDING -> {
+                        // 아직 gateway 응답 전 — 계속 polling
+                    }
+                    default -> throw new IllegalStateException("Unsupported async status: " + result.status());
+                }
+            }
+            if (System.currentTimeMillis() >= deadlineMs) {
+                return StartOutcome.timeout();
+            }
+            try {
+                Thread.sleep(ASYNC_POLL_INTERVAL_MS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return StartOutcome.timeout();
+            }
+        }
     }
 
     private EqpAsyncAcceptResult submitAsyncScenario(

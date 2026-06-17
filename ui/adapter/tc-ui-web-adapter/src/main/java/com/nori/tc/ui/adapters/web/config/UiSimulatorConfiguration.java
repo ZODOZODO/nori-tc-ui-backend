@@ -5,6 +5,7 @@ import com.nori.tc.ui.adapters.web.simulator.LiveMapSimulatorRunFacade;
 import com.nori.tc.ui.adapters.web.simulator.SimulatorModeMapper;
 import com.nori.tc.ui.adapters.web.simulator.SimulatorOrchestratorClient;
 import com.nori.tc.ui.adapters.web.simulator.SimulatorTargetAssembler;
+import com.nori.tc.ui.core.service.DemoRunConnectionGate;
 import com.nori.tc.ui.core.service.EqpManagementService;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -51,8 +52,16 @@ public class UiSimulatorConfiguration {
             final UiSimulatorProperties properties,
             final SimulatorOrchestratorClient simulatorOrchestratorClient,
             final SimulatorModeMapper simulatorModeMapper,
-            final SimulatorTargetAssembler simulatorTargetAssembler
+            final SimulatorTargetAssembler simulatorTargetAssembler,
+            final DemoRunConnectionGate demoRunConnectionGate,
+            final UiDualRequestProperties dualRequestProperties
     ) {
-        return new LiveMapSimulatorRunFacade(properties, simulatorOrchestratorClient, simulatorModeMapper, simulatorTargetAssembler);
+        return new LiveMapSimulatorRunFacade(
+                properties,
+                simulatorOrchestratorClient,
+                simulatorModeMapper,
+                simulatorTargetAssembler,
+                demoRunConnectionGate,
+                dualRequestProperties);
     }
 }

@@ -24,6 +24,7 @@ import com.nori.tc.db.core.jar.store.TcJarGatewayStore;
 import com.nori.tc.db.core.line.store.TcLineStore;
 import com.nori.tc.db.core.work.store.TcWorkStore;
 import com.nori.tc.db.domain.common.eqp.ControlState;
+import com.nori.tc.db.domain.common.eqp.DesiredState;
 import com.nori.tc.db.domain.common.eqp.EqpState;
 import com.nori.tc.db.domain.common.eqp.LogLevel;
 import com.nori.tc.db.domain.common.model.ProtocolType;
@@ -73,6 +74,7 @@ class JpaEqpCrudPortTest {
         final UpsertTcEqpState command = JpaEqpCrudPort.createInitialStateCommand(
                 100L,
                 UiProtocolType.SECS,
+                "ACTIVE",
                 fixedTimestamp
         );
 
@@ -388,6 +390,8 @@ class JpaEqpCrudPortTest {
         verify(fixture.eqpStateStore).upsert(stateCaptor.capture());
         assertEquals(ControlState.DISCONNECTED, stateCaptor.getValue().controlState());
         assertEquals(EqpState.SERVICE_UNAVAILABLE, stateCaptor.getValue().eqpState());
+        // create() 가 command.commMode()(PASSIVE)를 upsertInitialState 로 전달해 desired_state=STARTED 를 박는지 배선 검증.
+        assertEquals(DesiredState.STARTED, stateCaptor.getValue().desiredState());
     }
 
     @Test
@@ -750,6 +754,7 @@ class JpaEqpCrudPortTest {
         final UpsertTcEqpState command = JpaEqpCrudPort.createInitialStateCommand(
                 200L,
                 UiProtocolType.SOCKET,
+                "ACTIVE",
                 fixedTimestamp
         );
 
@@ -760,6 +765,36 @@ class JpaEqpCrudPortTest {
         assertEquals("EQP_CREATED", command.reasonCode());
         assertEquals("EQP created by UI management service", command.reasonDetail());
         assertEquals(fixedTimestamp, command.updatedAt());
+    }
+
+    @Test
+    @DisplayName("PASSIVE 설비 생성 초기 desired_state는 STARTED로 고정됩니다(dial-in listener 개방 의도)")
+    void createInitialStateCommandForPassiveUsesStartedDesiredState() {
+        final OffsetDateTime fixedTimestamp = OffsetDateTime.parse("2026-03-11T10:15:30+09:00");
+
+        final UpsertTcEqpState command = JpaEqpCrudPort.createInitialStateCommand(
+                300L,
+                UiProtocolType.SOCKET,
+                "PASSIVE",
+                fixedTimestamp
+        );
+
+        assertEquals(DesiredState.STARTED, command.desiredState());
+    }
+
+    @Test
+    @DisplayName("ACTIVE 설비 생성 초기 desired_state는 ENDED로 유지됩니다(STARTED 전이는 EQP_START 시 gateway가 영속)")
+    void createInitialStateCommandForActiveUsesEndedDesiredState() {
+        final OffsetDateTime fixedTimestamp = OffsetDateTime.parse("2026-03-11T10:15:30+09:00");
+
+        final UpsertTcEqpState command = JpaEqpCrudPort.createInitialStateCommand(
+                301L,
+                UiProtocolType.SOCKET,
+                "ACTIVE",
+                fixedTimestamp
+        );
+
+        assertEquals(DesiredState.ENDED, command.desiredState());
     }
 
     @Test

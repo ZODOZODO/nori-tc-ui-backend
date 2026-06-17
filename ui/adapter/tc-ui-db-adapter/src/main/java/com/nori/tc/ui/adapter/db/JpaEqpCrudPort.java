@@ -163,7 +163,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
                     command.plcSettings()
             );
             upsertLogPolicy(eqpKey, resolveCreateLogSettings(command.logSettings()));
-            upsertInitialState(eqpKey, command.interfaceType());
+            upsertInitialState(eqpKey, command.interfaceType(), command.commMode());
             upsertInitialPortStatuses(createdEqp, normalizeOptionalText(command.appliedParamVersion()));
 
             return requireSnapshot(command.eqpId());
@@ -472,8 +472,8 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         ));
     }
 
-    private void upsertInitialState(final long eqpKey, final UiProtocolType interfaceType) {
-        eqpStateStore.upsert(createInitialStateCommand(eqpKey, interfaceType, OffsetDateTime.now()));
+    private void upsertInitialState(final long eqpKey, final UiProtocolType interfaceType, final String commMode) {
+        eqpStateStore.upsert(createInitialStateCommand(eqpKey, interfaceType, commMode, OffsetDateTime.now()));
     }
 
     private void upsertInitialPortStatuses(final TcEqp eqp, final String appliedParamVersion) {
@@ -569,6 +569,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
     static UpsertTcEqpState createInitialStateCommand(
             final long eqpKey,
             final UiProtocolType interfaceType,
+            final String commMode,
             final OffsetDateTime timestamp
     ) {
         if (eqpKey <= 0) {
@@ -590,12 +591,17 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             eqpState = EqpState.SERVICE_UNAVAILABLE;
         }
 
-        // 신규 설비의 연결 의도는 ENDED(never-started) — STARTED 전이는 EQP_START 시 gateway 가 영속(§3 단일 writer).
+        // PASSIVE 설비는 dial-in 이라 EQP_START/END lifecycle 경로가 없다(3계층 거부). 따라서 생성 시점에
+        // desired_state=STARTED 로 고정해 gateway listener 개방 의도를 박는다. ACTIVE 는 ENDED(never-started)로 두고
+        // STARTED 전이는 EQP_START 시 gateway 가 영속한다(§3 단일 writer). commMode null 은 ENDED(equalsIgnoreCase null-safe).
+        final DesiredState desiredState = "PASSIVE".equalsIgnoreCase(commMode)
+                ? DesiredState.STARTED
+                : DesiredState.ENDED;
         return new UpsertTcEqpState(
                 eqpKey,
                 controlState,
                 eqpState,
-                DesiredState.ENDED,
+                desiredState,
                 resolvedTimestamp,
                 "EQP_CREATED",
                 "EQP created by UI management service",

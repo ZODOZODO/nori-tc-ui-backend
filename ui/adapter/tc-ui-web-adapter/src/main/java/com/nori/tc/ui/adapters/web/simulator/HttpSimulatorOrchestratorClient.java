@@ -52,6 +52,11 @@ public class HttpSimulatorOrchestratorClient implements SimulatorOrchestratorCli
     }
 
     @Override
+    public SimulatorRunResponse activateUpstream(final String runId) {
+        return sendJson("POST", "/api/demo-runs/" + runId + "/activate-upstream", null, SimulatorRunResponse.class);
+    }
+
+    @Override
     public List<SimulatorScenarioCatalogItem> getScenarios(final String mode) {
         final String path = mode == null || mode.isBlank()
                 ? "/api/scenarios"

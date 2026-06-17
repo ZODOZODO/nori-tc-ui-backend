@@ -1015,6 +1015,16 @@ class DeployServiceTest {
             public List<com.nori.tc.ui.domain.model.UiModelDcopItem> findDcopItemsByModelVersionKey(final long modelVersionKey) {
                 return List.of();
             }
+
+            @Override
+            public List<com.nori.tc.ui.domain.model.UiModelPlcGroup> findPlcGroupsByModelVersionKey(final long modelVersionKey) {
+                return List.of();
+            }
+
+            @Override
+            public List<com.nori.tc.ui.domain.model.UiModelPlcRegister> findPlcRegistersByModelVersionKey(final long modelVersionKey) {
+                return List.of();
+            }
         };
     }
 
