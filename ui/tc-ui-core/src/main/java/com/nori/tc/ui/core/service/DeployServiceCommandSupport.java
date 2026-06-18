@@ -23,7 +23,6 @@ import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.port.db.DeployStorePort;
 import com.nori.tc.ui.core.port.db.EqpCrudPort;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
-import com.nori.tc.ui.core.port.db.ModelCrudPort;
 import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
 import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
 import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
@@ -59,13 +58,12 @@ final class DeployServiceCommandSupport {
     private final DeployServiceSnapshotSupport snapshotSupport;
     private final ModelParamPayloadSupport modelParamPayloadSupport;
     private final EqpParamPayloadSupport eqpParamPayloadSupport;
-    private final ModelCrudPort modelCrudPort;
+    private final ModelDetailQueryPort modelDetailQueryPort;
 
     DeployServiceCommandSupport(
             final DeployStorePort deployStorePort,
             final EqpCrudPort eqpCrudPort,
             final EqpQueryPort eqpQueryPort,
-            final ModelCrudPort modelCrudPort,
             final ModelDetailQueryPort modelDetailQueryPort,
             final UiGatewayEventPublishPort gatewayEventPublishPort,
             final UiBusinessEventPublishPort businessEventPublishPort,
@@ -75,7 +73,7 @@ final class DeployServiceCommandSupport {
         this.gatewayEventPublishPort = Objects.requireNonNull(gatewayEventPublishPort, "gatewayEventPublishPort is null");
         this.businessEventPublishPort = Objects.requireNonNull(businessEventPublishPort, "businessEventPublishPort is null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is null");
-        this.modelCrudPort = Objects.requireNonNull(modelCrudPort, "modelCrudPort is null");
+        this.modelDetailQueryPort = Objects.requireNonNull(modelDetailQueryPort, "modelDetailQueryPort is null");
         this.modelParamPayloadSupport = new ModelParamPayloadSupport(
                 Objects.requireNonNull(modelDetailQueryPort, "modelDetailQueryPort is null"),
                 objectMapper
@@ -654,7 +652,9 @@ final class DeployServiceCommandSupport {
                         intValue(gatewayProfile, "unitId"),
                         intValue(gatewayProfile, "pollTimeoutMs"),
                         intValue(gatewayProfile, "reconnectMaxRetries"),
-                        List.of()
+                        List.of(),
+                        // 디코드 스펙(groups)을 최신 모델로 운반한다(event-sourced — gateway 런타임 DB 재조회 0, R6).
+                        assemblePlcGroups(resolvedModelVersionKey)
                 );
         final String resolvedDesiredState = textValue(gatewayProfile, "desiredState") == null
                 ? "ENDED"
@@ -668,7 +668,8 @@ final class DeployServiceCommandSupport {
                 intValue(gatewayProfile, "hsmsDeviceId"),
                 textValue(gatewayProfile, "eqpIp"),
                 intValue(gatewayProfile, "eqpPort"),
-                resolveModelKey(modelInfo, resolvedModelVersionKey, null),
+                // F1: modelKey 슬롯 = modelVersionKey(정체성 아님) — boot 과 키 공간 통일.
+                resolvedModelVersionKey,
                 longValue(stepUiMessage.path("gatewayJar"), "jarRef"),
                 longValue(stepUiMessage.path("businessJar"), "jarRef"),
                 textValue(gatewayProfile, "connectionMode"),
@@ -709,11 +710,6 @@ final class DeployServiceCommandSupport {
         final Long resolvedModelVersionKey = longValue(modelInfo, "modelVersionKey") != null
                 ? longValue(modelInfo, "modelVersionKey")
                 : executionSnapshot.eqp().modelVersionKey();
-        final Long resolvedModelKey = resolveModelKey(
-                modelInfo,
-                resolvedModelVersionKey,
-                executionSnapshot.model() == null ? null : executionSnapshot.model().modelKey()
-        );
         final String resolvedConnectionMode = textValue(gatewayProfile, "connectionMode") != null
                 ? textValue(gatewayProfile, "connectionMode")
                 : executionSnapshot.eqp().commMode();
@@ -766,7 +762,9 @@ final class DeployServiceCommandSupport {
                         executionSnapshot.plc().unitId(),
                         executionSnapshot.plc().pollTimeoutMs(),
                         executionSnapshot.plc().reconnectMaxRetries(),
-                        executionSnapshot.plc().enabledPollGroups()
+                        executionSnapshot.plc().enabledPollGroups(),
+                        // 디코드 스펙(groups)을 최신 모델로 운반한다(event-sourced — gateway 런타임 DB 재조회 0, R6).
+                        assemblePlcGroups(resolvedModelVersionKey)
                 );
         final String desiredState = executionSnapshot.runtimeState() == null
                 || executionSnapshot.runtimeState().desiredState() == null
@@ -809,7 +807,8 @@ final class DeployServiceCommandSupport {
                 resolvedHsmsDeviceId,
                 resolvedEqpIp,
                 resolvedEqpPort,
-                resolvedModelKey,
+                // F1: modelKey 슬롯 = modelVersionKey(정체성 아님) — boot 과 키 공간 통일.
+                resolvedModelVersionKey,
                 gatewayJarRefFromStep != null ? gatewayJarRefFromStep : executionSnapshot.eqp().gatewayJarKey(),
                 businessJarRefFromStep != null ? businessJarRefFromStep : executionSnapshot.eqp().businessJarKey(),
                 resolvedConnectionMode,
@@ -847,7 +846,87 @@ final class DeployServiceCommandSupport {
                             + ", eventType=" + messageEventType.name()
             );
         }
-        return parseEquipmentProfile(equipmentProfileNode);
+        return injectPlcGroupsIfPresent(parseEquipmentProfile(equipmentProfileNode), target);
+    }
+
+    /**
+     * PLC 설비의 forward 발행 직전 디코드 스펙(groups)을 최신 모델로 재조회해 주입한다(§2.3).
+     *
+     * <p>영속 desired_state.equipmentProfile JSON 에는 groups 를 싣지 않으므로(영속 비대/stale 방지) 여기서 채운다.
+     * gateway 가 런타임 DB 재조회 없이 payload 를 정본으로 사용하게 하는 핵심 지점. SECS/SOCKET(plcSettings==null)은 무변경.</p>
+     */
+    UiEquipmentProfileSnapshot injectPlcGroupsIfPresent(
+            final UiEquipmentProfileSnapshot profile,
+            final PersistedDeployTarget target
+    ) {
+        if (profile == null || profile.plcSettings() == null) {
+            return profile;
+        }
+        final Long modelVersionKey = resolvePlcGroupsModelVersionKey(target);
+        if (modelVersionKey == null) {
+            return profile;
+        }
+        final UiEquipmentProfileSnapshot.PlcSettingsSnapshot plc = profile.plcSettings();
+        final UiEquipmentProfileSnapshot.PlcSettingsSnapshot plcWithGroups =
+                new UiEquipmentProfileSnapshot.PlcSettingsSnapshot(
+                        plc.plcProtocol(),
+                        plc.transport(),
+                        plc.unitId(),
+                        plc.pollTimeoutMs(),
+                        plc.reconnectMaxRetries(),
+                        plc.enabledPollGroups(),
+                        assemblePlcGroups(modelVersionKey)
+                );
+        return new UiEquipmentProfileSnapshot(
+                profile.eqpKey(),
+                profile.eqpId(),
+                profile.commInterfaceType(),
+                profile.socketType(),
+                profile.hsmsDeviceId(),
+                profile.eqpIp(),
+                profile.eqpPort(),
+                // F1: modelKey 슬롯 = modelVersionKey(정체성 아님) — boot 과 키 공간 통일(dedup/refcount 일관).
+                modelVersionKey,
+                profile.gatewayJarKey(),
+                profile.businessJarKey(),
+                profile.connectionMode(),
+                profile.routePartition(),
+                profile.enabled(),
+                profile.hsmsSettings(),
+                profile.socketSettings(),
+                profile.currentStateSnapshot(),
+                profile.portStatuses(),
+                profile.logPolicy(),
+                profile.params(),
+                profile.updatedAt(),
+                profile.desiredState(),
+                plcWithGroups
+        );
+    }
+
+    private Long resolvePlcGroupsModelVersionKey(final PersistedDeployTarget target) {
+        final var desiredState = target.planDraft().desiredState();
+        if (desiredState != null && desiredState.modelVersionKey() != null) {
+            return desiredState.modelVersionKey();
+        }
+        final var currentState = target.planDraft().currentState();
+        return currentState == null ? null : currentState.modelVersionKey();
+    }
+
+    /**
+     * 모델의 PLC 디코드 스펙(groups)을 {@code tc_model_plc_*} 에서 조회해 게이트웨이 운반용 스냅샷으로 조립합니다(§2.4a).
+     *
+     * <p>direct CREATE/UPDATE({@code buildDirectEquipmentProfile} 2변형)와 deploy-forward({@code injectPlcGroupsIfPresent})가
+     * 공용한다 — gateway 가 런타임 DB 재조회 없이 payload 를 정본으로 쓰게 하는 단일 조립 지점. modelVersionKey 가 없으면 빈 리스트.</p>
+     */
+    private List<UiEquipmentProfileSnapshot.PlcGroupSnapshot> assemblePlcGroups(final Long modelVersionKey) {
+        if (modelVersionKey == null) {
+            return List.of();
+        }
+        return PlcGroupSnapshotAssembler.assemble(
+                modelDetailQueryPort.findPlcGroupsByModelVersionKey(modelVersionKey),
+                modelDetailQueryPort.findPlcRegistersByModelVersionKey(modelVersionKey)
+        );
     }
 
     private List<UiEquipmentProfileSnapshot.ParamSnapshot> resolveEquipmentProfileParams(
@@ -976,23 +1055,6 @@ final class DeployServiceCommandSupport {
         } catch (Exception exception) {
             throw new UiBadRequestException("보상 equipmentProfile 역직렬화에 실패했습니다.");
         }
-    }
-
-    private Long resolveModelKey(
-            final JsonNode modelInfo,
-            final Long modelVersionKey,
-            final Long fallbackModelKey
-    ) {
-        final Long explicitModelKey = longValue(modelInfo, "modelKey");
-        if (explicitModelKey != null) {
-            return explicitModelKey;
-        }
-        if (modelVersionKey != null) {
-            return modelCrudPort.findByModelVersionKey(modelVersionKey)
-                    .map(model -> model.modelKey())
-                    .orElse(fallbackModelKey);
-        }
-        return fallbackModelKey;
     }
 
     private static Long longValue(final JsonNode node, final String fieldName) {

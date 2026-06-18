@@ -427,6 +427,10 @@ public class DeployPlanningService {
             case EQP_REGISTER_DEPLOY -> {
                 if (!Objects.equals(currentState.modelVersionKey(), safeLong(desiredState.modelVersionKey()))) {
                     deltaKinds.add(DeployDeltaKind.MODEL_CHANGED);
+                    // PLC 설비의 모델 변경만 게이트웨이 디코드 스펙 전파가 필요하다(SECS/SOCKET 무영향, R6).
+                    if ("PLC".equalsIgnoreCase(currentState.interfaceType())) {
+                        deltaKinds.add(DeployDeltaKind.PLC_MODEL_CHANGED);
+                    }
                 }
                 if (!Objects.equals(currentState.businessJarRef(), desiredState.businessJarRef())) {
                     deltaKinds.add(DeployDeltaKind.BUSINESS_JAR_CHANGED);
@@ -764,7 +768,10 @@ public class DeployPlanningService {
                         ? intValue(gatewayProfile, "pollTimeoutMs") : baseProfile.plcSettings().pollTimeoutMs(),
                 intValue(gatewayProfile, "reconnectMaxRetries") != null
                         ? intValue(gatewayProfile, "reconnectMaxRetries") : baseProfile.plcSettings().reconnectMaxRetries(),
-                baseProfile.plcSettings().enabledPollGroups()
+                baseProfile.plcSettings().enabledPollGroups(),
+                // 디코드 스펙(groups)은 영속 JSON 에 싣지 않고 forward 발행 직전(DeployServiceCommandSupport.buildEquipmentProfile)에
+                // 최신 모델로 재조회해 주입한다(stale 영속 방지, §2.3). base 의 groups 만 보존(현재 항상 빈 리스트).
+                baseProfile.plcSettings().groups()
         );
 
         return new UiEquipmentProfileSnapshot(

@@ -29,6 +29,7 @@ import java.util.Optional;
 final class DeployServiceSnapshotSupport {
 
     private final EqpCrudPort eqpCrudPort;
+    private final ModelDetailQueryPort modelDetailQueryPort;
     private final ObjectMapper objectMapper;
     private final ModelParamPayloadSupport modelParamPayloadSupport;
 
@@ -38,9 +39,10 @@ final class DeployServiceSnapshotSupport {
             final ObjectMapper objectMapper
     ) {
         this.eqpCrudPort = Objects.requireNonNull(eqpCrudPort, "eqpCrudPort is null");
+        this.modelDetailQueryPort = Objects.requireNonNull(modelDetailQueryPort, "modelDetailQueryPort is null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is null");
         this.modelParamPayloadSupport = new ModelParamPayloadSupport(
-                Objects.requireNonNull(modelDetailQueryPort, "modelDetailQueryPort is null"),
+                modelDetailQueryPort,
                 objectMapper
         );
     }
@@ -408,7 +410,8 @@ final class DeployServiceSnapshotSupport {
                 snapshot.hsms() == null ? null : snapshot.hsms().deviceId(),
                 snapshot.eqp().eqpIp(),
                 snapshot.eqp().eqpPort(),
-                snapshot.model() == null ? null : snapshot.model().modelKey(),
+                // F1: gateway-bound 보상 pre-state 의 modelKey 슬롯 = modelVersionKey(정체성 아님) — boot/런타임 키 공간 통일.
+                snapshot.eqp().modelVersionKey(),
                 snapshot.eqp().gatewayJarKey(),
                 snapshot.eqp().businessJarKey(),
                 snapshot.eqp().commMode(),
@@ -480,7 +483,11 @@ final class DeployServiceSnapshotSupport {
                         snapshot.plc().unitId(),
                         snapshot.plc().pollTimeoutMs(),
                         snapshot.plc().reconnectMaxRetries(),
-                        snapshot.plc().enabledPollGroups()
+                        snapshot.plc().enabledPollGroups(),
+                        PlcGroupSnapshotAssembler.assemble(
+                                modelDetailQueryPort.findPlcGroupsByModelVersionKey(snapshot.eqp().modelVersionKey()),
+                                modelDetailQueryPort.findPlcRegistersByModelVersionKey(snapshot.eqp().modelVersionKey())
+                        )
                 )
         );
     }

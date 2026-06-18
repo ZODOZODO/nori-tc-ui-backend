@@ -97,7 +97,8 @@ class EqpDirectScenarioServiceTest {
         final EqpCommandResult result = service.executeCreate(createCommand("PHOTO_NEW"));
 
         assertFalse(result.success());
-        assertEquals(500L, gatewayPublisher.messages.getFirst().equipmentProfile().modelKey());
+        // AC10: gateway-bound 스냅샷 modelKey 슬롯 = modelVersionKey(정체성 500L 아님). create modelVersionKey=1001L.
+        assertEquals(1001L, gatewayPublisher.messages.getFirst().equipmentProfile().modelKey());
         assertTrue(result.errorCode() != null && !result.errorCode().isBlank());
         assertTrue(eqpCrudPort.findSnapshotByEqpId("PHOTO_NEW").isEmpty());
     }
@@ -116,7 +117,8 @@ class EqpDirectScenarioServiceTest {
         final EqpCommandResult result = service.executeUpdate("PHOTO_001", updateCommand("10.10.10.9", 6100, null, null, null));
 
         assertFalse(result.success());
-        assertEquals(500L, gatewayPublisher.messages.getFirst().equipmentProfile().modelKey());
+        // AC10: gateway-bound 스냅샷 modelKey 슬롯 = modelVersionKey(정체성 500L 아님). update modelVersionKey=1002L.
+        assertEquals(1002L, gatewayPublisher.messages.getFirst().equipmentProfile().modelKey());
         final EqpManagementSnapshot restored = eqpCrudPort.findSnapshotByEqpId("PHOTO_001").orElseThrow();
         assertEquals("10.10.10.1", restored.eqp().eqpIp());
         assertEquals(6000, restored.eqp().eqpPort());
@@ -131,6 +133,34 @@ class EqpDirectScenarioServiceTest {
 
         final EqpCommandResult result = service.executeDelete("PHOTO_001");
 
+        assertTrue(result.success());
+        assertTrue(eqpCrudPort.findSnapshotByEqpId("PHOTO_001").isEmpty());
+        assertEquals(
+                List.of(
+                        "publish:TC-GATEWAY-APP:EQP_END",
+                        "publish:TC-GATEWAY-APP:EQP_DELETE",
+                        "publish:TC-BUSINESS-APP:EQP_DELETE",
+                        "db-delete:PHOTO_001"
+                ),
+                operationLog
+        );
+    }
+
+    @Test
+    void deleteToleratesEqpNotStartedFromEndStep() {
+        eqpCrudPort.put(snapshot("PHOTO_001", 1L, "10.10.10.1", 6000, "EQP_PARAM_V1", 3001L, 4001L));
+        // 한 번도 START 되지 않은 ACTIVE 설비: gateway 가 END_EQP_IF_RUNNING(EQP_END)을 EQP_NOT_STARTED 로 거부한다.
+        gatewayPublisher.behavior = (message, source) -> {
+            if (message.eventType().name().equals("EQP_END")) {
+                gatewayPublisher.replyFail(message, "EQP_NOT_STARTED", "Equipment is not started (desired_state != STARTED)");
+                return;
+            }
+            gatewayPublisher.replyPass(message);
+        };
+
+        final EqpCommandResult result = service.executeDelete("PHOTO_001");
+
+        // EQP_NOT_STARTED 는 "이미 종료=종료 불필요"이므로 saga 가 중단되지 않고 삭제까지 완주한다(END_EQP_IF_RUNNING 의도).
         assertTrue(result.success());
         assertTrue(eqpCrudPort.findSnapshotByEqpId("PHOTO_001").isEmpty());
         assertEquals(
@@ -383,7 +413,6 @@ class EqpDirectScenarioServiceTest {
                 mock(DeployStorePort.class),
                 eqpCrudPort,
                 eqpQueryPort(),
-                modelCrudPort,
                 modelDetailQueryPort,
                 gatewayPublisher,
                 businessPublisher,

@@ -6,6 +6,8 @@ import com.nori.tc.ui.core.deploy.DeployResolvedStepPlan;
 import com.nori.tc.ui.core.deploy.DeployScenarioAction;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -22,6 +24,14 @@ import java.util.concurrent.TimeoutException;
  */
 @Service
 public class EqpDirectScenarioRunner {
+
+    private static final Logger log = LoggerFactory.getLogger(EqpDirectScenarioRunner.class);
+
+    /**
+     * gateway 가 desired_state != STARTED 인 설비의 EQP_END 를 거부할 때 내려주는 reply errorCode 계약
+     * (gateway {@code GatewayUiRuntimeErrorCode.EQP_NOT_STARTED}). END_EQP_IF_RUNNING step 에 한해 정상 결과로 관용한다.
+     */
+    private static final String GATEWAY_EQP_NOT_STARTED_CODE = "EQP_NOT_STARTED";
 
     private static final int CONFLICT_STATUS = 409;
     private static final int INTERNAL_ERROR_STATUS = 500;
@@ -74,18 +84,30 @@ public class EqpDirectScenarioRunner {
                 try {
                     final var completion = replyFuture.get(step.timeoutMs(), TimeUnit.MILLISECONDS);
                     if (!completion.success()) {
-                        handleFailure(
-                                context,
-                                completedSteps,
-                                new EqpManagementCommandFailureException(
-                                        CONFLICT_STATUS,
-                                        commandAssembler.normalizeOptionalText(completion.firstErrorCode()),
-                                        commandAssembler.normalizeOptionalText(completion.firstErrorMessage()) == null
-                                                ? "설비 step 실행에 실패했습니다."
-                                                : commandAssembler.normalizeOptionalText(completion.firstErrorMessage()),
-                                        null
-                                )
-                        );
+                        final String errorCode = commandAssembler.normalizeOptionalText(completion.firstErrorCode());
+                        if (step.action() == DeployScenarioAction.END_EQP_IF_RUNNING
+                                && GATEWAY_EQP_NOT_STARTED_CODE.equals(errorCode)) {
+                            // END_EQP_IF_RUNNING = "실행 중일 때만 종료". gateway 가 EQP_NOT_STARTED(이미 종료=종료 불필요)로
+                            // 거부하면 step 실패가 아니라 정상 결과이므로 관용하고 다음 step(메모리 삭제)으로 진행한다.
+                            log.info(
+                                    "END_EQP_IF_RUNNING step tolerated EQP_NOT_STARTED (equipment already not running). eqpId={}, step={}",
+                                    context.eqpId(),
+                                    step.code()
+                            );
+                        } else {
+                            handleFailure(
+                                    context,
+                                    completedSteps,
+                                    new EqpManagementCommandFailureException(
+                                            CONFLICT_STATUS,
+                                            errorCode,
+                                            commandAssembler.normalizeOptionalText(completion.firstErrorMessage()) == null
+                                                    ? "설비 step 실행에 실패했습니다."
+                                                    : commandAssembler.normalizeOptionalText(completion.firstErrorMessage()),
+                                            null
+                                    )
+                            );
+                        }
                     }
                 } catch (TimeoutException timeoutException) {
                     deployTraceRecorder.cancel(traceId);

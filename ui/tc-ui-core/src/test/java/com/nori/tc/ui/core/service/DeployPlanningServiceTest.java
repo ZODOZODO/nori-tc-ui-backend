@@ -9,6 +9,7 @@ import com.nori.tc.ui.core.deploy.DeployPlanCommand;
 import com.nori.tc.ui.core.deploy.DeployPlanningResult;
 import com.nori.tc.ui.core.deploy.DeployRegisterScenarioPreviewCommand;
 import com.nori.tc.ui.core.deploy.DeployScenarioCatalogMeta;
+import com.nori.tc.ui.core.deploy.DeployTargetApp;
 import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.port.db.DeployScenarioCatalogMetaPort;
 import com.nori.tc.ui.core.properties.UiDeployProperties;
@@ -27,6 +28,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DeployPlanningServiceTest {
@@ -246,6 +248,63 @@ class DeployPlanningServiceTest {
     }
 
     @Test
+    void planRegisterModelDeployForPlcGeneratesGatewayStep() {
+        // AC7: PLC 설비의 MODEL_CHANGED register deploy 는 targetApp: GATEWAY step(UPSERT_GATEWAY_CONTEXT)을 생성한다.
+        final DeployScenarioCatalogService catalogService = new DeployScenarioCatalogService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                new InMemoryCatalogMetaPort(),
+                objectMapper
+        );
+        catalogService.initializeCatalog();
+        final DeployPlanningService plcPlanningService = new DeployPlanningService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                eqpId -> Optional.of(plcCurrentState(eqpId)),
+                catalogService,
+                objectMapper
+        );
+
+        final DeployPlanCommand command = new DeployPlanCommand(
+                "Register Model Deploy (PLC)",
+                UiCommandEventType.EQP_REGISTER_DEPLOY,
+                DeployExecutionPolicy.BEST_EFFORT,
+                new DeployPlanCommand.CommonRequest("PLC", registerModelUiMessage(), "REGISTER_MODEL_ONLY"),
+                List.of(new DeployPlanCommand.TargetRequest("PLC_001", objectMapper.createObjectNode()))
+        );
+
+        final var target = plcPlanningService.plan(command).targets().getFirst();
+
+        assertTrue(target.deltaKinds().contains(DeployDeltaKind.PLC_MODEL_CHANGED),
+                "AC7: PLC 모델 변경은 PLC_MODEL_CHANGED delta 를 생성한다");
+        final var gatewayStep = target.resolvedSteps().stream()
+                .filter(step -> "UPSERT_GATEWAY_CONTEXT".equals(step.code()))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(gatewayStep, "AC7: PLC register-model deploy 는 GATEWAY step 을 생성한다");
+        assertEquals(DeployTargetApp.GATEWAY, gatewayStep.targetApp());
+    }
+
+    @Test
+    void planRegisterModelDeployForSocketDoesNotGenerateGatewayStep() {
+        // R6: SECS/SOCKET 설비의 모델 변경은 PLC_MODEL_CHANGED 미생성 → GATEWAY step 미생성(무회귀).
+        final DeployPlanCommand command = new DeployPlanCommand(
+                "Register Model Deploy (SOCKET)",
+                UiCommandEventType.EQP_REGISTER_DEPLOY,
+                DeployExecutionPolicy.BEST_EFFORT,
+                new DeployPlanCommand.CommonRequest("SOCKET", registerModelUiMessage(), "REGISTER_MODEL_ONLY"),
+                List.of(new DeployPlanCommand.TargetRequest("PHOTO_001", objectMapper.createObjectNode()))
+        );
+
+        final var target = deployPlanningService.plan(command).targets().getFirst();
+
+        assertFalse(target.deltaKinds().contains(DeployDeltaKind.PLC_MODEL_CHANGED),
+                "R6: SOCKET 은 PLC_MODEL_CHANGED 를 생성하지 않는다");
+        assertFalse(
+                target.resolvedSteps().stream().anyMatch(step -> "UPSERT_GATEWAY_CONTEXT".equals(step.code())),
+                "R6: SOCKET register-model deploy 는 GATEWAY step 을 생성하지 않는다"
+        );
+    }
+
+    @Test
     void planUpdateMergesPlcSettingsIntoEquipmentProfile() {
         // L1337 deploy(update) 경로 — 빌더 ⓑ DeployPlanningService.mergeEquipmentProfile 가 base profile 의
         // plcSettings 를 mergedUiMessage.equipmentProfile 로 운반하는지 검증(누락 시 PLC 설비가 폴링 스펙 없이 기동).
@@ -296,7 +355,7 @@ class DeployPlanningServiceTest {
                 new UiEquipmentProfileSnapshot.CurrentStateSnapshot("REMOTE", null, null, null, null, null),
                 null, null, null, null, "STARTED",
                 new UiEquipmentProfileSnapshot.PlcSettingsSnapshot(
-                        "MODBUS_TCP", "TCP", 3, 3000, 5, List.of("EQP_STATUS_REPORT"))
+                        "MODBUS_TCP", "TCP", 3, 3000, 5, List.of("EQP_STATUS_REPORT"), List.of())
         );
     }
 

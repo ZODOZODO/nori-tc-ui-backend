@@ -54,7 +54,7 @@ final class UiKafkaContractMapper {
         if (snapshot == null) {
             return null;
         }
-        // groups(디코드 스펙)는 gateway 가 tc_model_plc_* 를 DB 직독(A안)하므로 ui-backend 는 빈 리스트로 둔다.
+        // groups(디코드 스펙)를 계약으로 운반한다 — gateway 가 런타임 DB 재조회 없이 payload 를 정본으로 사용.
         return new GatewayEquipmentProfileSnapshot.PlcSettingsSnapshot(
                 snapshot.plcProtocol(),
                 snapshot.transport(),
@@ -62,7 +62,45 @@ final class UiKafkaContractMapper {
                 snapshot.pollTimeoutMs(),
                 snapshot.reconnectMaxRetries(),
                 snapshot.enabledPollGroups(),
-                java.util.List.of()
+                snapshot.groups().stream()
+                        .map(UiKafkaContractMapper::toPlcGroup)
+                        .toList()
+        );
+    }
+
+    private static GatewayEquipmentProfileSnapshot.PlcGroupSnapshot toPlcGroup(
+            final UiEquipmentProfileSnapshot.PlcGroupSnapshot group
+    ) {
+        return new GatewayEquipmentProfileSnapshot.PlcGroupSnapshot(
+                group.messageName(),
+                group.area(),
+                group.startAddress(),
+                group.readCount(),
+                group.addressQualifier(),
+                group.pollPeriodMs(),
+                group.description(),
+                group.registers().stream()
+                        .map(UiKafkaContractMapper::toPlcRegister)
+                        .toList()
+        );
+    }
+
+    private static GatewayEquipmentProfileSnapshot.PlcRegisterSnapshot toPlcRegister(
+            final UiEquipmentProfileSnapshot.PlcRegisterSnapshot register
+    ) {
+        return new GatewayEquipmentProfileSnapshot.PlcRegisterSnapshot(
+                register.wordOffset(),
+                register.variableName(),
+                register.dataType(),
+                register.length(),
+                register.bitIndex(),
+                register.byteIndex(),
+                register.byteOrder(),
+                register.wordOrder(),
+                register.scale(),
+                register.bcdSigned(),
+                register.charEncoding(),
+                register.description()
         );
     }
 

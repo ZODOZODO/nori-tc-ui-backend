@@ -40,10 +40,11 @@ public record UiEquipmentProfileSnapshot(
     }
 
     /**
-     * PLC 연결 튜닝 + 폴링 그룹 의도 스냅샷입니다(PLC 설비 전용 — SECS/SOCKET 은 null).
+     * PLC 연결 튜닝 + 폴링 그룹 의도 + 그룹/레지스터 디코드 스펙 스냅샷입니다(PLC 설비 전용 — SECS/SOCKET 은 null).
      *
-     * <p>그룹/레지스터 디코드 스펙(groups)은 gateway 가 부팅/hot-reload 시 {@code tc_model_plc_*} 를
-     * DB 직독(A안 §2/§3)하므로 ui-backend 는 운반하지 않는다. 연결 튜닝과 폴링 의도(enabledPollGroups)만 운반한다.</p>
+     * <p>그룹/레지스터 디코드 스펙(groups)을 deploy 이벤트 payload 로 운반해 gateway 가 런타임 DB 재조회 없이
+     * payload 를 정본으로 사용하게 한다(business 모델 캐시 패턴과 통일). enabledPollGroups 는 폴 활성 의도이며
+     * 부팅/재연결 복원은 gateway 가 DB 에서 유지한다(이 SPEC 대상 아님).</p>
      */
     public record PlcSettingsSnapshot(
             String plcProtocol,
@@ -51,11 +52,50 @@ public record UiEquipmentProfileSnapshot(
             Integer unitId,
             Integer pollTimeoutMs,
             Integer reconnectMaxRetries,
-            List<String> enabledPollGroups
+            List<String> enabledPollGroups,
+            List<PlcGroupSnapshot> groups
     ) {
         public PlcSettingsSnapshot {
             enabledPollGroups = enabledPollGroups == null ? List.of() : List.copyOf(enabledPollGroups);
+            groups = groups == null ? List.of() : List.copyOf(groups);
         }
+    }
+
+    /**
+     * PLC 폴링 그룹(읽기 명령 1건) 디코드 스냅샷입니다(계약 {@code GatewayEquipmentProfileSnapshot.PlcGroupSnapshot} 미러).
+     */
+    public record PlcGroupSnapshot(
+            String messageName,
+            String area,
+            Integer startAddress,
+            Integer readCount,
+            String addressQualifier,
+            Integer pollPeriodMs,
+            String description,
+            List<PlcRegisterSnapshot> registers
+    ) {
+        public PlcGroupSnapshot {
+            registers = registers == null ? List.of() : List.copyOf(registers);
+        }
+    }
+
+    /**
+     * PLC 레지스터(응답 워드 → 변수 디코드 규칙) 스냅샷입니다(계약 {@code PlcRegisterSnapshot} 미러).
+     */
+    public record PlcRegisterSnapshot(
+            Integer wordOffset,
+            String variableName,
+            String dataType,
+            Integer length,
+            Integer bitIndex,
+            Integer byteIndex,
+            String byteOrder,
+            String wordOrder,
+            Double scale,
+            Boolean bcdSigned,
+            String charEncoding,
+            String description
+    ) {
     }
 
     public record HsmsSettingsSnapshot(

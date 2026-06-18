@@ -111,6 +111,15 @@ public final class EqpControllerResponseSupport {
                         snapshot.socket().maxFrameSizeBytes(),
                         snapshot.socket().keepAliveEnabled()
                 ),
+                snapshot.plc() == null
+                        ? null
+                        : new EqpManageDetailResponse.PlcSettingsResponse(
+                        snapshot.plc().plcProtocol(),
+                        snapshot.plc().transport(),
+                        snapshot.plc().unitId(),
+                        snapshot.plc().pollTimeoutMs(),
+                        snapshot.plc().reconnectMaxRetries()
+                ),
                 appliedParamView.version(),
                 appliedParamView.description(),
                 paramVersions,

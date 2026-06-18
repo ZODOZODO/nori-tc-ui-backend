@@ -174,7 +174,9 @@ public class DeployPlanningStateJdbcPort implements DeployPlanningStatePort {
                         snapshot.plc().unitId(),
                         snapshot.plc().pollTimeoutMs(),
                         snapshot.plc().reconnectMaxRetries(),
-                        snapshot.plc().enabledPollGroups()
+                        snapshot.plc().enabledPollGroups(),
+                        // current-state 재구성은 tc_eqp_plc 만 읽는다(tc_model_plc_* 아님). 디코드 스펙은 발행 직전 재조회(§2.3).
+                        List.of()
                 )
         );
     }

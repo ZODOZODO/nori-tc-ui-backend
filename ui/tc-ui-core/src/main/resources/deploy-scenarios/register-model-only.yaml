@@ -10,8 +10,29 @@ appliesTo:
     - EQP_REGISTER_DEPLOY
   deltaAll:
     - MODEL_CHANGED
+    - PLC_MODEL_CHANGED
 
 steps:
+  - order: 5
+    code: UPSERT_GATEWAY_CONTEXT
+    name: Gateway PLC 디코드 스펙 갱신
+    targetApp: GATEWAY
+    description: PLC 설비의 모델 변경을 게이트웨이 context 로 전파한다(디코드 스펙 payload 운반).
+    when:
+      deltaAny:
+        - PLC_MODEL_CHANGED
+    run:
+      action: UPSERT_GATEWAY_CONTEXT
+      timeoutMs: 15000
+      replyRequired: true
+      retry:
+        maxAttempts: 1
+        backoffMs: 0
+    rollback:
+      enabled: true
+      mode: AUTO_COMPENSATABLE
+      action: RESTORE_PREVIOUS_GATEWAY_CONTEXT
+
   - order: 10
     code: UPDATE_MODEL_BINDING
     name: Business model binding 전환

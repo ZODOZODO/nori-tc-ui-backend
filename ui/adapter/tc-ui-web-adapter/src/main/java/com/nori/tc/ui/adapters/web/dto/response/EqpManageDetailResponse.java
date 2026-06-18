@@ -31,6 +31,7 @@ public record EqpManageDetailResponse(
         ModelBindingResponse modelBinding,
         HsmsSettingsResponse hsmsSettings,
         SocketSettingsResponse socketSettings,
+        PlcSettingsResponse plcSettings,
         String appliedParamVersion,
         String appliedParamDescription,
         List<ParamVersionOptionResponse> paramVersions,
@@ -131,6 +132,18 @@ public record EqpManageDetailResponse(
             Integer writeTimeout,
             Integer maxFrameSizeBytes,
             Boolean keepAliveEnabled
+    ) {
+    }
+
+    /**
+     * PLC 전용 설정 응답 DTO입니다(UiEqpPlc 미러 — Model Info Update 왕복 시 plcSettings 보존용).
+     */
+    public record PlcSettingsResponse(
+            String plcProtocol,
+            String transport,
+            Integer unitId,
+            Integer pollTimeoutMs,
+            Integer reconnectMaxRetries
     ) {
     }
 

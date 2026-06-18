@@ -22,10 +22,16 @@ class UiKafkaContractMapperTest {
 
     @Test
     void carriesDesiredStateStartedAndPlcSettingsToGatewaySnapshot() {
+        final UiEquipmentProfileSnapshot.PlcRegisterSnapshot uiRegister =
+                new UiEquipmentProfileSnapshot.PlcRegisterSnapshot(
+                        0, "TEMP", "UINT16", null, null, null, "BIG_ENDIAN", "BIG_ENDIAN", 0.1, null, null, "온도");
+        final UiEquipmentProfileSnapshot.PlcGroupSnapshot uiGroup =
+                new UiEquipmentProfileSnapshot.PlcGroupSnapshot(
+                        "EQP_STATUS_REPORT", "HOLDING_REGISTER", 100, 4, "0x", 1000, "상태", List.of(uiRegister));
         final UiEquipmentProfileSnapshot ui = profile(
                 "STARTED",
                 new UiEquipmentProfileSnapshot.PlcSettingsSnapshot(
-                        "MODBUS_TCP", "TCP", 3, 3000, 5, List.of("EQP_STATUS_REPORT"))
+                        "MODBUS_TCP", "TCP", 3, 3000, 5, List.of("EQP_STATUS_REPORT"), List.of(uiGroup))
         );
 
         final GatewayEquipmentProfileSnapshot result = UiKafkaContractMapper.toGatewayEquipmentProfileSnapshot(ui);
@@ -41,8 +47,20 @@ class UiKafkaContractMapperTest {
         assertEquals(3000, result.plcSettings().pollTimeoutMs());
         assertEquals(5, result.plcSettings().reconnectMaxRetries());
         assertEquals(List.of("EQP_STATUS_REPORT"), result.plcSettings().enabledPollGroups());
-        // 디코드 스펙(groups)은 gateway 가 tc_model_plc_* DB 직독 → ui-backend 미운반(빈 리스트).
-        assertEquals(List.of(), result.plcSettings().groups());
+        // AC6: 디코드 스펙(groups)을 계약으로 운반(빈 리스트 아님) + 그룹/레지스터 필드 1:1 매핑.
+        assertEquals(1, result.plcSettings().groups().size());
+        final GatewayEquipmentProfileSnapshot.PlcGroupSnapshot group = result.plcSettings().groups().getFirst();
+        assertEquals("EQP_STATUS_REPORT", group.messageName());
+        assertEquals("HOLDING_REGISTER", group.area());
+        assertEquals(100, group.startAddress());
+        assertEquals(4, group.readCount());
+        assertEquals(1000, group.pollPeriodMs());
+        assertEquals(1, group.registers().size());
+        final GatewayEquipmentProfileSnapshot.PlcRegisterSnapshot register = group.registers().getFirst();
+        assertEquals(0, register.wordOffset());
+        assertEquals("TEMP", register.variableName());
+        assertEquals("UINT16", register.dataType());
+        assertEquals(0.1, register.scale());
     }
 
     @Test

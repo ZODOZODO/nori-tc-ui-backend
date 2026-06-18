@@ -18,5 +18,11 @@ public enum DeployDeltaKind {
      * step을 태워야 합니다. 어느 한쪽이라도 stale이 되면 Gateway가 ROUTE_PARTITION_MISMATCH로 명령을 reject 하게 됩니다.
      */
     ROUTE_PARTITION_CHANGED,
+    /**
+     * PLC 설비의 모델(디코드 스펙) 변경입니다. MODEL_CHANGED 와 함께 PLC 설비에서만 산출됩니다.
+     * register-model-* 시나리오의 {@code targetApp: GATEWAY} 스텝을 PLC 한정으로 게이팅해, PLC 디코드 스펙(groups)을
+     * 담은 프로파일을 게이트웨이로 전파합니다(SECS/SOCKET 은 이 delta 가 없어 게이트웨이 스텝 미생성).
+     */
+    PLC_MODEL_CHANGED,
     NO_CHANGE
 }
