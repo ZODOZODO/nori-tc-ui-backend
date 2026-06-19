@@ -19,16 +19,21 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,17 +56,20 @@ class LiveMapSimulatorRunFacadeTest {
     @Mock
     private DemoRunConnectionGate connectionGate;
 
+    private DemoRunConnectionRegistry runRegistry;
     private LiveMapSimulatorRunFacade facade;
 
     @BeforeEach
     void setUp() {
+        runRegistry = new DemoRunConnectionRegistry();
         facade = new LiveMapSimulatorRunFacade(
                 new UiSimulatorProperties(),
                 client,
                 new SimulatorModeMapper(),
                 new SimulatorTargetAssembler(eqpManagementService),
                 connectionGate,
-                new UiDualRequestProperties());
+                new UiDualRequestProperties(),
+                runRegistry);
     }
 
     @Test
@@ -98,10 +106,88 @@ class LiveMapSimulatorRunFacadeTest {
         assertThrows(UiConflictException.class,
                 () -> facade.startRun("E2E", "default", List.of("PLC_MBT_001")));
 
-        // 연결 실패 → MES 활성화 안 함 + run 중단·해제로 보상(조용한 부분 시작 금지).
+        // ensureActive throw → track 미실행 → rollback claim empty → release 미호출(이중/거짓 END 0).
+        // run 중단은 그대로 수행, MES 활성화는 안 함(조용한 부분 시작 금지).
         verify(client, never()).activateUpstream(anyString());
         verify(client).stopRun("RUN-1");
+        verify(connectionGate, never()).releaseActiveTargets(any(), anyLong());
+    }
+
+    @Test
+    void startRunTracksCapturedSetForAll() {
+        // 사전 STARTED(DIFF_PRE)와 이 run 이 연결할 PLC_MBT_001 을 함께 넘긴다 — gate 는 newly-started 만 반환.
+        when(eqpManagementService.getManageDetail("DIFF_PRE"))
+                .thenReturn(Optional.of(snapshot("DIFF_PRE", "1")));
+        when(eqpManagementService.getManageDetail("PLC_MBT_001"))
+                .thenReturn(Optional.of(snapshot("PLC_MBT_001", "1")));
+        when(client.createRun(any())).thenReturn(runResponse("RUN-1"));
+        when(connectionGate.ensureActiveTargetsConnected(eq(List.of("DIFF_PRE", "PLC_MBT_001")), anyLong()))
+                .thenReturn(Set.of("PLC_MBT_001"));
+
+        facade.startRun("E2E", "default", List.of("DIFF_PRE", "PLC_MBT_001"));
+
+        // AC1: 레지스트리 엔트리 = ensureActive 반환 집합. AC5: 사전 STARTED(DIFF_PRE)는 captured-set 미포함.
+        final Optional<Set<String>> captured = runRegistry.claim("RUN-1");
+        assertTrue(captured.isPresent());
+        assertEquals(Set.of("PLC_MBT_001"), captured.get());
+        assertFalse(captured.get().contains("DIFF_PRE"), "사전 STARTED 설비는 원복 대상이 아니다");
+    }
+
+    @Test
+    void stopRunReleasesCapturedSetAndUntracks() {
+        when(eqpManagementService.getManageDetail("DIFF_PRE"))
+                .thenReturn(Optional.of(snapshot("DIFF_PRE", "1")));
+        when(eqpManagementService.getManageDetail("PLC_MBT_001"))
+                .thenReturn(Optional.of(snapshot("PLC_MBT_001", "1")));
+        when(client.createRun(any())).thenReturn(runResponse("RUN-1"));
+        when(connectionGate.ensureActiveTargetsConnected(eq(List.of("DIFF_PRE", "PLC_MBT_001")), anyLong()))
+                .thenReturn(Set.of("PLC_MBT_001"));
+        when(client.stopRun("RUN-1")).thenReturn(runResponse("RUN-1"));
+
+        facade.startRun("E2E", "default", List.of("DIFF_PRE", "PLC_MBT_001"));
+        facade.stopRun("RUN-1");
+
+        // AC6/AC5: 추적된 run 의 stop 은 captured-set 으로만 release(전체 target 아님, getRun 미호출).
         verify(connectionGate).releaseActiveTargets(eq(List.of("PLC_MBT_001")), anyLong());
+        verify(client, never()).getRun("RUN-1");
+
+        // AC6: stop 이 추적을 소진했으므로 이후 reaper tick 은 같은 run 을 또 END 하지 않는다(이중 END 0).
+        final DemoRunConnectionReaper reaper = new DemoRunConnectionReaper(
+                client, connectionGate, runRegistry, new UiDualRequestProperties());
+        reaper.reapTerminatedRuns();
+        verify(connectionGate, times(1)).releaseActiveTargets(any(), anyLong());
+    }
+
+    @Test
+    void rollbackReleasesCapturedSetWhenPassiveFails() {
+        when(eqpManagementService.getManageDetail("PLC_MBT_001"))
+                .thenReturn(Optional.of(snapshot("PLC_MBT_001", "1")));
+        when(client.createRun(any())).thenReturn(runResponse("RUN-1"));
+        when(connectionGate.ensureActiveTargetsConnected(eq(List.of("PLC_MBT_001")), anyLong()))
+                .thenReturn(Set.of("PLC_MBT_001"));
+        // ALL: ensureActive 성공(captured 기록) 후 awaitPassive 가 실패하는 경로.
+        doThrow(new UiConflictException("PASSIVE 연결 실패"))
+                .when(connectionGate).awaitPassiveTargetsConnected(eq(List.of("PLC_MBT_001")), anyLong());
+
+        assertThrows(UiConflictException.class,
+                () -> facade.startRun("E2E", "default", List.of("PLC_MBT_001")));
+
+        // AC7: rollback 이 captured-set 으로 정확히 1회 release + run 중단. 추적은 소진(이중 END 0).
+        verify(connectionGate).releaseActiveTargets(eq(List.of("PLC_MBT_001")), anyLong());
+        verify(client).stopRun("RUN-1");
+        assertFalse(runRegistry.claim("RUN-1").isPresent());
+    }
+
+    @Test
+    void upstreamOnlyDoesNotTrack() {
+        when(eqpManagementService.getManageDetail("PLC_MBT_001"))
+                .thenReturn(Optional.of(snapshot("PLC_MBT_001", "1")));
+        when(client.createRun(any())).thenReturn(runResponse("RUN-3"));
+
+        facade.startRun("MES_ONLY", "default", List.of("PLC_MBT_001"));
+
+        // AC11: UPSTREAM_ONLY 는 best-effort void 라 captured-set 이 없어 추적하지 않는다.
+        assertFalse(runRegistry.claim("RUN-3").isPresent());
     }
 
     @Test

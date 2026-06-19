@@ -16,6 +16,7 @@ public class UiSimulatorProperties {
     private String baseUrl = "http://127.0.0.1:18090";
     private long connectTimeoutMs = 3000L;
     private long readTimeoutMs = 5000L;
+    private long reaperIntervalMs = 5000L;
 
     public boolean isEnabled() {
         return enabled;
@@ -47,5 +48,13 @@ public class UiSimulatorProperties {
 
     public void setReadTimeoutMs(final long readTimeoutMs) {
         this.readTimeoutMs = readTimeoutMs;
+    }
+
+    public long getReaperIntervalMs() {
+        return reaperIntervalMs;
+    }
+
+    public void setReaperIntervalMs(final long reaperIntervalMs) {
+        this.reaperIntervalMs = reaperIntervalMs;
     }
 }

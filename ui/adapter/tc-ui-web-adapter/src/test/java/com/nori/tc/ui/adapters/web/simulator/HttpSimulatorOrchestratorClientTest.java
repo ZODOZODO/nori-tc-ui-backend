@@ -1,6 +1,8 @@
 package com.nori.tc.ui.adapters.web.simulator;
 
 import com.nori.tc.ui.adapters.web.config.UiSimulatorProperties;
+import com.nori.tc.ui.core.exception.UiBadRequestException;
+import com.nori.tc.ui.core.exception.UiConflictException;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +18,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * AC-2 [R-1 Run 경로] wire — createRun 이 신규 orchestrator {@code POST /api/demo-runs} 로 mode/scenarioId/targets
@@ -98,5 +101,44 @@ class HttpSimulatorOrchestratorClientTest {
         assertEquals(1, items.size());
         assertEquals("normal-flow", items.get(0).scenarioId());
         assertEquals("SOCKET", items.get(0).commInterface());
+    }
+
+    @Test
+    void getRunThrowsRunNotFoundOn404() {
+        respondWithStatus("/api/demo-runs/RUN-404", 404);
+
+        assertThrows(SimulatorRunNotFoundException.class, () -> client.getRun("RUN-404"));
+    }
+
+    @Test
+    void getRunThrowsIllegalStateOn5xx() {
+        respondWithStatus("/api/demo-runs/RUN-500", 500);
+
+        assertThrows(IllegalStateException.class, () -> client.getRun("RUN-500"));
+    }
+
+    @Test
+    void getRunThrowsConflictOn409() {
+        respondWithStatus("/api/demo-runs/RUN-409", 409);
+
+        assertThrows(UiConflictException.class, () -> client.getRun("RUN-409"));
+    }
+
+    @Test
+    void getRunThrowsBadRequestOnOther4xx() {
+        respondWithStatus("/api/demo-runs/RUN-400", 400);
+
+        assertThrows(UiBadRequestException.class, () -> client.getRun("RUN-400"));
+    }
+
+    /** 지정 경로에 주어진 status 로 빈 JSON 본문을 반환하는 컨텍스트를 등록한다. */
+    private void respondWithStatus(final String path, final int statusCode) {
+        server.createContext(path, exchange -> {
+            final byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(statusCode, body.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(body);
+            }
+        });
     }
 }

@@ -1,5 +1,7 @@
 package com.nori.tc.ui.adapters.web.config;
 
+import com.nori.tc.ui.adapters.web.simulator.DemoRunConnectionReaper;
+import com.nori.tc.ui.adapters.web.simulator.DemoRunConnectionRegistry;
 import com.nori.tc.ui.adapters.web.simulator.HttpSimulatorOrchestratorClient;
 import com.nori.tc.ui.adapters.web.simulator.LiveMapSimulatorRunFacade;
 import com.nori.tc.ui.adapters.web.simulator.SimulatorModeMapper;
@@ -48,13 +50,33 @@ public class UiSimulatorConfiguration {
     }
 
     @Bean
+    public DemoRunConnectionRegistry demoRunConnectionRegistry() {
+        return new DemoRunConnectionRegistry();
+    }
+
+    @Bean
+    public DemoRunConnectionReaper demoRunConnectionReaper(
+            final SimulatorOrchestratorClient simulatorOrchestratorClient,
+            final DemoRunConnectionGate demoRunConnectionGate,
+            final DemoRunConnectionRegistry demoRunConnectionRegistry,
+            final UiDualRequestProperties dualRequestProperties
+    ) {
+        return new DemoRunConnectionReaper(
+                simulatorOrchestratorClient,
+                demoRunConnectionGate,
+                demoRunConnectionRegistry,
+                dualRequestProperties);
+    }
+
+    @Bean
     public LiveMapSimulatorRunFacade liveMapSimulatorRunFacade(
             final UiSimulatorProperties properties,
             final SimulatorOrchestratorClient simulatorOrchestratorClient,
             final SimulatorModeMapper simulatorModeMapper,
             final SimulatorTargetAssembler simulatorTargetAssembler,
             final DemoRunConnectionGate demoRunConnectionGate,
-            final UiDualRequestProperties dualRequestProperties
+            final UiDualRequestProperties dualRequestProperties,
+            final DemoRunConnectionRegistry demoRunConnectionRegistry
     ) {
         return new LiveMapSimulatorRunFacade(
                 properties,
@@ -62,6 +84,7 @@ public class UiSimulatorConfiguration {
                 simulatorModeMapper,
                 simulatorTargetAssembler,
                 demoRunConnectionGate,
-                dualRequestProperties);
+                dualRequestProperties,
+                demoRunConnectionRegistry);
     }
 }

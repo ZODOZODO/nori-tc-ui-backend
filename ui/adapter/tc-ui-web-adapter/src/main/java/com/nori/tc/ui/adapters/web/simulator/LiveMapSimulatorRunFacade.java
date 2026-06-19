@@ -7,6 +7,8 @@ import com.nori.tc.ui.core.service.DemoRunConnectionGate;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * 모달 Run 경로 facade(R-1/R-2/R-3) — testType→mode 매핑 + 선택 설비 DB 설정→target 변환 + orchestrator createRun.
@@ -38,6 +40,7 @@ public final class LiveMapSimulatorRunFacade {
     private final SimulatorTargetAssembler targetAssembler;
     private final DemoRunConnectionGate connectionGate;
     private final UiDualRequestProperties dualRequestProperties;
+    private final DemoRunConnectionRegistry runRegistry;
 
     public LiveMapSimulatorRunFacade(
             final UiSimulatorProperties properties,
@@ -45,7 +48,8 @@ public final class LiveMapSimulatorRunFacade {
             final SimulatorModeMapper modeMapper,
             final SimulatorTargetAssembler targetAssembler,
             final DemoRunConnectionGate connectionGate,
-            final UiDualRequestProperties dualRequestProperties
+            final UiDualRequestProperties dualRequestProperties,
+            final DemoRunConnectionRegistry runRegistry
     ) {
         this.properties = Objects.requireNonNull(properties, "properties is null");
         this.client = Objects.requireNonNull(client, "client is null");
@@ -53,6 +57,7 @@ public final class LiveMapSimulatorRunFacade {
         this.targetAssembler = Objects.requireNonNull(targetAssembler, "targetAssembler is null");
         this.connectionGate = Objects.requireNonNull(connectionGate, "connectionGate is null");
         this.dualRequestProperties = Objects.requireNonNull(dualRequestProperties, "dualRequestProperties is null");
+        this.runRegistry = Objects.requireNonNull(runRegistry, "runRegistry is null");
     }
 
     public boolean isEnabled() {
@@ -77,41 +82,51 @@ public final class LiveMapSimulatorRunFacade {
             // 2) 테스트 로직 전에 설비를 먼저 연결·확인한다(실사용자 절차 모사).
             switch (mode) {
                 case MODE_ALL -> {
-                    connectionGate.ensureActiveTargetsConnected(eqpIds, timeoutMs); // ACTIVE: EQP_START → PASS(=실제 연결)
+                    // ACTIVE: EQP_START → PASS(=실제 연결). 반환된 connected 집합이 종료 시 원복 대상이라 즉시 추적한다.
+                    final Set<String> captured = connectionGate.ensureActiveTargetsConnected(eqpIds, timeoutMs);
+                    runRegistry.track(response.runId(), captured);
                     connectionGate.awaitPassiveTargetsConnected(eqpIds, timeoutMs); // PASSIVE: dial-in → connectionState=CONN
                     // 3) 연결 확인 완료 → 보류했던 MES 활성화(이제 송신해도 유실 없음).
                     client.activateUpstream(response.runId());
                 }
-                case MODE_EQUIPMENT_ONLY ->
+                case MODE_EQUIPMENT_ONLY -> {
                     // 설비 시나리오는 handshake(연결) 시 시작·loop. ACTIVE 만 EQP_START 로 연결 유도(PASSIVE 는 dial-in 자동).
-                    connectionGate.ensureActiveTargetsConnected(eqpIds, timeoutMs);
+                    final Set<String> captured = connectionGate.ensureActiveTargetsConnected(eqpIds, timeoutMs);
+                    runRegistry.track(response.runId(), captured);
+                }
                 case MODE_UPSTREAM_ONLY ->
                     // MES 는 createRun 에서 이미 주입·loop. ACTIVE 면 eqp_start 만 best-effort(실설비 대상, 연결 미보장).
+                    // best-effort 라 connected 집합을 알 수 없어 추적하지 않는다(C6).
                     connectionGate.startActiveTargetsBestEffort(eqpIds, timeoutMs);
                 default -> throw new UiBadRequestException("지원하지 않는 mode입니다: " + mode);
             }
         } catch (RuntimeException startFailure) {
-            rollbackRun(response.runId(), eqpIds, timeoutMs, startFailure);
+            rollbackRun(response.runId(), timeoutMs, startFailure);
             throw startFailure;
         }
         return response;
     }
 
     /**
-     * 시작 실패 보상 — orchestrator run 중단(설비 unbind/abort) + START 시킨 ACTIVE 설비 해제(EQP_END). 보상 중 오류는
+     * 시작 실패 보상 — orchestrator run 중단(설비 unbind/abort) + 이 run 이 START 시킨 ACTIVE 설비만 해제(EQP_END).
+     * 해제 대상은 레지스트리에서 원자적 claim 한 captured-set 으로 좁힌다 — ensureActive 성공 후 awaitPassive/
+     * activateUpstream 이 실패한 경로의 누수를 막으면서 사전 연결 설비는 건드리지 않는다(R5). ensureActive 자체가
+     * throw 한 경우엔 추적 엔트리가 없어 claim 이 빈 결과라 END 0건(내부 releaseIssued 가 이미 보상). 보상 중 오류는
      * 원인 예외에 suppressed 로 첨부하고 삼키지 않는다(원인 전파 보존).
      */
-    private void rollbackRun(final String runId, final List<String> eqpIds, final long timeoutMs, final RuntimeException cause) {
+    private void rollbackRun(final String runId, final long timeoutMs, final RuntimeException cause) {
         try {
             client.stopRun(runId);
         } catch (RuntimeException stopFailure) {
             cause.addSuppressed(stopFailure);
         }
-        try {
-            connectionGate.releaseActiveTargets(eqpIds, timeoutMs);
-        } catch (RuntimeException releaseFailure) {
-            cause.addSuppressed(releaseFailure);
-        }
+        runRegistry.claim(runId).ifPresent(captured -> {
+            try {
+                connectionGate.releaseActiveTargets(List.copyOf(captured), timeoutMs);
+            } catch (RuntimeException releaseFailure) {
+                cause.addSuppressed(releaseFailure);
+            }
+        });
     }
 
     public SimulatorRunResponse getRun(final String runId) {
@@ -119,13 +134,23 @@ public final class LiveMapSimulatorRunFacade {
     }
 
     public SimulatorRunResponse stopRun(final String runId) {
+        final long timeoutMs = dualRequestProperties.getDualRequestTimeoutMs();
+        // 추적된 run(ALL·EQUIPMENT_ONLY)은 원자적 claim 한 captured-set 으로만 해제 → 사전 연결 설비 미손상(R5),
+        // reaper 와의 이중 END 차단(R4: claim 한 쪽만 END).
+        final Optional<Set<String>> captured = runRegistry.claim(runId);
+        if (captured.isPresent()) {
+            final SimulatorRunResponse response = client.stopRun(runId);
+            connectionGate.releaseActiveTargets(List.copyOf(captured.get()), timeoutMs);
+            return response;
+        }
+        // 미추적 run(UPSTREAM_ONLY 등) — 현행 현재상태 재해석 동작 보존(no-op 로 바꾸지 않음, R5-주의).
         // run 의 대상 eqpId 는 stop 전에 확보한다(orchestrator Run 의 target 목록).
         final List<String> eqpIds = client.getRun(runId).targets().stream()
                 .map(SimulatorRunResponse.SimulatorTargetResponse::eqpId)
                 .toList();
         final SimulatorRunResponse response = client.stopRun(runId);
         // best-effort: run 이 START 시킨 ACTIVE 설비 연결을 해제(EQP_END)한다. 실패해도 stop 응답은 그대로 반환.
-        connectionGate.releaseActiveTargets(eqpIds, dualRequestProperties.getDualRequestTimeoutMs());
+        connectionGate.releaseActiveTargets(eqpIds, timeoutMs);
         return response;
     }
 

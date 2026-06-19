@@ -106,6 +106,11 @@ public class HttpSimulatorOrchestratorClient implements SimulatorOrchestratorCli
             // lease 충돌(다른 Run 이 설비 점유) — 충돌 본문(rejected[eqpId, holdingRunId]) 보존.
             throw new UiConflictException("설비가 이미 다른 Run 에 점유되어 있습니다. " + responseBody);
         }
+        if (statusCode == 404) {
+            // run 미존재 — reaper 가 "종료로 간주"하도록 IO/일반4xx 와 분리된 distinct 신호로 던진다.
+            throw new SimulatorRunNotFoundException(
+                    "simulator orchestrator Run 미존재. method=" + method + ", path=" + path);
+        }
         if (statusCode >= 400) {
             throw new UiBadRequestException("simulator orchestrator 호출에 실패했습니다. status=" + statusCode);
         }
