@@ -17,11 +17,12 @@ public record SimulatorRunResponse(
         List<SimulatorTargetResponse> targets
 ) {
 
-    /** 설비 target 관측 verdict — 모달 진행/종료 표시. */
+    /** 설비 target 관측 verdict — 모달 진행/종료 표시. commInterface=설비 통신타입(SOCKET/SECS/PLC, tc_eqp.comm_interface). */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SimulatorTargetResponse(
             String eqpId,
             String state,
+            String commInterface,
             int completedCycleCount,
             int erroredCycleCount,
             List<String> issuedLotRunIds

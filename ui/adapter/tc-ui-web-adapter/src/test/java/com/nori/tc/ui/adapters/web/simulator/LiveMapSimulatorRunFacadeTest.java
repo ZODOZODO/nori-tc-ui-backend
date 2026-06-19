@@ -229,8 +229,8 @@ class LiveMapSimulatorRunFacadeTest {
         when(client.getRun("RUN-1")).thenReturn(new SimulatorRunResponse(
                 "RUN-1", "ALL", "RUNNING",
                 List.of(
-                        new SimulatorRunResponse.SimulatorTargetResponse("CLN_001", "RUNNING", 0, 0, List.of()),
-                        new SimulatorRunResponse.SimulatorTargetResponse("PLC_MBT_001", "RUNNING", 0, 0, List.of())
+                        new SimulatorRunResponse.SimulatorTargetResponse("CLN_001", "RUNNING", "SOCKET", 0, 0, List.of()),
+                        new SimulatorRunResponse.SimulatorTargetResponse("PLC_MBT_001", "RUNNING", "PLC", 0, 0, List.of())
                 )));
         final SimulatorRunResponse stopped = runResponse("RUN-1");
         when(client.stopRun("RUN-1")).thenReturn(stopped);
