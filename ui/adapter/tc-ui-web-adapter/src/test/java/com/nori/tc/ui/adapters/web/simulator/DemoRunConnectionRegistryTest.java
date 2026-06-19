@@ -54,6 +54,40 @@ class DemoRunConnectionRegistryTest {
     }
 
     @Test
+    void releaseRemovesOnlyThatEqpAndKeepsTrackingKey() {
+        registry.track("RUN-1", Set.of("eqpA", "eqpB"));
+
+        assertTrue(registry.release("RUN-1", "eqpA"), "멤버 제거 시 true");
+
+        assertEquals(Set.of("RUN-1"), registry.trackedRunIds(), "부분 해제 후에도 키는 유지");
+        assertEquals(Optional.of(Set.of("eqpB")), registry.claim("RUN-1"), "eqpA 만 빠진 captured-set 잔존");
+    }
+
+    @Test
+    void releaseNonMemberReturnsFalseAndKeepsSet() {
+        registry.track("RUN-1", Set.of("eqpA"));
+
+        assertFalse(registry.release("RUN-1", "eqpX"), "비멤버 제거는 false(이중 END 발행 안 함)");
+        assertEquals(Optional.of(Set.of("eqpA")), registry.claim("RUN-1"));
+    }
+
+    @Test
+    void releaseLastEqpKeepsEmptyTrackedKey() {
+        registry.track("RUN-1", Set.of("eqpA"));
+
+        assertTrue(registry.release("RUN-1", "eqpA"));
+
+        // set 이 비어도 키는 남는다(다른 target 이 아직 실행 중일 수 있어 reaper 추적 유지).
+        assertEquals(Set.of("RUN-1"), registry.trackedRunIds());
+        assertEquals(Optional.of(Set.of()), registry.claim("RUN-1"));
+    }
+
+    @Test
+    void releaseOnUnknownRunReturnsFalse() {
+        assertFalse(registry.release("UNKNOWN", "eqpA"));
+    }
+
+    @Test
     void trackedRunIdsIsSnapshotIndependentOfMutation() {
         registry.track("RUN-1", Set.of("eqpA"));
         final Set<String> snapshot = registry.trackedRunIds();

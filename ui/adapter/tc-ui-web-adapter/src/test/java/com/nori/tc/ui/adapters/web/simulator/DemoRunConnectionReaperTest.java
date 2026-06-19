@@ -109,6 +109,22 @@ class DemoRunConnectionReaperTest {
         assertFalse(registry.trackedRunIds().isEmpty(), "일시 오류는 추적을 유지해 다음 tick 재시도");
     }
 
+    @Test
+    @DisplayName("M10: per-target 부분 해제 후 TERMINAL 이면 reaper 가 잔여 captured 만 END + 추적 제거(분담)")
+    void reaperReleasesRemainingCapturedAfterPartialRelease() {
+        registry.track("RUN-1", Set.of("eqpA", "eqpB"));
+        // per-target 종료로 eqpA 만 부분 해제(facade.stopTarget 의 release 경로) — 키는 유지, {eqpB} 잔존.
+        assertTrue(registry.release("RUN-1", "eqpA"));
+        when(client.getRun("RUN-1")).thenReturn(run("RUN-1", "TERMINAL"));
+
+        reaper.reapTerminatedRuns();
+
+        final ArgumentCaptor<List<String>> captor = listCaptor();
+        verify(connectionGate, times(1)).releaseActiveTargets(captor.capture(), anyLong());
+        assertEquals(List.of("eqpB"), captor.getValue(), "부분 해제된 eqpA 제외, 잔여 eqpB 만 END(이중 END 0)");
+        assertTrue(registry.trackedRunIds().isEmpty(), "TERMINAL 정리 후 추적 제거");
+    }
+
     private static SimulatorRunResponse run(final String runId, final String state) {
         return new SimulatorRunResponse(runId, "ALL", state, List.of());
     }

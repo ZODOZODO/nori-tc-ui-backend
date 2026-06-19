@@ -18,6 +18,9 @@ public interface SimulatorOrchestratorClient {
     /** {@code POST /api/demo-runs/{runId}/stop} — Run 중단(in-flight lot abort). */
     SimulatorRunResponse stopRun(String runId);
 
+    /** {@code POST /api/demo-runs/{runId}/targets/{eqpId}/stop} — 설비-단위 중단(다른 target 은 계속). */
+    SimulatorRunResponse stopTarget(String runId, String eqpId);
+
     /**
      * {@code POST /api/demo-runs/{runId}/activate-upstream} — ALL 모드 연결-후-MES 배리어 2단계. 설비 연결 확인 후
      * 호출하면 createRun 에서 보류한 업스트림(MES)을 inject. 보류분 없으면 no-op(멱등).

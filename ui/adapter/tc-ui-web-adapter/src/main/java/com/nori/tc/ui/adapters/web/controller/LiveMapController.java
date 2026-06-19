@@ -134,6 +134,17 @@ public class LiveMapController {
         return ResponseEntity.ok(ApiResponse.success(simulatorRunFacade.stopRun(runId)));
     }
 
+    @PostMapping("/demo-runs/{runId}/targets/{eqpId}/stop")
+    public ResponseEntity<ApiResponse<SimulatorRunResponse>> stopSimulatorTarget(
+            @PathVariable final String runId,
+            @PathVariable final String eqpId
+    ) {
+        if (!simulatorRunFacade.isEnabled()) {
+            return simulatorDisabled();
+        }
+        return ResponseEntity.ok(ApiResponse.success(simulatorRunFacade.stopTarget(runId, eqpId)));
+    }
+
     @GetMapping("/demo-runs/scenarios")
     public ResponseEntity<ApiResponse<List<SimulatorScenarioCatalogItem>>> getSimulatorScenarios(
             @RequestParam(required = false) final String mode

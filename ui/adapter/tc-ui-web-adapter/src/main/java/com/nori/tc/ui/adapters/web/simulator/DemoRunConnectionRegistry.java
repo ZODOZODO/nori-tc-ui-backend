@@ -29,6 +29,25 @@ public final class DemoRunConnectionRegistry {
         return Optional.ofNullable(capturedByRunId.remove(runId));
     }
 
+    /**
+     * 설비-단위 종료(부분 해제) — run 의 captured-set 에서 한 설비만 원자적으로 제거한다. 제거되면 true. 이후
+     * run-level stop/reaper 의 claim 이 이 설비를 다시 EQP_END 하지 않게 한다(이중 END 레이스 차단). set 이 비어도
+     * 키는 남겨 run 추적을 유지한다(아직 다른 target 이 실행 중일 수 있음).
+     */
+    public boolean release(final String runId, final String eqpId) {
+        final boolean[] removed = {false};
+        capturedByRunId.computeIfPresent(runId, (key, captured) -> {
+            if (!captured.contains(eqpId)) {
+                return captured;
+            }
+            removed[0] = true;
+            final Set<String> next = new java.util.LinkedHashSet<>(captured);
+            next.remove(eqpId);
+            return Set.copyOf(next);
+        });
+        return removed[0];
+    }
+
     /** reaper 순회용 키 스냅샷 — 순회 중 동시 변이로 인한 CME 를 피하려고 복사본을 반환한다. */
     public Set<String> trackedRunIds() {
         return Set.copyOf(capturedByRunId.keySet());

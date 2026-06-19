@@ -154,6 +154,33 @@ public final class LiveMapSimulatorRunFacade {
         return response;
     }
 
+    /**
+     * 설비-단위 종료 — orchestrator 의 해당 target 만 중단(같은 Run 의 다른 target 은 계속)한다. 연결 해제(EQP_END)는
+     * <b>이 run 이 직접 연결(EQP_START)한 설비에만</b> 한다(captured-set 멤버십). run 시작 전 이미 연결돼 있던 설비나
+     * PASSIVE 설비는 captured-set 에 없어 release=false → 연결을 유지한다(run 이 빌린 연결만 반납, 사전 연결은 보존 —
+     * stop/rollback/reaper 의 R5 원복 규칙과 동일).
+     *
+     * <p>이 종료로 <b>run 전체가 terminal</b> 이 되면(마지막 RUNNING target → orchestrator 가 run CANCELED) reaper 는
+     * CANCELED 를 건너뛰므로(stop 전담, race 회피) 여기서 남은 captured-set 전체를 END 하고 추적을 원자적으로 소진한다 —
+     * 그래야 자연완료했던 captured 설비의 연결과 registry 엔트리가 누수되지 않는다. 방금 종료한 설비도 captured 면 이
+     * 집합에 포함돼 함께 END 된다(이중 END 없음). run 이 계속 활성이면 방금 종료한 설비만 부분 해제·END 한다.</p>
+     */
+    public SimulatorRunResponse stopTarget(final String runId, final String eqpId) {
+        final long timeoutMs = dualRequestProperties.getDualRequestTimeoutMs();
+        final SimulatorRunResponse response = client.stopTarget(runId, eqpId);
+        if (isRunTerminal(response.state())) {
+            runRegistry.claim(runId).ifPresent(captured ->
+                    connectionGate.releaseActiveTargets(List.copyOf(captured), timeoutMs));
+        } else if (runRegistry.release(runId, eqpId)) {
+            connectionGate.releaseActiveTargets(List.of(eqpId), timeoutMs);
+        }
+        return response;
+    }
+
+    private static boolean isRunTerminal(final String state) {
+        return "TERMINAL".equals(state) || "CANCELED".equals(state) || "FAILED".equals(state);
+    }
+
     public List<SimulatorScenarioCatalogItem> getScenarios(final String mode) {
         return client.getScenarios(mode);
     }

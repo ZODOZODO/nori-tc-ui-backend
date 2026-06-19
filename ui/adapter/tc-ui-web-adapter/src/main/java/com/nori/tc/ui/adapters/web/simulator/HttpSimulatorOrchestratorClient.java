@@ -52,6 +52,11 @@ public class HttpSimulatorOrchestratorClient implements SimulatorOrchestratorCli
     }
 
     @Override
+    public SimulatorRunResponse stopTarget(final String runId, final String eqpId) {
+        return sendJson("POST", "/api/demo-runs/" + runId + "/targets/" + eqpId + "/stop", null, SimulatorRunResponse.class);
+    }
+
+    @Override
     public SimulatorRunResponse activateUpstream(final String runId) {
         return sendJson("POST", "/api/demo-runs/" + runId + "/activate-upstream", null, SimulatorRunResponse.class);
     }

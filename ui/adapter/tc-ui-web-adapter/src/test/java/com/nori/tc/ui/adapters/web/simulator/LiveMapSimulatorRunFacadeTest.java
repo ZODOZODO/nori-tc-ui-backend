@@ -247,6 +247,71 @@ class LiveMapSimulatorRunFacadeTest {
                 .releaseActiveTargets(eq(List.of("CLN_001", "PLC_MBT_001")), anyLong());
     }
 
+    @Test
+    void stopTargetReleasesConnectionOnlyForRunConnectedEquipmentNotPreConnected() {
+        // DIFF_PRE = run 시작 전 이미 연결(captured-set 미포함), PLC_MBT_001 = 이 run 이 EQP_START 로 연결(captured 포함).
+        when(eqpManagementService.getManageDetail("DIFF_PRE"))
+                .thenReturn(Optional.of(snapshot("DIFF_PRE", "1")));
+        when(eqpManagementService.getManageDetail("PLC_MBT_001"))
+                .thenReturn(Optional.of(snapshot("PLC_MBT_001", "1")));
+        when(client.createRun(any())).thenReturn(runResponse("RUN-1"));
+        when(connectionGate.ensureActiveTargetsConnected(eq(List.of("DIFF_PRE", "PLC_MBT_001")), anyLong()))
+                .thenReturn(Set.of("PLC_MBT_001"));
+        when(client.stopTarget(eq("RUN-1"), anyString())).thenReturn(runResponse("RUN-1"));
+
+        facade.startRun("E2E", "default", List.of("DIFF_PRE", "PLC_MBT_001"));
+
+        // 이 run 이 연결한 PLC_MBT_001 종료 → 연결 해제(EQP_END).
+        facade.stopTarget("RUN-1", "PLC_MBT_001");
+        verify(client).stopTarget("RUN-1", "PLC_MBT_001");
+        verify(connectionGate).releaseActiveTargets(eq(List.of("PLC_MBT_001")), anyLong());
+
+        // 사전 연결돼 있던 DIFF_PRE 종료 → captured-set 에 없어 연결 유지(EQP_END 0).
+        facade.stopTarget("RUN-1", "DIFF_PRE");
+        verify(client).stopTarget("RUN-1", "DIFF_PRE");
+        verify(connectionGate, never()).releaseActiveTargets(eq(List.of("DIFF_PRE")), anyLong());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void stopTargetThatFinishesRunReleasesRemainingCapturedSetAndUntracks() {
+        // 두 설비 모두 이 run 이 연결(captured={CLN_001, PLC_MBT_001}). PLC 종료가 run 을 CANCELED 로 종료시키는 경우,
+        // reaper 가 CANCELED 를 건너뛰므로 facade 가 남은 captured 전체를 END 하고 추적을 소진해야 한다(누수 0).
+        when(eqpManagementService.getManageDetail("CLN_001"))
+                .thenReturn(Optional.of(snapshot("CLN_001", "1")));
+        when(eqpManagementService.getManageDetail("PLC_MBT_001"))
+                .thenReturn(Optional.of(snapshot("PLC_MBT_001", "1")));
+        when(client.createRun(any())).thenReturn(runResponse("RUN-1"));
+        when(connectionGate.ensureActiveTargetsConnected(eq(List.of("CLN_001", "PLC_MBT_001")), anyLong()))
+                .thenReturn(Set.of("CLN_001", "PLC_MBT_001"));
+        when(client.stopTarget("RUN-1", "PLC_MBT_001"))
+                .thenReturn(new SimulatorRunResponse("RUN-1", "ALL", "CANCELED", List.of()));
+
+        facade.startRun("E2E", "default", List.of("CLN_001", "PLC_MBT_001"));
+        facade.stopTarget("RUN-1", "PLC_MBT_001");
+
+        final ArgumentCaptor<List<String>> captor = ArgumentCaptor.forClass(List.class);
+        verify(connectionGate).releaseActiveTargets(captor.capture(), anyLong());
+        assertEquals(Set.of("CLN_001", "PLC_MBT_001"), Set.copyOf(captor.getValue()),
+                "run 종료 시 남은 captured 전체 END");
+        assertFalse(runRegistry.claim("RUN-1").isPresent(), "추적 소진(reaper 이중 END/누수 0)");
+    }
+
+    @Test
+    void stopTargetForUntrackedRunDoesNotReleaseConnection() {
+        // UPSTREAM_ONLY 는 best-effort start 라 captured-set 미추적 → per-target stop 은 연결을 끊지 않는다(실설비 대상).
+        when(eqpManagementService.getManageDetail("PLC_MBT_001"))
+                .thenReturn(Optional.of(snapshot("PLC_MBT_001", "1")));
+        when(client.createRun(any())).thenReturn(runResponse("RUN-3"));
+        when(client.stopTarget(eq("RUN-3"), anyString())).thenReturn(runResponse("RUN-3"));
+
+        facade.startRun("MES_ONLY", "default", List.of("PLC_MBT_001"));
+        facade.stopTarget("RUN-3", "PLC_MBT_001");
+
+        verify(client).stopTarget("RUN-3", "PLC_MBT_001");
+        verify(connectionGate, never()).releaseActiveTargets(any(), anyLong());
+    }
+
     private static SimulatorRunResponse runResponse(final String runId) {
         return new SimulatorRunResponse(runId, "ALL", "RUNNING", List.of());
     }
