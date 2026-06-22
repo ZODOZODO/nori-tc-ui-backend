@@ -3,6 +3,7 @@ package com.nori.tc.ui.adapters.web.simulator;
 import com.nori.tc.ui.adapters.web.config.UiSimulatorProperties;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
+import com.nori.tc.ui.core.exception.UiNotFoundException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
@@ -69,6 +70,23 @@ public class HttpSimulatorOrchestratorClient implements SimulatorOrchestratorCli
         return sendJson("GET", path, null, new TypeReference<>() {});
     }
 
+    @Override
+    public SimulatorScenarioCatalogItem uploadScenario(final String sourceText) {
+        // 409(중복)=UiConflictException / 400(검증 실패)=UiBadRequestException 은 validateResponseStatus 공통 처리.
+        return sendJson("POST", "/api/scenarios",
+                new SimulatorUploadScenarioRequest(sourceText), SimulatorScenarioCatalogItem.class);
+    }
+
+    @Override
+    public void deleteScenario(final String scenarioId) {
+        try {
+            exchange("DELETE", "/api/scenarios/" + scenarioId, null);
+        } catch (final SimulatorRunNotFoundException notRun) {
+            // 공통 404 핸들러는 Run 전용(SimulatorRunNotFoundException). 시나리오 404 는 시나리오 의미의 UiNotFoundException 으로 분기.
+            throw new UiNotFoundException("시나리오를 찾을 수 없습니다. scenarioId=" + scenarioId);
+        }
+    }
+
     private <T> T sendJson(final String method, final String path, final Object body, final Class<T> responseType) {
         final HttpResponse<String> response = exchange(method, path, body);
         return objectMapper.readValue(response.body(), responseType);
@@ -88,7 +106,8 @@ public class HttpSimulatorOrchestratorClient implements SimulatorOrchestratorCli
             if ("GET".equals(method)) {
                 builder.GET();
             } else if (body == null) {
-                builder.POST(HttpRequest.BodyPublishers.noBody());
+                // 본문 없는 메서드(POST stop / DELETE) — 실제 메서드를 보존한다(과거엔 DELETE 가 POST 로 잘못 전송됐다).
+                builder.method(method, HttpRequest.BodyPublishers.noBody());
             } else {
                 builder.method(method, HttpRequest.BodyPublishers.ofByteArray(objectMapper.writeValueAsBytes(body)));
             }

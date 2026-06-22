@@ -3,6 +3,7 @@ package com.nori.tc.ui.adapters.web.simulator;
 import com.nori.tc.ui.adapters.web.config.UiSimulatorProperties;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
+import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,7 +19,9 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * AC-2 [R-1 Run 경로] wire — createRun 이 신규 orchestrator {@code POST /api/demo-runs} 로 mode/scenarioId/targets
@@ -88,7 +91,7 @@ class HttpSimulatorOrchestratorClientTest {
         server.createContext("/api/scenarios", exchange -> {
             capturedMethod.set(exchange.getRequestMethod());
             final byte[] body = mapper.writeValueAsBytes(List.of(
-                    new SimulatorScenarioCatalogItem("normal-flow", "Normal Flow", 1, "SOCKET", List.of("ALL"))));
+                    new SimulatorScenarioCatalogItem("normal-flow", "Normal Flow", 1, "SOCKET", List.of("ALL"), true)));
             exchange.sendResponseHeaders(200, body.length);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(body);
@@ -101,6 +104,76 @@ class HttpSimulatorOrchestratorClientTest {
         assertEquals(1, items.size());
         assertEquals("normal-flow", items.get(0).scenarioId());
         assertEquals("SOCKET", items.get(0).commInterface());
+    }
+
+    @Test
+    void uploadScenarioPostsSourceTextToScenariosPath() throws Exception {
+        final AtomicReference<String> capturedMethod = new AtomicReference<>();
+        final AtomicReference<String> capturedBody = new AtomicReference<>();
+        server.createContext("/api/scenarios", exchange -> {
+            capturedMethod.set(exchange.getRequestMethod());
+            capturedBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            final byte[] body = mapper.writeValueAsBytes(
+                    new SimulatorScenarioCatalogItem("upload-ok", "Upload OK", 2, "SOCKET", List.of("ALL"), false));
+            exchange.sendResponseHeaders(201, body.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(body);
+            }
+        });
+
+        final SimulatorScenarioCatalogItem created = client.uploadScenario("# scenario-id: upload-ok\n# version: 2");
+
+        assertEquals("POST", capturedMethod.get(), "업로드는 POST /api/scenarios");
+        final SimulatorUploadScenarioRequest sent = mapper.readValue(capturedBody.get(), SimulatorUploadScenarioRequest.class);
+        assertEquals("# scenario-id: upload-ok\n# version: 2", sent.sourceText(), "wire sourceText");
+        assertEquals("upload-ok", created.scenarioId(), "응답 파싱");
+        assertEquals(false, created.isSeed(), "업로드 행 isSeed=false");
+    }
+
+    @Test
+    void deleteScenarioSendsDeleteToScenariosPath() throws Exception {
+        final AtomicReference<String> capturedMethod = new AtomicReference<>();
+        server.createContext("/api/scenarios/upload-ok", exchange -> {
+            capturedMethod.set(exchange.getRequestMethod());
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+        });
+
+        client.deleteScenario("upload-ok");
+
+        assertEquals("DELETE", capturedMethod.get(), "삭제는 DELETE /api/scenarios/{id}");
+    }
+
+    @Test
+    void uploadScenarioThrowsConflictOn409() {
+        respondWithStatus("/api/scenarios", 409);
+
+        assertThrows(UiConflictException.class, () -> client.uploadScenario("# scenario-id: dup"));
+    }
+
+    @Test
+    void uploadScenarioThrowsBadRequestOn400() {
+        respondWithStatus("/api/scenarios", 400);
+
+        assertThrows(UiBadRequestException.class, () -> client.uploadScenario("invalid"));
+    }
+
+    @Test
+    void deleteScenarioThrowsNotFoundOn404() {
+        respondWithStatus("/api/scenarios/missing", 404);
+
+        // 시나리오 404 는 Run 전용(SimulatorRunNotFoundException)이 아니라 시나리오 의미의 UiNotFoundException 으로 분기.
+        final UiNotFoundException thrown = assertThrows(UiNotFoundException.class,
+                () -> client.deleteScenario("missing"));
+        assertFalse(thrown instanceof SimulatorRunNotFoundException, "Run 전용 타입이 아닌 시나리오 NotFound 로 분기");
+        assertTrue(thrown.getMessage().contains("시나리오"), "시나리오 의미 메시지. actual=" + thrown.getMessage());
+    }
+
+    @Test
+    void deleteScenarioThrowsConflictOnSeedProtected409() {
+        respondWithStatus("/api/scenarios/normal-flow", 409);
+
+        assertThrows(UiConflictException.class, () -> client.deleteScenario("normal-flow"));
     }
 
     @Test

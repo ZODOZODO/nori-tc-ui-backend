@@ -184,4 +184,14 @@ public final class LiveMapSimulatorRunFacade {
     public List<SimulatorScenarioCatalogItem> getScenarios(final String mode) {
         return client.getScenarios(mode);
     }
+
+    /** 시나리오 마크다운 업로드(R-6) — orchestrator 가 검증/적재. 409/400 은 client 가 Ui 예외로 매핑. */
+    public SimulatorScenarioCatalogItem uploadScenario(final String sourceText) {
+        return client.uploadScenario(sourceText);
+    }
+
+    /** 시나리오 삭제(R-6) — 시드 보호(409)/미존재(404)는 client 가 Ui 예외로 매핑. */
+    public void deleteScenario(final String scenarioId) {
+        client.deleteScenario(scenarioId);
+    }
 }

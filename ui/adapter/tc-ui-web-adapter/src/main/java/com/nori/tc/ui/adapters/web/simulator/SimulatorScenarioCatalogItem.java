@@ -14,6 +14,7 @@ public record SimulatorScenarioCatalogItem(
         String name,
         int version,
         String commInterface,
-        List<String> supportedModes
+        List<String> supportedModes,
+        boolean isSeed
 ) {
 }

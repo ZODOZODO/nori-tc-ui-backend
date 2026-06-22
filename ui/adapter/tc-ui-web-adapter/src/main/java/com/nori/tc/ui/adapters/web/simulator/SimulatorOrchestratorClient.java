@@ -29,4 +29,16 @@ public interface SimulatorOrchestratorClient {
 
     /** {@code GET /api/scenarios} — 시나리오 카탈로그(R-5). mode blank 면 전체. */
     List<SimulatorScenarioCatalogItem> getScenarios(String mode);
+
+    /**
+     * {@code POST /api/scenarios} — 마크다운 원문 업로드(R-6). 검증 실패=400→UiBadRequestException,
+     * scenario_id 중복=409→UiConflictException. 성공 시 생성된 카탈로그 항목 반환.
+     */
+    SimulatorScenarioCatalogItem uploadScenario(String sourceText);
+
+    /**
+     * {@code DELETE /api/scenarios/{scenarioId}} — 시나리오 삭제(R-6). 미존재=404→UiNotFoundException,
+     * 시드 보호=409→UiConflictException.
+     */
+    void deleteScenario(String scenarioId);
 }
