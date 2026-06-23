@@ -18,11 +18,10 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 
 /**
- * 신규 simulator orchestrator(:18090) 연동 빈 조립(R-1). {@code UiDemoTesterConfiguration} 미러.
+ * 신규 simulator orchestrator(:18090) 연동 빈 조립(R-1).
  *
- * <p>{@code SimulatorOrchestratorClient} 는 토글과 무관하게 <b>항상</b> 생성한다(조건부 빈 회피 → @Import 정적,
- * context-load 안정). 토글({@code tc.ui.simulator.enabled})은 facade/controller 가 검사. demo-tester HttpClient
- * 빈과의 타입 충돌(NoUniqueBean)을 피하려고 HttpClient 는 별도 빈으로 노출하지 않고 client 내부에서 inline 생성한다.
+ * <p>{@code SimulatorOrchestratorClient} 는 조건부 빈을 회피해 <b>항상</b> 생성한다(@Import 정적, context-load 안정).
+ * HttpClient 는 별도 빈으로 노출하지 않고 client 내부에서 inline 생성한다(타입 충돌 회피).
  */
 @Configuration
 @EnableConfigurationProperties(UiSimulatorProperties.class)
@@ -70,7 +69,6 @@ public class UiSimulatorConfiguration {
 
     @Bean
     public LiveMapSimulatorRunFacade liveMapSimulatorRunFacade(
-            final UiSimulatorProperties properties,
             final SimulatorOrchestratorClient simulatorOrchestratorClient,
             final SimulatorModeMapper simulatorModeMapper,
             final SimulatorTargetAssembler simulatorTargetAssembler,
@@ -79,7 +77,6 @@ public class UiSimulatorConfiguration {
             final DemoRunConnectionRegistry demoRunConnectionRegistry
     ) {
         return new LiveMapSimulatorRunFacade(
-                properties,
                 simulatorOrchestratorClient,
                 simulatorModeMapper,
                 simulatorTargetAssembler,

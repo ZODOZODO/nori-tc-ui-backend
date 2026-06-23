@@ -3,9 +3,8 @@ package com.nori.tc.ui.adapters.web.simulator;
 import java.util.List;
 
 /**
- * 신규 simulator orchestrator(:18090) REST 클라이언트(R-1). demo-tester {@code DemoTesterClient} 와 형상이 달라
- * (orchestrator Run 모델 = createRun 1 회 전 target 원자 lease) 신규 인터페이스. ui-front/ui-backend 는 시뮬레이터를
- * REST 계약으로만 소비(코드 의존 0).
+ * 신규 simulator orchestrator(:18090) REST 클라이언트(R-1). orchestrator Run 모델 = createRun 1 회 전 target 원자
+ * lease. ui-front/ui-backend 는 시뮬레이터를 REST 계약으로만 소비(코드 의존 0).
  */
 public interface SimulatorOrchestratorClient {
 

@@ -1,7 +1,6 @@
 package com.nori.tc.ui.adapters.web.simulator;
 
 import com.nori.tc.ui.adapters.web.config.UiDualRequestProperties;
-import com.nori.tc.ui.adapters.web.config.UiSimulatorProperties;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.service.DemoRunConnectionGate;
@@ -63,7 +62,6 @@ class LiveMapSimulatorRunFacadeTest {
     void setUp() {
         runRegistry = new DemoRunConnectionRegistry();
         facade = new LiveMapSimulatorRunFacade(
-                new UiSimulatorProperties(),
                 client,
                 new SimulatorModeMapper(),
                 new SimulatorTargetAssembler(eqpManagementService),

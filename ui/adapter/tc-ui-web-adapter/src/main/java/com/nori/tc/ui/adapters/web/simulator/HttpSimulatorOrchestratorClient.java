@@ -17,8 +17,8 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * 신규 simulator orchestrator(:18090) HTTP 호출 구현(R-1). demo-tester {@code HttpDemoTesterClient} 의
- * {@code java.net.http} + sendJson 패턴 미러. 409(lease 충돌)는 {@link UiConflictException}(409)로 매핑 — 충돌
+ * 신규 simulator orchestrator(:18090) HTTP 호출 구현(R-1).
+ * {@code java.net.http} + sendJson 패턴. 409(lease 충돌)는 {@link UiConflictException}(409)로 매핑 — 충돌
  * 설비 본문을 메시지에 보존(Plan §2-B U1).
  */
 public class HttpSimulatorOrchestratorClient implements SimulatorOrchestratorClient {

@@ -1,7 +1,6 @@
 package com.nori.tc.ui.adapters.web.simulator;
 
 import com.nori.tc.ui.adapters.web.config.UiDualRequestProperties;
-import com.nori.tc.ui.adapters.web.config.UiSimulatorProperties;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.service.DemoRunConnectionGate;
 
@@ -12,8 +11,6 @@ import java.util.Set;
 
 /**
  * 모달 Run 경로 facade(R-1/R-2/R-3) — testType→mode 매핑 + 선택 설비 DB 설정→target 변환 + orchestrator createRun.
- * {@link #isEnabled()} 토글(전이용 안전망)로 controller 가 enabled=false 면 503 폴백(프론트 job 경로). 9칸 e2e PASS
- * 후 M7 cutover 에서 토글 제거 + always-on.
  *
  * <p><b>연결-후-MES 배리어(실사용자 절차 모사).</b> "테스트 시작"을 누르면 ① 설비를 먼저 연결하고 ② 연결을 확인한
  * 뒤에만 ③ 테스트 로직(MES)을 돌린다. orchestrator createRun 은 설비를 bind 하되(ACTIVE=server bind, PASSIVE=gateway
@@ -34,7 +31,6 @@ public final class LiveMapSimulatorRunFacade {
     private static final String MODE_EQUIPMENT_ONLY = "EQUIPMENT_ONLY";
     private static final String MODE_UPSTREAM_ONLY = "UPSTREAM_ONLY";
 
-    private final UiSimulatorProperties properties;
     private final SimulatorOrchestratorClient client;
     private final SimulatorModeMapper modeMapper;
     private final SimulatorTargetAssembler targetAssembler;
@@ -43,7 +39,6 @@ public final class LiveMapSimulatorRunFacade {
     private final DemoRunConnectionRegistry runRegistry;
 
     public LiveMapSimulatorRunFacade(
-            final UiSimulatorProperties properties,
             final SimulatorOrchestratorClient client,
             final SimulatorModeMapper modeMapper,
             final SimulatorTargetAssembler targetAssembler,
@@ -51,17 +46,12 @@ public final class LiveMapSimulatorRunFacade {
             final UiDualRequestProperties dualRequestProperties,
             final DemoRunConnectionRegistry runRegistry
     ) {
-        this.properties = Objects.requireNonNull(properties, "properties is null");
         this.client = Objects.requireNonNull(client, "client is null");
         this.modeMapper = Objects.requireNonNull(modeMapper, "modeMapper is null");
         this.targetAssembler = Objects.requireNonNull(targetAssembler, "targetAssembler is null");
         this.connectionGate = Objects.requireNonNull(connectionGate, "connectionGate is null");
         this.dualRequestProperties = Objects.requireNonNull(dualRequestProperties, "dualRequestProperties is null");
         this.runRegistry = Objects.requireNonNull(runRegistry, "runRegistry is null");
-    }
-
-    public boolean isEnabled() {
-        return properties.isEnabled();
     }
 
     /**
