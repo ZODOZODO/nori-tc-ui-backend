@@ -3,11 +3,14 @@ package com.nori.tc.ui.adapters.web.simulator;
 import com.nori.tc.ui.adapters.web.config.UiDualRequestProperties;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.service.DemoRunConnectionGate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executor;
 
 /**
  * 모달 Run 경로 facade(R-1/R-2/R-3) — testType→mode 매핑 + 선택 설비 DB 설정→target 변환 + orchestrator createRun.
@@ -27,6 +30,11 @@ import java.util.Set;
  */
 public final class LiveMapSimulatorRunFacade {
 
+    /** 연결-후-MES 배리어 백그라운드 실행 executor 빈 이름(starter 가 이 이름으로 등록). */
+    public static final String ACTIVATION_EXECUTOR_BEAN_NAME = "demoRunActivationExecutor";
+
+    private static final Logger log = LoggerFactory.getLogger(LiveMapSimulatorRunFacade.class);
+
     private static final String MODE_ALL = "ALL";
     private static final String MODE_EQUIPMENT_ONLY = "EQUIPMENT_ONLY";
     private static final String MODE_UPSTREAM_ONLY = "UPSTREAM_ONLY";
@@ -37,6 +45,8 @@ public final class LiveMapSimulatorRunFacade {
     private final DemoRunConnectionGate connectionGate;
     private final UiDualRequestProperties dualRequestProperties;
     private final DemoRunConnectionRegistry runRegistry;
+    private final Executor activationExecutor;
+    private final long connectionConfirmTimeoutMs;
 
     public LiveMapSimulatorRunFacade(
             final SimulatorOrchestratorClient client,
@@ -44,7 +54,9 @@ public final class LiveMapSimulatorRunFacade {
             final SimulatorTargetAssembler targetAssembler,
             final DemoRunConnectionGate connectionGate,
             final UiDualRequestProperties dualRequestProperties,
-            final DemoRunConnectionRegistry runRegistry
+            final DemoRunConnectionRegistry runRegistry,
+            final Executor activationExecutor,
+            final long connectionConfirmTimeoutMs
     ) {
         this.client = Objects.requireNonNull(client, "client is null");
         this.modeMapper = Objects.requireNonNull(modeMapper, "modeMapper is null");
@@ -52,49 +64,103 @@ public final class LiveMapSimulatorRunFacade {
         this.connectionGate = Objects.requireNonNull(connectionGate, "connectionGate is null");
         this.dualRequestProperties = Objects.requireNonNull(dualRequestProperties, "dualRequestProperties is null");
         this.runRegistry = Objects.requireNonNull(runRegistry, "runRegistry is null");
+        this.activationExecutor = Objects.requireNonNull(activationExecutor, "activationExecutor is null");
+        this.connectionConfirmTimeoutMs = connectionConfirmTimeoutMs;
     }
 
     /**
-     * 모달 시작 — testType→mode + 선택 설비별 DB 설정→target. 연결-후-MES 배리어: orchestrator createRun 으로 설비를
-     * bind 한 뒤(ALL 은 MES 보류) 설비 연결을 먼저 확인하고, 그 다음에만 테스트 로직(MES)을 활성화한다(모드별 분기는
-     * 클래스 javadoc 참조). 연결/활성화 실패 시 run 을 중단·해제하고 예외를 전파한다(조용한 부분 시작 금지).
+     * 모달 시작 — testType→mode + 선택 설비별 DB 설정→target. 연결-후-MES 배리어를 <b>비동기</b>로 수행한다:
+     * orchestrator createRun(설비 bind, ALL 은 MES 보류) 까지만 동기로 처리해 즉시 runId 를 반환하고, 설비 연결확인 +
+     * MES 활성화(activateUpstream) + 실패 보상(rollback)은 {@link #activationExecutor} 백그라운드에서 수행한다.
+     *
+     * <p>이유: 연결확인 gate 는 설비 수에 비례해 시간이 늘어, 대량 설비 시 요청 전체가 외부 HTTP 프록시 타임아웃을
+     * 넘겨 504 가 나고 그 시점에 요청이 끊겨 activateUpstream 에 도달하지 못했다(MES 미주입 → 설비 flap). createRun 자체는
+     * 저렴하므로 동기로 두고 연결확인+활성화를 백그라운드로 옮긴다. 클라이언트는 {@code getRun} 폴링으로 진행/종료를
+     * 관측한다(실패 시 백그라운드가 run 을 중단 → terminal 상태로 표면화). 조용한 부분 시작 금지 invariant 는 보존한다.</p>
      */
     public SimulatorRunResponse startRun(final String testType, final String scenarioId, final List<String> eqpIds) {
         final String mode = modeMapper.toMode(testType);
+        if (!MODE_ALL.equals(mode) && !MODE_EQUIPMENT_ONLY.equals(mode) && !MODE_UPSTREAM_ONLY.equals(mode)) {
+            // createRun 으로 orphan run 을 만들기 전에 거부한다.
+            throw new UiBadRequestException("지원하지 않는 mode입니다: " + mode);
+        }
         final List<SimulatorCreateRunRequest.SimulatorTargetRequest> targets = eqpIds.stream()
                 .map(targetAssembler::toTarget)
                 .toList();
-        final long timeoutMs = dualRequestProperties.getDualRequestTimeoutMs();
 
-        // 1) orchestrator createRun — 설비 bind(ALL/EQUIPMENT_ONLY) 또는 MES inject(UPSTREAM_ONLY). ALL 은 MES 보류.
+        // 1) orchestrator createRun(동기, 저렴) — 설비 bind(ALL/EQUIPMENT_ONLY) 또는 MES inject(UPSTREAM_ONLY).
         final SimulatorRunResponse response = client.createRun(new SimulatorCreateRunRequest(mode, scenarioId, targets));
-        try {
-            // 2) 테스트 로직 전에 설비를 먼저 연결·확인한다(실사용자 절차 모사).
-            switch (mode) {
-                case MODE_ALL -> {
-                    // ACTIVE: EQP_START → PASS(=실제 연결). 반환된 connected 집합이 종료 시 원복 대상이라 즉시 추적한다.
-                    final Set<String> captured = connectionGate.ensureActiveTargetsConnected(eqpIds, timeoutMs);
-                    runRegistry.track(response.runId(), captured);
-                    connectionGate.awaitPassiveTargetsConnected(eqpIds, timeoutMs); // PASSIVE: dial-in → connectionState=CONN
-                    // 3) 연결 확인 완료 → 보류했던 MES 활성화(이제 송신해도 유실 없음).
-                    client.activateUpstream(response.runId());
-                }
-                case MODE_EQUIPMENT_ONLY -> {
-                    // 설비 시나리오는 handshake(연결) 시 시작·loop. ACTIVE 만 EQP_START 로 연결 유도(PASSIVE 는 dial-in 자동).
-                    final Set<String> captured = connectionGate.ensureActiveTargetsConnected(eqpIds, timeoutMs);
-                    runRegistry.track(response.runId(), captured);
-                }
-                case MODE_UPSTREAM_ONLY ->
-                    // MES 는 createRun 에서 이미 주입·loop. ACTIVE 면 eqp_start 만 best-effort(실설비 대상, 연결 미보장).
-                    // best-effort 라 connected 집합을 알 수 없어 추적하지 않는다(C6).
-                    connectionGate.startActiveTargetsBestEffort(eqpIds, timeoutMs);
-                default -> throw new UiBadRequestException("지원하지 않는 mode입니다: " + mode);
+        final String runId = response.runId();
+
+        // 2) 연결확인 + MES 활성화는 백그라운드로(요청 즉시 반환). ALL/EQUIPMENT_ONLY 는 markPending 으로 추적을 먼저 열어
+        //    백그라운드 commit 전에 stop 이 들어와도 항상 tracked run 을 claim 하게 한다(race-safety, R4).
+        switch (mode) {
+            case MODE_ALL -> {
+                runRegistry.markPending(runId);
+                activationExecutor.execute(() -> activateAllInBackground(runId, eqpIds));
             }
-        } catch (RuntimeException startFailure) {
-            rollbackRun(response.runId(), timeoutMs, startFailure);
-            throw startFailure;
+            case MODE_EQUIPMENT_ONLY -> {
+                runRegistry.markPending(runId);
+                activationExecutor.execute(() -> activateEquipmentOnlyInBackground(runId, eqpIds));
+            }
+            default -> // MODE_UPSTREAM_ONLY — best-effort, 추적 안 함(C6).
+                    activationExecutor.execute(() -> activateUpstreamOnlyInBackground(runId, eqpIds));
         }
         return response;
+    }
+
+    /**
+     * ALL 백그라운드 배리어 — ACTIVE 연결(EQP_START PASS) → PASSIVE 연결(control_state=REMOTE) → activateUpstream(MES).
+     * 백그라운드 commit 전에 stop 이 선점(claim)했으면 방금 EQP_START 한 captured 를 직접 해제하고 MES 는 활성화하지
+     * 않는다(누수 0). 실패는 호출자로 전파할 수 없으므로 run 을 중단·해제(rollback)해 getRun 폴링에 terminal 로 표면화한다.
+     */
+    private void activateAllInBackground(final String runId, final List<String> eqpIds) {
+        try {
+            final Set<String> captured = connectionGate.ensureActiveTargetsConnected(eqpIds, connectionConfirmTimeoutMs);
+            if (!runRegistry.commitCaptured(runId, captured)) {
+                connectionGate.releaseActiveTargets(List.copyOf(captured), dualRequestProperties.getDualRequestTimeoutMs());
+                log.info("데모-run 활성화 취소(stop 선점) — captured self-release. runId={}, captured={}", runId, captured);
+                return;
+            }
+            connectionGate.awaitPassiveTargetsConnected(eqpIds, connectionConfirmTimeoutMs);
+            client.activateUpstream(runId);
+            log.info("데모-run 활성화 완료(백그라운드). runId={}", runId);
+        } catch (RuntimeException activationFailure) {
+            log.warn("데모-run 활성화 실패(백그라운드) — run 중단/해제. runId={}", runId, activationFailure);
+            rollbackRun(runId, dualRequestProperties.getDualRequestTimeoutMs(), activationFailure);
+        }
+    }
+
+    /**
+     * EQUIPMENT_ONLY 백그라운드 — ACTIVE 만 EQP_START 로 연결 유도(설비 시나리오는 handshake 시 시작·loop). MES 없음.
+     * race/실패 처리는 ALL 과 동일.
+     */
+    private void activateEquipmentOnlyInBackground(final String runId, final List<String> eqpIds) {
+        try {
+            final Set<String> captured = connectionGate.ensureActiveTargetsConnected(eqpIds, connectionConfirmTimeoutMs);
+            if (!runRegistry.commitCaptured(runId, captured)) {
+                connectionGate.releaseActiveTargets(List.copyOf(captured), dualRequestProperties.getDualRequestTimeoutMs());
+                log.info("데모-run 활성화 취소(stop 선점) — captured self-release. runId={}, captured={}", runId, captured);
+                return;
+            }
+            log.info("데모-run(EQUIPMENT_ONLY) 연결 완료(백그라운드). runId={}", runId);
+        } catch (RuntimeException activationFailure) {
+            log.warn("데모-run(EQUIPMENT_ONLY) 연결 실패(백그라운드) — run 중단/해제. runId={}", runId, activationFailure);
+            rollbackRun(runId, dualRequestProperties.getDualRequestTimeoutMs(), activationFailure);
+        }
+    }
+
+    /**
+     * UPSTREAM_ONLY 백그라운드 — MES 는 createRun 에서 이미 주입·loop. ACTIVE 면 EQP_START 만 best-effort(실설비 대상,
+     * 연결 미보장)라 추적/rollback 하지 않는다(C6). 실패해도 run 은 유지하고 로그만 남긴다.
+     */
+    private void activateUpstreamOnlyInBackground(final String runId, final List<String> eqpIds) {
+        try {
+            connectionGate.startActiveTargetsBestEffort(eqpIds, dualRequestProperties.getDualRequestTimeoutMs());
+            log.info("데모-run(UPSTREAM_ONLY) best-effort 시작 완료(백그라운드). runId={}", runId);
+        } catch (RuntimeException bestEffortFailure) {
+            log.warn("데모-run(UPSTREAM_ONLY) best-effort 시작 처리 실패(무시). runId={}", runId, bestEffortFailure);
+        }
     }
 
     /**
@@ -110,13 +176,17 @@ public final class LiveMapSimulatorRunFacade {
         } catch (RuntimeException stopFailure) {
             cause.addSuppressed(stopFailure);
         }
-        runRegistry.claim(runId).ifPresent(captured -> {
-            try {
-                connectionGate.releaseActiveTargets(List.copyOf(captured), timeoutMs);
-            } catch (RuntimeException releaseFailure) {
-                cause.addSuppressed(releaseFailure);
-            }
-        });
+        // claim 은 추적을 항상 소진(reaper 이중 처리 차단)하되, captured 가 비면(markPending 만 됐고 ensureActive 가
+        // 연결한 설비 없음 — gate 가 자체 보상 release 함) EQP_END 를 발행하지 않는다(불필요 호출 회피).
+        runRegistry.claim(runId)
+                .filter(captured -> !captured.isEmpty())
+                .ifPresent(captured -> {
+                    try {
+                        connectionGate.releaseActiveTargets(List.copyOf(captured), timeoutMs);
+                    } catch (RuntimeException releaseFailure) {
+                        cause.addSuppressed(releaseFailure);
+                    }
+                });
     }
 
     public SimulatorRunResponse getRun(final String runId) {

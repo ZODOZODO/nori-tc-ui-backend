@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.concurrent.Executor;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
@@ -23,6 +25,9 @@ class UiSimulatorConfigurationContextTest {
             .withBean(EqpManagementService.class, () -> mock(EqpManagementService.class))
             .withBean(DemoRunConnectionGate.class, () -> mock(DemoRunConnectionGate.class))
             .withBean(UiDualRequestProperties.class)
+            // 연결-후-MES 배리어 비동기화: facade 가 활성화 executor 를 @Qualifier 로 주입받으므로 컨텍스트에 제공한다
+            // (운영은 starter 의 demoRunActivationExecutor 빈). 인라인 executor 로 충분 — 본 테스트는 빈 등록만 검증.
+            .withBean(LiveMapSimulatorRunFacade.ACTIVATION_EXECUTOR_BEAN_NAME, Executor.class, () -> Runnable::run)
             .withUserConfiguration(UiSimulatorConfiguration.class);
 
     @Test

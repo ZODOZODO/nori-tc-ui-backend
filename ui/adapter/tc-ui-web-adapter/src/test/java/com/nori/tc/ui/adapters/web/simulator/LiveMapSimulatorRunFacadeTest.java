@@ -16,14 +16,15 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -55,6 +56,10 @@ class LiveMapSimulatorRunFacadeTest {
     @Mock
     private DemoRunConnectionGate connectionGate;
 
+    private static final long CONNECT_TIMEOUT_MS = 5_000L;
+    // 인라인 executor — 백그라운드 배리어를 호출 스레드에서 즉시 실행해 순서/rollback 을 결정적으로 검증한다.
+    private static final Executor INLINE_EXECUTOR = Runnable::run;
+
     private DemoRunConnectionRegistry runRegistry;
     private LiveMapSimulatorRunFacade facade;
 
@@ -67,7 +72,9 @@ class LiveMapSimulatorRunFacadeTest {
                 new SimulatorTargetAssembler(eqpManagementService),
                 connectionGate,
                 new UiDualRequestProperties(),
-                runRegistry);
+                runRegistry,
+                INLINE_EXECUTOR,
+                CONNECT_TIMEOUT_MS);
     }
 
     @Test
@@ -101,10 +108,10 @@ class LiveMapSimulatorRunFacadeTest {
         when(connectionGate.ensureActiveTargetsConnected(eq(List.of("PLC_MBT_001")), anyLong()))
                 .thenThrow(new UiConflictException("ACTIVE 대상 연결 실패"));
 
-        assertThrows(UiConflictException.class,
-                () -> facade.startRun("E2E", "default", List.of("PLC_MBT_001")));
+        // 비동기: 백그라운드(인라인 executor)에서 ensureActive throw → rollback. 요청 스레드로 예외 전파 안 함.
+        facade.startRun("E2E", "default", List.of("PLC_MBT_001"));
 
-        // ensureActive throw → track 미실행 → rollback claim empty → release 미호출(이중/거짓 END 0).
+        // ensureActive throw → commit 미실행 → rollback claim 은 markPending 빈 set → release 미호출(이중/거짓 END 0).
         // run 중단은 그대로 수행, MES 활성화는 안 함(조용한 부분 시작 금지).
         verify(client, never()).activateUpstream(anyString());
         verify(client).stopRun("RUN-1");
@@ -163,12 +170,12 @@ class LiveMapSimulatorRunFacadeTest {
         when(client.createRun(any())).thenReturn(runResponse("RUN-1"));
         when(connectionGate.ensureActiveTargetsConnected(eq(List.of("PLC_MBT_001")), anyLong()))
                 .thenReturn(Set.of("PLC_MBT_001"));
-        // ALL: ensureActive 성공(captured 기록) 후 awaitPassive 가 실패하는 경로.
+        // ALL: ensureActive 성공(captured commit) 후 awaitPassive 가 실패하는 경로.
         doThrow(new UiConflictException("PASSIVE 연결 실패"))
                 .when(connectionGate).awaitPassiveTargetsConnected(eq(List.of("PLC_MBT_001")), anyLong());
 
-        assertThrows(UiConflictException.class,
-                () -> facade.startRun("E2E", "default", List.of("PLC_MBT_001")));
+        // 비동기: 백그라운드에서 awaitPassive throw → rollback(예외 전파 없음).
+        facade.startRun("E2E", "default", List.of("PLC_MBT_001"));
 
         // AC7: rollback 이 captured-set 으로 정확히 1회 release + run 중단. 추적은 소진(이중 END 0).
         verify(connectionGate).releaseActiveTargets(eq(List.of("PLC_MBT_001")), anyLong());
@@ -308,6 +315,58 @@ class LiveMapSimulatorRunFacadeTest {
 
         verify(client).stopTarget("RUN-3", "PLC_MBT_001");
         verify(connectionGate, never()).releaseActiveTargets(any(), anyLong());
+    }
+
+    @Test
+    void startRunReturnsImmediatelyAndActivatesInBackground() {
+        // AC1: createRun 응답을 즉시 반환하고, 연결확인+activateUpstream 은 executor 백그라운드에서 수행한다.
+        when(eqpManagementService.getManageDetail("PLC_MBT_001"))
+                .thenReturn(Optional.of(snapshot("PLC_MBT_001", "1")));
+        when(client.createRun(any())).thenReturn(runResponse("RUN-1"));
+
+        final List<Runnable> tasks = new ArrayList<>();
+        final LiveMapSimulatorRunFacade asyncFacade = new LiveMapSimulatorRunFacade(
+                client, new SimulatorModeMapper(), new SimulatorTargetAssembler(eqpManagementService),
+                connectionGate, new UiDualRequestProperties(), runRegistry, tasks::add, CONNECT_TIMEOUT_MS);
+
+        final SimulatorRunResponse actual = asyncFacade.startRun("E2E", "default", List.of("PLC_MBT_001"));
+
+        // 즉시 반환 — 백그라운드 작업만 적재되고 연결확인/활성화는 아직 실행 전.
+        assertEquals("RUN-1", actual.runId());
+        assertEquals(1, tasks.size());
+        verify(client).createRun(any());
+        verify(connectionGate, never()).ensureActiveTargetsConnected(any(), anyLong());
+        verify(client, never()).activateUpstream(anyString());
+
+        // 백그라운드 실행 → 이제 연결확인 + MES 활성화 수행.
+        tasks.getFirst().run();
+        verify(connectionGate).ensureActiveTargetsConnected(eq(List.of("PLC_MBT_001")), anyLong());
+        verify(client).activateUpstream("RUN-1");
+    }
+
+    @Test
+    void backgroundSelfReleasesCapturedWhenStopClaimsFirst() {
+        // AC5(race): 백그라운드 commit 전에 stop 이 선점(claim)하면, 백그라운드가 방금 EQP_START 한 captured 를
+        // 직접 release(EQP_END)하고 MES 는 활성화하지 않는다 — 누수 0.
+        when(eqpManagementService.getManageDetail("PLC_MBT_001"))
+                .thenReturn(Optional.of(snapshot("PLC_MBT_001", "1")));
+        when(client.createRun(any())).thenReturn(runResponse("RUN-1"));
+        when(client.stopRun("RUN-1")).thenReturn(runResponse("RUN-1"));
+        when(connectionGate.ensureActiveTargetsConnected(eq(List.of("PLC_MBT_001")), anyLong()))
+                .thenReturn(Set.of("PLC_MBT_001"));
+
+        final List<Runnable> tasks = new ArrayList<>();
+        final LiveMapSimulatorRunFacade asyncFacade = new LiveMapSimulatorRunFacade(
+                client, new SimulatorModeMapper(), new SimulatorTargetAssembler(eqpManagementService),
+                connectionGate, new UiDualRequestProperties(), runRegistry, tasks::add, CONNECT_TIMEOUT_MS);
+
+        asyncFacade.startRun("E2E", "default", List.of("PLC_MBT_001")); // markPending(RUN-1), task 적재
+        asyncFacade.stopRun("RUN-1");                                   // 백그라운드 commit 전 stop 이 claim 선점
+        tasks.getFirst().run();                                         // 백그라운드 실행: commitCaptured=false → self-release
+
+        verify(client, never()).activateUpstream(anyString());
+        // captured(PLC_MBT_001) 는 백그라운드가 self-release(EQP_END) — 인터리빙 무관 누수 0.
+        verify(connectionGate).releaseActiveTargets(eq(List.of("PLC_MBT_001")), anyLong());
     }
 
     private static SimulatorRunResponse runResponse(final String runId) {

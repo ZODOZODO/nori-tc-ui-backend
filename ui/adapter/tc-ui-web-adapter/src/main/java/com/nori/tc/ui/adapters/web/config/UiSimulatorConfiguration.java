@@ -9,6 +9,7 @@ import com.nori.tc.ui.adapters.web.simulator.SimulatorOrchestratorClient;
 import com.nori.tc.ui.adapters.web.simulator.SimulatorTargetAssembler;
 import com.nori.tc.ui.core.service.DemoRunConnectionGate;
 import com.nori.tc.ui.core.service.EqpManagementService;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,6 +17,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.concurrent.Executor;
 
 /**
  * 신규 simulator orchestrator(:18090) 연동 빈 조립(R-1).
@@ -74,7 +76,9 @@ public class UiSimulatorConfiguration {
             final SimulatorTargetAssembler simulatorTargetAssembler,
             final DemoRunConnectionGate demoRunConnectionGate,
             final UiDualRequestProperties dualRequestProperties,
-            final DemoRunConnectionRegistry demoRunConnectionRegistry
+            final DemoRunConnectionRegistry demoRunConnectionRegistry,
+            @Qualifier(LiveMapSimulatorRunFacade.ACTIVATION_EXECUTOR_BEAN_NAME) final Executor activationExecutor,
+            final UiSimulatorProperties uiSimulatorProperties
     ) {
         return new LiveMapSimulatorRunFacade(
                 simulatorOrchestratorClient,
@@ -82,6 +86,8 @@ public class UiSimulatorConfiguration {
                 simulatorTargetAssembler,
                 demoRunConnectionGate,
                 dualRequestProperties,
-                demoRunConnectionRegistry);
+                demoRunConnectionRegistry,
+                activationExecutor,
+                uiSimulatorProperties.getConnectionConfirmTimeoutMs());
     }
 }

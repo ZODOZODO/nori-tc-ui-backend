@@ -7,6 +7,7 @@ import com.nori.tc.ui.adapters.kafka.config.UiKafkaTopicProperties;
 import com.nori.tc.ui.adapters.redis.config.UiRedisAdapterAutoConfiguration;
 import com.nori.tc.ui.adapters.redis.config.UiRedisProperties;
 import com.nori.tc.ui.adapters.web.config.UiWebAdapterAutoConfiguration;
+import com.nori.tc.ui.adapters.web.simulator.LiveMapSimulatorRunFacade;
 import com.nori.tc.ui.core.auth.UiAuthAsyncExecutor;
 import com.nori.tc.ui.core.properties.UiDeployProperties;
 import com.nori.tc.ui.core.service.DeployService;
@@ -77,6 +78,13 @@ public class TcUiBackendAutoConfiguration {
     private static final int AUTH_EXECUTOR_QUEUE_CAPACITY = 256;
     private static final int AUTH_EXECUTOR_AWAIT_TERMINATION_SECONDS = 10;
     private static final String AUTH_EXECUTOR_THREAD_PREFIX = "ui-auth-";
+    // 데모-run 연결-후-MES 배리어 백그라운드 실행 전용. 작업 1건이 연결확인 동안 스레드를 길게 점유(최대
+    // connectionConfirmTimeoutMs)하므로 코어는 작게, 동시 다수 run 대비 max/queue 로 bound 한다.
+    private static final int DEMO_RUN_ACTIVATION_EXECUTOR_CORE_POOL_SIZE = 2;
+    private static final int DEMO_RUN_ACTIVATION_EXECUTOR_MAX_POOL_SIZE = 8;
+    private static final int DEMO_RUN_ACTIVATION_EXECUTOR_QUEUE_CAPACITY = 64;
+    private static final int DEMO_RUN_ACTIVATION_EXECUTOR_AWAIT_TERMINATION_SECONDS = 30;
+    private static final String DEMO_RUN_ACTIVATION_EXECUTOR_THREAD_PREFIX = "ui-demo-run-activation-";
 
     /**
      * AutoConfiguration 클래스 인스턴스화 시점에 기동 시작 로그를 출력합니다.
@@ -148,6 +156,35 @@ public class TcUiBackendAutoConfiguration {
                 AUTH_EXECUTOR_CORE_POOL_SIZE,
                 AUTH_EXECUTOR_MAX_POOL_SIZE,
                 AUTH_EXECUTOR_QUEUE_CAPACITY);
+        return executor;
+    }
+
+    /**
+     * 데모-run 연결-후-MES 배리어 백그라운드 실행 전용 executor 를 등록합니다.
+     *
+     * <p>{@code LiveMapSimulatorRunFacade.startRun} 은 orchestrator createRun(저렴)까지만 동기로 응답하고, 설비
+     * 연결확인 + activateUpstream(MES) 을 이 executor 로 백그라운드 수행한다(대량 설비 시 요청 동기 처리가 외부 HTTP
+     * 프록시 타임아웃을 넘겨 504 나던 문제 해소). 배경 작업이 {@code startAsync} 로 EQP_START Kafka 를 발행하므로
+     * common pool 대신 context classloader 를 전파하는 전용 executor 로 고정한다(fat jar nested-jar 로딩 안전).</p>
+     *
+     * @return 데모-run 활성화 비동기 처리 전용 executor
+     */
+    @Bean(name = LiveMapSimulatorRunFacade.ACTIVATION_EXECUTOR_BEAN_NAME)
+    public Executor demoRunActivationExecutor() {
+        final ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(DEMO_RUN_ACTIVATION_EXECUTOR_CORE_POOL_SIZE);
+        executor.setMaxPoolSize(DEMO_RUN_ACTIVATION_EXECUTOR_MAX_POOL_SIZE);
+        executor.setQueueCapacity(DEMO_RUN_ACTIVATION_EXECUTOR_QUEUE_CAPACITY);
+        executor.setThreadNamePrefix(DEMO_RUN_ACTIVATION_EXECUTOR_THREAD_PREFIX);
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(DEMO_RUN_ACTIVATION_EXECUTOR_AWAIT_TERMINATION_SECONDS);
+        executor.setTaskDecorator(copyMdcAndContextClassLoaderTaskDecorator());
+        executor.initialize();
+
+        log.info("데모-run 활성화 비동기 executor 초기화 완료. corePoolSize={}, maxPoolSize={}, queueCapacity={}",
+                DEMO_RUN_ACTIVATION_EXECUTOR_CORE_POOL_SIZE,
+                DEMO_RUN_ACTIVATION_EXECUTOR_MAX_POOL_SIZE,
+                DEMO_RUN_ACTIVATION_EXECUTOR_QUEUE_CAPACITY);
         return executor;
     }
 

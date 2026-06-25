@@ -12,6 +12,9 @@ public class UiSimulatorProperties {
     private long connectTimeoutMs = 3000L;
     private long readTimeoutMs = 5000L;
     private long reaperIntervalMs = 5000L;
+    // 연결-후-MES 배리어가 백그라운드(요청 밖)에서 설비 연결을 확인할 때의 타임아웃. 대량 설비(수십~수백)는
+    // 동시 연결에 dualRequestTimeoutMs(10s)보다 오래 걸리며, 백그라운드라 외부 HTTP 프록시 압박이 없어 넉넉히 둔다.
+    private long connectionConfirmTimeoutMs = 120_000L;
 
     public String getBaseUrl() {
         return baseUrl;
@@ -43,5 +46,13 @@ public class UiSimulatorProperties {
 
     public void setReaperIntervalMs(final long reaperIntervalMs) {
         this.reaperIntervalMs = reaperIntervalMs;
+    }
+
+    public long getConnectionConfirmTimeoutMs() {
+        return connectionConfirmTimeoutMs;
+    }
+
+    public void setConnectionConfirmTimeoutMs(final long connectionConfirmTimeoutMs) {
+        this.connectionConfirmTimeoutMs = connectionConfirmTimeoutMs;
     }
 }
