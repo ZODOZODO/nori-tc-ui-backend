@@ -2,6 +2,7 @@ package com.nori.tc.ui.adapters.web.security;
 
 import tools.jackson.databind.ObjectMapper;
 import com.nori.tc.common.runtime.support.TraceIdGenerator;
+import com.nori.tc.logging.TcLogContext;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.core.exception.UiAuthenticationException;
 import com.nori.tc.ui.core.properties.UiAuthProperties;
@@ -14,7 +15,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -57,13 +57,6 @@ import java.util.Objects;
 public class UiTokenAuthenticationFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(UiTokenAuthenticationFilter.class);
-
-    /**
-     * 분산 추적 상관관계 키(MDC)입니다.
-     *
-     * <p>gateway/business 공통 로그 포맷에서 사용하는 key와 동일하게 맞춥니다.</p>
-     */
-    private static final String TRACE_ID_MDC_KEY = "traceId";
 
     /**
      * 클라이언트가 전달한 요청 상관관계 헤더 키입니다.
@@ -141,11 +134,9 @@ public class UiTokenAuthenticationFilter extends OncePerRequestFilter {
         // - 1순위: X-Request-Id 헤더
         // - 2순위: 동일 요청 재디스패치 시 request attribute 재사용
         // - 3순위: UUID 신규 생성
-        final String previousTraceId = MDC.get(TRACE_ID_MDC_KEY);
         final String requestTraceId = resolveRequestTraceId(request);
-        MDC.put(TRACE_ID_MDC_KEY, requestTraceId);
 
-        try {
+        try (TcLogContext ignored = TcLogContext.withTraceId(requestTraceId)) {
             // DeferredResult 재디스패치(ASYNC)이고 이미 인증 컨텍스트가 있으면 토큰 재검증을 생략합니다.
             // - 최초 REQUEST 디스패치에서 이미 인증을 마친 상태를 그대로 사용합니다.
             // - Redis/DB 중복 조회를 줄여 비동기 응답 경로의 불필요한 오버헤드를 제거합니다.
@@ -223,8 +214,6 @@ public class UiTokenAuthenticationFilter extends OncePerRequestFilter {
 
             // 4단계: 다음 필터로 요청 전달
             filterChain.doFilter(request, response);
-        } finally {
-            restoreTraceIdMdc(previousTraceId);
         }
     }
 
@@ -280,22 +269,6 @@ public class UiTokenAuthenticationFilter extends OncePerRequestFilter {
 
         request.setAttribute(REQUEST_TRACE_ID_ATTRIBUTE, resolvedTraceId);
         return resolvedTraceId;
-    }
-
-    /**
-     * 필터 종료 시 MDC traceId를 이전 상태로 복구합니다.
-     *
-     * <p>현재 요청에서 주입한 MDC 값이 다음 요청 로그에 누수되지 않도록
-     * 반드시 finally 블록에서 호출해야 합니다.</p>
-     *
-     * @param previousTraceId 필터 진입 전 MDC traceId 값
-     */
-    private static void restoreTraceIdMdc(final String previousTraceId) {
-        if (previousTraceId == null || previousTraceId.isBlank()) {
-            MDC.remove(TRACE_ID_MDC_KEY);
-            return;
-        }
-        MDC.put(TRACE_ID_MDC_KEY, previousTraceId);
     }
 
     /**

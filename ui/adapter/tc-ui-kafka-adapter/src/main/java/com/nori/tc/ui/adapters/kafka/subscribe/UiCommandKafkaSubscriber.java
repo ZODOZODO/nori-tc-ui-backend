@@ -2,6 +2,7 @@ package com.nori.tc.ui.adapters.kafka.subscribe;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
+import com.nori.tc.logging.TcLogContext;
 import com.nori.tc.messaging.kafka.contract.KafkaUiTaskReplyMessage;
 import com.nori.tc.ui.core.logging.UiObservationLogger;
 import com.nori.tc.ui.core.model.UiCommandReply;
@@ -9,11 +10,11 @@ import com.nori.tc.ui.core.port.messaging.UiCommandIngressPort;
 import com.nori.tc.ui.domain.task.UiTaskStatus;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.KafkaException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
@@ -35,12 +36,18 @@ import java.util.Objects;
 public class UiCommandKafkaSubscriber {
 
     private static final Logger log = LoggerFactory.getLogger(UiCommandKafkaSubscriber.class);
-    private static final String TRACE_ID_MDC_KEY = "traceId";
 
     private final UiCommandIngressPort ingressPort;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
     private final Counter parseErrorCounter;
+
+    /**
+     * Kafka 처리 지연 Timer({@code tc.message.processing}, W3-1)입니다.
+     * MeterRegistry가 없는 순수 단위 테스트에서는 null이며, 그 경우 측정 없이 처리만 수행합니다.
+     * (Prometheus 노출명 = {@code tc_message_processing_seconds}.)
+     */
+    private final Timer messageProcessingTimer;
 
     /**
      * 테스트/로컬 조립 편의를 위한 생성자입니다.
@@ -80,6 +87,12 @@ public class UiCommandKafkaSubscriber {
         this.parseErrorCounter = meterRegistry == null
                 ? null
                 : meterRegistry.counter("kafka.command.parse_error");
+        this.messageProcessingTimer = meterRegistry == null
+                ? null
+                : Timer.builder("tc.message.processing")
+                        .description("Inbound Kafka message processing latency")
+                        .publishPercentileHistogram()
+                        .register(meterRegistry);
     }
 
     /**
@@ -94,6 +107,26 @@ public class UiCommandKafkaSubscriber {
             containerFactory = "uiCommandListenerContainerFactory"
     )
     public void onMessage(
+            final ConsumerRecord<String, String> record,
+            final Acknowledgment ack
+    ) {
+        final Timer.Sample sample = messageProcessingTimer == null ? null : Timer.start(meterRegistry);
+        try {
+            process(record, ack);
+        } finally {
+            if (sample != null) {
+                sample.stop(messageProcessingTimer);
+            }
+        }
+    }
+
+    /**
+     * {@code tc.ui.commands} 메시지 1건의 실제 처리 로직입니다. 처리 지연 측정은 {@link #onMessage}에서 감쌉니다.
+     *
+     * @param record Kafka consumer record (key=eqpId, value=JSON 문자열)
+     * @param ack MANUAL_IMMEDIATE ACK 핸들러
+     */
+    private void process(
             final ConsumerRecord<String, String> record,
             final Acknowledgment ack
     ) {
@@ -115,7 +148,7 @@ public class UiCommandKafkaSubscriber {
             return;
         }
 
-        try (MdcTraceScope ignored = openTraceMdcScope(commandReply.traceId())) {
+        try (TcLogContext ignored = TcLogContext.withTraceId(commandReply.traceId())) {
             incrementReceivedCounter(commandReply.eventType());
 
             UiObservationLogger.logCommandReplyReceived(
@@ -339,35 +372,4 @@ public class UiCommandKafkaSubscriber {
         return raw.trim();
     }
 
-    /**
-     * Kafka 소비 처리 중 traceId MDC를 주입/복구하는 스코프입니다.
-     *
-     * @param traceId Kafka 메시지 traceId
-     * @return try-with-resources용 스코프
-     */
-    private static MdcTraceScope openTraceMdcScope(final String traceId) {
-        final String previousTraceId = MDC.get(TRACE_ID_MDC_KEY);
-        if (traceId == null || traceId.isBlank()) {
-            MDC.remove(TRACE_ID_MDC_KEY);
-        } else {
-            MDC.put(TRACE_ID_MDC_KEY, traceId);
-        }
-        return new MdcTraceScope(previousTraceId);
-    }
-
-    /**
-     * MDC traceId 복구를 담당하는 AutoCloseable 스코프입니다.
-     *
-     * @param previousTraceId 스코프 진입 전 traceId
-     */
-    private record MdcTraceScope(String previousTraceId) implements AutoCloseable {
-        @Override
-        public void close() {
-            if (previousTraceId == null || previousTraceId.isBlank()) {
-                MDC.remove(TRACE_ID_MDC_KEY);
-                return;
-            }
-            MDC.put(TRACE_ID_MDC_KEY, previousTraceId);
-        }
-    }
 }

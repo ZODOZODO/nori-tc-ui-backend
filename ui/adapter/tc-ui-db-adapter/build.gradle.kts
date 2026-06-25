@@ -74,6 +74,14 @@ dependencies {
     testImplementation(libs.spring.boot.starter.data.jpa)
     testImplementation(libs.spring.boot.starter.test)
     testRuntimeOnly("com.h2database:h2")
+
+    /*
+     * W1 abnormal 매트릭스 — Testcontainers 로 실 PostgreSQL 에 slow query(pg_sleep)를
+     * 인가해 statement/query timeout 으로 처리되는지(SQLException) 검증한다.
+     */
+    testImplementation("org.testcontainers:testcontainers-junit-jupiter:2.0.3")
+    testImplementation("org.testcontainers:testcontainers-postgresql:2.0.3")
+    testImplementation(libs.postgresql)
 }
 
 tasks.test {

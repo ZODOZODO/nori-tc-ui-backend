@@ -6,6 +6,8 @@ import com.nori.tc.messaging.kafka.contract.KafkaUiTaskReplyMessage;
 import com.nori.tc.ui.core.model.UiCommandReply;
 import com.nori.tc.ui.core.port.messaging.UiCommandIngressPort;
 import com.nori.tc.ui.domain.task.UiTaskStatus;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -19,6 +21,7 @@ import org.springframework.kafka.support.Acknowledgment;
 import java.time.OffsetDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -108,5 +111,28 @@ class UiCommandKafkaSubscriberTest {
         assertEquals("EQP-001", mapped.eqpId());
         assertEquals(UiTaskStatus.PASS, mapped.status());
         assertTrue(mapped.errorCode() == null || mapped.errorCode().isBlank());
+    }
+
+    @Test
+    @DisplayName("W3-1: 메시지 처리 1회 시 tc.message.processing Timer가 등록되고 count=1로 기록")
+    void messageProcessing_recordsTimer() {
+        final SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        final UiCommandKafkaSubscriber meteredSubscriber =
+                new UiCommandKafkaSubscriber(ingressPort, objectMapper, registry);
+
+        // 파싱 실패 경로도 처리 1건으로 측정 대상이다(ACK 후 skip).
+        final ConsumerRecord<String, String> record = new ConsumerRecord<>(
+                "tc.ui.commands",
+                1,
+                12L,
+                "EQP-001",
+                "{\"invalid-json\""
+        );
+
+        meteredSubscriber.onMessage(record, acknowledgment);
+
+        final Timer timer = registry.find("tc.message.processing").timer();
+        assertNotNull(timer, "tc.message.processing Timer가 등록되어야 합니다.");
+        assertEquals(1L, timer.count(), "메시지 처리 1회당 Timer count는 1이어야 합니다.");
     }
 }

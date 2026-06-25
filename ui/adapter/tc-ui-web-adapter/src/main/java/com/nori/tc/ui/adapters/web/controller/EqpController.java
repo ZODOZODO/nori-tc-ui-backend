@@ -1,5 +1,6 @@
 package com.nori.tc.ui.adapters.web.controller;
 
+import com.nori.tc.logging.TcLogContext;
 import com.nori.tc.ui.adapters.web.config.UiDualRequestProperties;
 import com.nori.tc.ui.adapters.web.controller.support.EqpControllerCommandSupport;
 import com.nori.tc.ui.adapters.web.controller.support.EqpControllerResponseSupport;
@@ -27,7 +28,6 @@ import com.nori.tc.ui.domain.eqp.UiEqp;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -63,7 +63,6 @@ import java.util.concurrent.CompletableFuture;
 public class EqpController {
 
     private static final Logger log = LoggerFactory.getLogger(EqpController.class);
-    private static final String TRACE_ID_MDC_KEY = "traceId";
 
     private final EqpQueryPort eqpQueryPort;
     private final EqpManagementService eqpManagementService;
@@ -342,7 +341,7 @@ public class EqpController {
                 dualRequestProperties.getDualRequestTimeoutMs()
         );
 
-        try (MdcTraceScope ignored = openTraceMdcScope(acceptResult.traceId())) {
+        try (TcLogContext ignored = TcLogContext.withTraceId(acceptResult.traceId())) {
             log.info("EQP_START 요청. eqpId={}, interfaceType={}, traceId={}",
                     eqpId, request.interfaceType(), acceptResult.traceId());
             return toAsyncAcceptResponse(acceptResult);
@@ -368,7 +367,7 @@ public class EqpController {
                 dualRequestProperties.getDualRequestTimeoutMs()
         );
 
-        try (MdcTraceScope ignored = openTraceMdcScope(acceptResult.traceId())) {
+        try (TcLogContext ignored = TcLogContext.withTraceId(acceptResult.traceId())) {
             log.info("EQP_END 요청. eqpId={}, interfaceType={}, traceId={}",
                     eqpId, request.interfaceType(), acceptResult.traceId());
             return toAsyncAcceptResponse(acceptResult);
@@ -395,7 +394,7 @@ public class EqpController {
                 dualRequestProperties.getDualRequestTimeoutMs()
         );
 
-        try (MdcTraceScope ignored = openTraceMdcScope(acceptResult.traceId())) {
+        try (TcLogContext ignored = TcLogContext.withTraceId(acceptResult.traceId())) {
             log.info("EQP_PLC_GROUP_START 요청. eqpId={}, group={}, traceId={}",
                     eqpId, groupMessageName, acceptResult.traceId());
             return toAsyncAcceptResponse(acceptResult);
@@ -420,7 +419,7 @@ public class EqpController {
                 dualRequestProperties.getDualRequestTimeoutMs()
         );
 
-        try (MdcTraceScope ignored = openTraceMdcScope(acceptResult.traceId())) {
+        try (TcLogContext ignored = TcLogContext.withTraceId(acceptResult.traceId())) {
             log.info("EQP_PLC_GROUP_END 요청. eqpId={}, group={}, traceId={}",
                     eqpId, groupMessageName, acceptResult.traceId());
             return toAsyncAcceptResponse(acceptResult);
@@ -475,35 +474,4 @@ public class EqpController {
                 .body(ApiResponse.success(new AsyncAcceptResponse(acceptResult.traceId())));
     }
 
-    /**
-     * 현재 스레드 MDC에 traceId를 주입하고 스코프 종료 시 이전 값을 복구합니다.
-     *
-     * @param traceId trace id
-     * @return MDC 스코프
-     */
-    private static MdcTraceScope openTraceMdcScope(final String traceId) {
-        final String previousTraceId = MDC.get(TRACE_ID_MDC_KEY);
-        if (traceId == null || traceId.isBlank()) {
-            MDC.remove(TRACE_ID_MDC_KEY);
-        } else {
-            MDC.put(TRACE_ID_MDC_KEY, traceId);
-        }
-        return new MdcTraceScope(previousTraceId);
-    }
-
-    /**
-     * MDC traceId 복구를 담당하는 스코프입니다.
-     *
-     * @param previousTraceId 이전 trace id
-     */
-    private record MdcTraceScope(String previousTraceId) implements AutoCloseable {
-        @Override
-        public void close() {
-            if (previousTraceId == null || previousTraceId.isBlank()) {
-                MDC.remove(TRACE_ID_MDC_KEY);
-                return;
-            }
-            MDC.put(TRACE_ID_MDC_KEY, previousTraceId);
-        }
-    }
 }

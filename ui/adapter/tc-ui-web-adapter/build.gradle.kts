@@ -11,6 +11,8 @@ version = "0.0.1-SNAPSHOT"
 dependencies {
     implementation(project(":ui:tc-ui-core"))
     implementation("com.nori.tc:tc-common-runtime-support:0.0.1-SNAPSHOT")
+    // 공통 로깅 유틸리티: helper 외 MDC 직접 호출 금지(W4 ArchUnit) 준수를 위한 traceId 스코프 헬퍼
+    implementation("com.nori.tc:tc-common-logging:0.0.1-SNAPSHOT")
     implementation(libs.spring.boot.starter.webmvc)
     implementation(libs.spring.boot.starter.security)
     implementation(libs.spring.boot.starter.actuator)
