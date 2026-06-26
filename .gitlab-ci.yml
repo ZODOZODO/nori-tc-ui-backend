@@ -5,6 +5,11 @@ stages:
 
 pipeline-ok:
   stage: check
+  # 비코드(docs 등) 푸시의 placeholder. GitLab.com 공유러너(월 400분 그룹 쿼터)를 쓰지 않도록
+  # 자체호스팅 norilab 러너에서 실행한다(ci_quota_exceeded 회피). publish 잡과 동일 러너/이미지.
+  tags:
+    - norilab
+  image: harbor.nori.local/library/maven:3.9-eclipse-temurin-21
   script:
     - echo "no relevant changes"
   rules:
