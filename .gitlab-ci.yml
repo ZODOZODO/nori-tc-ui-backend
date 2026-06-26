@@ -33,6 +33,10 @@ publish:
     - chmod +x ./gradlew
     - ./gradlew publish --no-daemon
   rules:
+    # GitLab UI 의 "Run pipeline" (manual web trigger) — common 업스트림 또는 exec-side
+    # app 설정(apps/tc-ui-backend-app/application.yaml 등) 변경을 흡수해 ui-backend 만
+    # 재퍼블리시·재배포할 때 사용. ui 코드 변경 없이도 publish 실행(gateway/simulator 동형).
+    - if: '$CI_PIPELINE_SOURCE == "web"'
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes:
         - ui/**/*
@@ -50,6 +54,7 @@ trigger-exec:
     project: norilab/tc-mes/nori-tc-exec
     branch: main
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes:
         - ui/**/*
