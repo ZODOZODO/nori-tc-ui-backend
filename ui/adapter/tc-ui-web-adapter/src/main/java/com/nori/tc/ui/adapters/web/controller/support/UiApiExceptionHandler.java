@@ -221,7 +221,10 @@ public class UiApiExceptionHandler {
      * @return 해석된 메시지
      */
     private String resolve(final String code, final Object... args) {
-        return messageSource.getMessage(code, args, LocaleContextHolder.getLocale());
+        // 예외 핸들러는 절대 throw 하면 안 된다 — 메시지 누락(예: 요청 locale 이 messages_<lang> 으로 폴백되지 않는
+        // 런타임 환경)으로 NoSuchMessageException 이 나면 핸들러 자체가 깨져 ApiResponse 대신 raw 500 이 나간다.
+        // 4-arg getMessage 는 누락 시 throw 대신 기본값(code)을 반환하므로 핸들러가 항상 ApiResponse 를 완성한다.
+        return messageSource.getMessage(code, args, code, LocaleContextHolder.getLocale());
     }
 
     /**

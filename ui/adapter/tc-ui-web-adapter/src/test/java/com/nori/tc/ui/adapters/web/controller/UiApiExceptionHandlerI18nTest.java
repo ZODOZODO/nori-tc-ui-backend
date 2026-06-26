@@ -4,6 +4,7 @@ import com.nori.tc.ui.adapters.web.controller.support.UiApiExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,6 +47,25 @@ class UiApiExceptionHandlerI18nTest {
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.errorCode").value("INTERNAL_ERROR"))
                 .andExpect(jsonPath("$.errorMsg").value("An internal error occurred while processing the request."));
+    }
+
+    @Test
+    @DisplayName("메시지가 누락된 locale(운영 동일 엄격 소스)에서도 핸들러가 깨지지 않고 ApiResponse 500 을 반환한다")
+    void shouldNotBreakWhenMessageMissingForLocale() throws Exception {
+        // 운영 MessageSource 는 useCodeAsDefaultMessage=false(기본) — 코드 누락 시 NoSuchMessageException 을 던진다.
+        // 메시지가 없는 basename 으로 그 상황을 재현: resolve 가 throw 하면 @ExceptionHandler 가 깨져 raw 500(ApiResponse
+        // 형식 아님)이 나간다(라이브 재현된 결함). 방어 수정 후엔 항상 ApiResponse 500 을 완성해야 한다.
+        final ResourceBundleMessageSource strict = new ResourceBundleMessageSource();
+        strict.setBasename("nonexistent-messages-for-test");
+        strict.setDefaultEncoding("UTF-8");
+        final MockMvc strictMvc = MockMvcBuilders.standaloneSetup(new BoomController())
+                .setControllerAdvice(new UiApiExceptionHandler(strict))
+                .build();
+
+        strictMvc.perform(get("/i18n-test/boom").header("Accept-Language", "en-US"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("INTERNAL_ERROR"));
     }
 
     /**
