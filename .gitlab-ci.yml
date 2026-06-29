@@ -23,8 +23,35 @@ pipeline-ok:
       when: never
     - if: '$CI_COMMIT_BRANCH == "main"'
 
+# ------------------------------------------------------------------------------
+# W3-1 — 단위 테스트 게이트 (2026.07.13~07.17)
+# ------------------------------------------------------------------------------
+# publish 전에 gradlew test 로 회귀 차단. Testcontainers 통합 테스트(JdbcAuditLogPortTest 등)는
+# @Testcontainers(disabledWithoutDocker=true) 라 러너에 Docker 없으면 자동 skip(DinD 미구성) — 단위 테스트만 실효.
+# common 은 build-logic includeBuild 를 위해 sibling clone(publish 잡과 동일).
+test:
+  stage: check
+  tags:
+    - norilab
+  image: harbor.nori.local/library/maven:3.9-eclipse-temurin-21
+  script:
+    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/norilab/tc-mes/nori-tc-common.git ../nori-tc-common
+    - chmod +x ./gradlew
+    - ./gradlew test --no-daemon
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - ui/**/*
+        - build.gradle.kts
+        - settings.gradle.kts
+        - gradle.properties
+        - gradle/**/*
+
 publish:
   stage: publish
+  # W3-2 게이트: test 실패 시 publish 차단(allow_failure 기본 false) → trigger → exec deploy 까지 연쇄 차단.
+  needs: ["test"]
   tags:
     - norilab
   image: harbor.nori.local/library/maven:3.9-eclipse-temurin-21
