@@ -6,13 +6,18 @@ import com.nori.tc.ui.adapters.web.dto.response.GroupMemberResponse;
 import com.nori.tc.ui.adapters.web.dto.response.GroupPermissionMappingResponse;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
+import com.nori.tc.ui.core.port.db.AuditLogPort;
 import com.nori.tc.ui.core.port.db.GroupCrudPort;
 import com.nori.tc.ui.core.port.db.GroupPermissionMappingPort;
 import com.nori.tc.ui.core.port.db.UserCrudPort;
 import com.nori.tc.ui.core.port.db.UserGroupMappingPort;
+import com.nori.tc.ui.domain.audit.UiAuditEvent;
+import com.nori.tc.ui.domain.auth.UserPrincipal;
 import com.nori.tc.ui.domain.useradmin.UiManagedUser;
 import com.nori.tc.ui.domain.useradmin.UiUserGroupMember;
 import com.nori.tc.ui.domain.useradmin.UiUserGroupPermission;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -28,25 +33,29 @@ import java.util.stream.Collectors;
 public class GroupAdminFacade {
 
     private static final String DEFAULT_GRANTED_BY = "SYSTEM";
+    private static final String UNKNOWN_ACTOR = "SYSTEM";
 
     private final GroupCrudPort groupCrudPort;
     private final GroupPermissionMappingPort groupPermissionMappingPort;
     private final UserGroupMappingPort userGroupMappingPort;
     private final UserCrudPort userCrudPort;
     private final GroupAdminAssembler assembler;
+    private final AuditLogPort auditLogPort;
 
     public GroupAdminFacade(
             final GroupCrudPort groupCrudPort,
             final GroupPermissionMappingPort groupPermissionMappingPort,
             final UserGroupMappingPort userGroupMappingPort,
             final UserCrudPort userCrudPort,
-            final GroupAdminAssembler assembler
+            final GroupAdminAssembler assembler,
+            final AuditLogPort auditLogPort
     ) {
         this.groupCrudPort = Objects.requireNonNull(groupCrudPort, "groupCrudPort is null");
         this.groupPermissionMappingPort = Objects.requireNonNull(groupPermissionMappingPort, "groupPermissionMappingPort is null");
         this.userGroupMappingPort = Objects.requireNonNull(userGroupMappingPort, "userGroupMappingPort is null");
         this.userCrudPort = Objects.requireNonNull(userCrudPort, "userCrudPort is null");
         this.assembler = Objects.requireNonNull(assembler, "assembler is null");
+        this.auditLogPort = Objects.requireNonNull(auditLogPort, "auditLogPort is null");
     }
 
     public PagedResponse<GroupInfoResponse> list(final UiPageRequest pageRequest) {
@@ -89,11 +98,32 @@ public class GroupAdminFacade {
         final UiUserGroupPermission saved = groupPermissionMappingPort.upsert(
                 assembler.toPermissionMappingCommand(groupId, permId, DEFAULT_GRANTED_BY)
         );
+        auditLogPort.record(UiAuditEvent.permissionGrant(currentActor(), permissionTarget(groupId, permId)));
         return assembler.toGroupPermissionMappingResponse(saved);
     }
 
     public void removePermissionMapping(final long groupId, final long permId) {
         groupPermissionMappingPort.deleteByGroupIdPermId(groupId, permId);
+        auditLogPort.record(UiAuditEvent.permissionRevoke(currentActor(), permissionTarget(groupId, permId)));
+    }
+
+    private static String permissionTarget(final long groupId, final long permId) {
+        return "group:" + groupId + "/perm:" + permId;
+    }
+
+    /**
+     * 현재 인증된 사용자(권한 변경 actor)를 SecurityContext 에서 해석합니다.
+     *
+     * <p>토큰 인증을 거치지 않은 경로(부재/익명)는 {@link #UNKNOWN_ACTOR} 로 기록합니다.</p>
+     *
+     * @return actor 식별자(로그인 ID) 또는 "SYSTEM"
+     */
+    private static String currentActor() {
+        final Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof UserPrincipal principal) {
+            return principal.userId();
+        }
+        return UNKNOWN_ACTOR;
     }
 
     public Optional<PagedResponse<GroupMemberResponse>> listUsersByGroupId(

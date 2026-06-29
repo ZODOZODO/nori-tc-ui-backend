@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Import;
 @Import({
         DemoJobJdbcCleanupPort.class,
         DeployJdbcStorePort.class,
+        JdbcAuditLogPort.class,
         DeployPlanningStateJdbcPort.class,
         DeployScenarioCatalogMetaJdbcPort.class,
         EqpManagementDbSupport.class,

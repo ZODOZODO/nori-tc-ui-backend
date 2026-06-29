@@ -1,5 +1,6 @@
 package com.nori.tc.ui.adapters.web.security;
 
+import com.nori.tc.ui.core.properties.UiActuatorSecurityProperties;
 import com.nori.tc.ui.core.properties.UiAuthProperties;
 import com.nori.tc.ui.domain.auth.UserPrincipal;
 import jakarta.servlet.DispatcherType;
@@ -52,7 +53,7 @@ import java.util.Objects;
  */
 @Configuration
 @EnableWebSecurity
-@EnableConfigurationProperties(UiAuthProperties.class)
+@EnableConfigurationProperties({UiAuthProperties.class, UiActuatorSecurityProperties.class})
 public class UiSecurityConfig {
 
     private static final Logger log = LoggerFactory.getLogger(UiSecurityConfig.class);
@@ -78,7 +79,8 @@ public class UiSecurityConfig {
             final UiAuthenticationEntryPoint authenticationEntryPoint,
             final CsrfTokenRepository csrfTokenRepository,
             @Qualifier("uiCorsConfigurationSource") final CorsConfigurationSource corsConfigurationSource,
-            final UiAuthProperties authProperties
+            final UiAuthProperties authProperties,
+            final UiActuatorSecurityProperties actuatorSecurityProperties
     ) throws Exception {
         Objects.requireNonNull(tokenFilter, "tokenFilter is null");
         Objects.requireNonNull(permissionCache, "permissionCache is null");
@@ -86,6 +88,7 @@ public class UiSecurityConfig {
         Objects.requireNonNull(csrfTokenRepository, "csrfTokenRepository is null");
         Objects.requireNonNull(corsConfigurationSource, "corsConfigurationSource is null");
         Objects.requireNonNull(authProperties, "authProperties is null");
+        Objects.requireNonNull(actuatorSecurityProperties, "actuatorSecurityProperties is null");
 
         http
                 // CSRF 활성화: Double Submit Cookie 패턴을 적용합니다.
@@ -121,9 +124,17 @@ public class UiSecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/actuator/health", "/api/actuator/health/**").permitAll()
-                        // [TEMP perf measurement 2026-05-14] Actuator metrics / prometheus 측정용. 측정 종료 후 revert.
-                        .requestMatchers(HttpMethod.GET, "/api/actuator/metrics", "/api/actuator/metrics/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/actuator/prometheus").permitAll()
+                        /*
+                         * Actuator 민감 endpoint(prometheus/info/metrics)는 내부망 IP 화이트리스트 AND
+                         * 토큰 인증을 모두 충족할 때만 허용합니다. 2026-05-14 측정용 임시 permitAll 은
+                         * revert 했습니다(메트릭은 OTLP push 경로라 prometheus endpoint 를 scrape 하지 않으므로
+                         * 본 보호가 측정 파이프라인에 영향을 주지 않음).
+                         */
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/actuator/prometheus",
+                                "/api/actuator/info",
+                                "/api/actuator/metrics", "/api/actuator/metrics/**")
+                        .access(new ActuatorAccessAuthorizationManager(actuatorSecurityProperties.allowedCidrs()))
                         // CORS preflight 요청은 브라우저가 자동 호출하므로 인증 없이 허용합니다.
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         // 그 외 모든 요청: 인증 필수 + DB 기반 URL 인가

@@ -2,10 +2,12 @@ package com.nori.tc.ui.core.usecase;
 
 import com.nori.tc.ui.core.auth.UiAuthMetrics;
 import com.nori.tc.ui.core.exception.UiAuthenticationException;
+import com.nori.tc.ui.core.port.db.AuditLogPort;
 import com.nori.tc.ui.core.port.db.PasswordVerifierPort;
 import com.nori.tc.ui.core.port.db.SessionPort;
 import com.nori.tc.ui.core.port.db.UserPort;
 import com.nori.tc.ui.core.properties.UiAuthProperties;
+import com.nori.tc.ui.domain.audit.UiAuditEvent;
 import com.nori.tc.ui.domain.auth.AuthToken;
 import com.nori.tc.ui.domain.auth.UiAuthSessionCreateCommand;
 import com.nori.tc.ui.domain.auth.UiUserAccount;
@@ -53,19 +55,22 @@ public class LoginUseCase {
     private final PasswordVerifierPort passwordVerifierPort;
     private final UiAuthProperties authProperties;
     private final UiAuthMetrics authMetrics;
+    private final AuditLogPort auditLogPort;
 
     public LoginUseCase(
             final UserPort userPort,
             final SessionPort sessionPort,
             final PasswordVerifierPort passwordVerifierPort,
             final UiAuthProperties authProperties,
-            final UiAuthMetrics authMetrics
+            final UiAuthMetrics authMetrics,
+            final AuditLogPort auditLogPort
     ) {
         this.userPort = Objects.requireNonNull(userPort, "userPort is null");
         this.sessionPort = Objects.requireNonNull(sessionPort, "sessionPort is null");
         this.passwordVerifierPort = Objects.requireNonNull(passwordVerifierPort, "passwordVerifierPort is null");
         this.authProperties = Objects.requireNonNull(authProperties, "authProperties is null");
         this.authMetrics = Objects.requireNonNull(authMetrics, "authMetrics is null");
+        this.auditLogPort = Objects.requireNonNull(auditLogPort, "auditLogPort is null");
     }
 
     /**
@@ -86,6 +91,7 @@ public class LoginUseCase {
                 .orElseThrow(() -> {
                     // 사용자 미존재 여부를 외부에 노출하지 않기 위해 동일 메시지 사용
                     authMetrics.recordLoginFailure("user_not_found");
+                    auditLogPort.record(UiAuditEvent.loginFailure(userIdNorm, "user_not_found"));
                     log.warn("로그인 실패 - 사용자 없음. userIdNorm={}", userIdNorm);
                     return new UiAuthenticationException("아이디 또는 비밀번호가 올바르지 않습니다.");
                 });
@@ -93,6 +99,7 @@ public class LoginUseCase {
         // 계정 상태 확인: ACTIVE가 아니면 로그인 불가
         if (userInfo.status() != UiUserStatus.ACTIVE) {
             authMetrics.recordLoginFailure("inactive_account");
+            auditLogPort.record(UiAuditEvent.loginFailure(userIdNorm, "inactive_account"));
             log.warn("로그인 실패 - 비활성 계정. userIdNorm={}, status={}", userIdNorm, userInfo.status());
             throw new UiAuthenticationException("사용 불가능한 계정입니다.");
         }
@@ -100,6 +107,7 @@ public class LoginUseCase {
         // 비밀번호 검증: BCrypt 비교 (PasswordVerifierPort가 BCrypt 구현 제공)
         if (!passwordVerifierPort.matches(rawPassword, userInfo.passwordHash())) {
             authMetrics.recordLoginFailure("password_mismatch");
+            auditLogPort.record(UiAuditEvent.loginFailure(userIdNorm, "password_mismatch"));
             log.warn("로그인 실패 - 비밀번호 불일치. userIdNorm={}", userIdNorm);
             throw new UiAuthenticationException("아이디 또는 비밀번호가 올바르지 않습니다.");
         }
@@ -120,6 +128,7 @@ public class LoginUseCase {
         );
         sessionPort.save(session);
         authMetrics.recordLoginSuccess();
+        auditLogPort.record(UiAuditEvent.loginSuccess(userIdNorm));
 
         log.info("로그인 성공. userIdNorm={}, userPk={}, expiresAt={}", userIdNorm, userPk, expiresAt);
         return new AuthToken(token, userPk, now, expiresAt);

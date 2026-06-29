@@ -2,10 +2,14 @@ package com.nori.tc.ui.core.usecase;
 
 import com.nori.tc.ui.core.auth.UiAuthMetrics;
 import com.nori.tc.ui.core.exception.UiAuthenticationException;
+import com.nori.tc.ui.core.port.db.AuditLogPort;
 import com.nori.tc.ui.core.port.db.PasswordVerifierPort;
 import com.nori.tc.ui.core.port.db.SessionPort;
 import com.nori.tc.ui.core.port.db.UserPort;
 import com.nori.tc.ui.core.properties.UiAuthProperties;
+import com.nori.tc.ui.domain.audit.UiAuditAction;
+import com.nori.tc.ui.domain.audit.UiAuditEvent;
+import com.nori.tc.ui.domain.audit.UiAuditOutcome;
 import com.nori.tc.ui.domain.auth.AuthToken;
 import com.nori.tc.ui.domain.auth.UiAuthSessionCreateCommand;
 import com.nori.tc.ui.domain.auth.UiAuthSessionSnapshot;
@@ -15,6 +19,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
@@ -46,6 +51,8 @@ class LoginUseCaseTest {
         final CapturingSessionPort sessionPort = new CapturingSessionPort();
         final StubPasswordVerifier passwordVerifier = new StubPasswordVerifier(true);
 
+        final RecordingAuditLogPort auditLog = new RecordingAuditLogPort();
+
         final UiUserAccount activeUser = activeUser("testuser", UiUserStatus.ACTIVE);
         userPort.userByUserIdNorm = Optional.of(activeUser);
 
@@ -54,7 +61,8 @@ class LoginUseCaseTest {
                 sessionPort,
                 passwordVerifier,
                 createAuthProperties(),
-                UiAuthMetrics.noop()
+                UiAuthMetrics.noop(),
+                auditLog
         );
 
         final AuthToken token = useCase.execute(" TestUser ", "password-raw");
@@ -70,6 +78,14 @@ class LoginUseCaseTest {
         assertEquals(activeUser.userPk(), savedSession.userPk());
         assertTrue(passwordVerifier.lastRawPassword.equals("password-raw"));
         assertTrue(passwordVerifier.lastEncodedPassword.equals(activeUser.passwordHash()));
+
+        // W1-6: 로그인 성공 시 감사 레코드(actor·작업·결과)가 생성되어야 한다.
+        assertEquals(1, auditLog.events.size(), "로그인 성공 시 감사 이벤트 1건 기록");
+        final UiAuditEvent recorded = auditLog.events.get(0);
+        assertEquals(UiAuditAction.LOGIN, recorded.action());
+        assertEquals(UiAuditOutcome.SUCCESS, recorded.outcome());
+        assertEquals("testuser", recorded.actor());
+        assertNotNull(recorded.occurredAt(), "감사 이벤트에 시각이 기록되어야 한다.");
     }
 
     /**
@@ -78,12 +94,14 @@ class LoginUseCaseTest {
     @Test
     @DisplayName("사용자 미존재와 비밀번호 불일치는 동일 오류 메시지를 반환한다")
     void 사용자미존재_비밀번호불일치_동일메시지() {
+        final RecordingAuditLogPort missingUserAuditLog = new RecordingAuditLogPort();
         final LoginUseCase missingUserUseCase = new LoginUseCase(
                 new FakeUserPort(),
                 new CapturingSessionPort(),
                 new StubPasswordVerifier(true),
                 createAuthProperties(),
-                UiAuthMetrics.noop()
+                UiAuthMetrics.noop(),
+                missingUserAuditLog
         );
         final UiAuthenticationException missingUserEx = assertThrows(
                 UiAuthenticationException.class,
@@ -92,12 +110,14 @@ class LoginUseCaseTest {
 
         final FakeUserPort existingUserPort = new FakeUserPort();
         existingUserPort.userByUserIdNorm = Optional.of(activeUser("user-01", UiUserStatus.ACTIVE));
+        final RecordingAuditLogPort mismatchAuditLog = new RecordingAuditLogPort();
         final LoginUseCase passwordMismatchUseCase = new LoginUseCase(
                 existingUserPort,
                 new CapturingSessionPort(),
                 new StubPasswordVerifier(false),
                 createAuthProperties(),
-                UiAuthMetrics.noop()
+                UiAuthMetrics.noop(),
+                mismatchAuditLog
         );
         final UiAuthenticationException passwordMismatchEx = assertThrows(
                 UiAuthenticationException.class,
@@ -105,6 +125,14 @@ class LoginUseCaseTest {
         );
 
         assertEquals(missingUserEx.getMessage(), passwordMismatchEx.getMessage());
+
+        // W1-6: 두 실패 경로 모두 LOGIN/FAILURE 감사 레코드를 남긴다.
+        assertEquals(1, missingUserAuditLog.events.size());
+        assertEquals(UiAuditAction.LOGIN, missingUserAuditLog.events.get(0).action());
+        assertEquals(UiAuditOutcome.FAILURE, missingUserAuditLog.events.get(0).outcome());
+        assertEquals(1, mismatchAuditLog.events.size());
+        assertEquals(UiAuditOutcome.FAILURE, mismatchAuditLog.events.get(0).outcome());
+        assertEquals("user-01", mismatchAuditLog.events.get(0).actor());
     }
 
     /**
@@ -116,12 +144,14 @@ class LoginUseCaseTest {
         final FakeUserPort userPort = new FakeUserPort();
         userPort.userByUserIdNorm = Optional.of(activeUser("disabled-user", UiUserStatus.DISABLED));
 
+        final RecordingAuditLogPort auditLog = new RecordingAuditLogPort();
         final LoginUseCase useCase = new LoginUseCase(
                 userPort,
                 new CapturingSessionPort(),
                 new StubPasswordVerifier(true),
                 createAuthProperties(),
-                UiAuthMetrics.noop()
+                UiAuthMetrics.noop(),
+                auditLog
         );
 
         final UiAuthenticationException exception = assertThrows(
@@ -129,6 +159,12 @@ class LoginUseCaseTest {
                 () -> useCase.execute("disabled-user", "password")
         );
         assertEquals("사용 불가능한 계정입니다.", exception.getMessage());
+
+        // W1-6: 비활성 계정 차단도 LOGIN/FAILURE 감사 레코드를 남긴다.
+        assertEquals(1, auditLog.events.size());
+        assertEquals(UiAuditAction.LOGIN, auditLog.events.get(0).action());
+        assertEquals(UiAuditOutcome.FAILURE, auditLog.events.get(0).outcome());
+        assertEquals("inactive_account", auditLog.events.get(0).detail());
     }
 
     /**
@@ -228,6 +264,18 @@ class LoginUseCaseTest {
             this.lastRawPassword = rawPassword;
             this.lastEncodedPassword = encodedPassword;
             return matchResult;
+        }
+    }
+
+    /**
+     * 기록된 감사 이벤트를 그대로 수집하는 AuditLogPort 테스트 더블입니다.
+     */
+    private static final class RecordingAuditLogPort implements AuditLogPort {
+        private final List<UiAuditEvent> events = new ArrayList<>();
+
+        @Override
+        public void record(final UiAuditEvent event) {
+            events.add(event);
         }
     }
 }
