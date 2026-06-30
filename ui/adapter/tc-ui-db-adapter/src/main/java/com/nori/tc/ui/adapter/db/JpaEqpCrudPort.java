@@ -62,7 +62,7 @@ import java.util.Optional;
 public class JpaEqpCrudPort implements EqpCrudPort {
 
     private static final String PORT_COUNT_PARAM_NAME = "PORTCOUNT";
-    private static final String INITIAL_PORT_STATE = "down";
+    private static final String INITIAL_PORT_STATE = "DOWN";
     private static final int DEFAULT_PORT_COUNT = 4;
     private static final int MODEL_PARAM_PAGE_LIMIT = 500;
 

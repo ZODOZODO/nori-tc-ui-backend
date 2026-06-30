@@ -174,7 +174,7 @@ class JpaEqpCrudPortTest {
         final ArgumentCaptor<UpsertTcEqpPortStatus> portStatusCaptor = ArgumentCaptor.forClass(UpsertTcEqpPortStatus.class);
         verify(fixture.eqpPortStatusStore, org.mockito.Mockito.times(4)).upsert(portStatusCaptor.capture());
         assertEquals(List.of("1", "2", "3", "4"), portStatusCaptor.getAllValues().stream().map(UpsertTcEqpPortStatus::portId).toList());
-        assertEquals(List.of("down", "down", "down", "down"), portStatusCaptor.getAllValues().stream().map(UpsertTcEqpPortStatus::portState).toList());
+        assertEquals(List.of("DOWN", "DOWN", "DOWN", "DOWN"), portStatusCaptor.getAllValues().stream().map(UpsertTcEqpPortStatus::portState).toList());
     }
 
     @Test
@@ -225,7 +225,7 @@ class JpaEqpCrudPortTest {
         final ArgumentCaptor<UpsertTcEqpPortStatus> portStatusCaptor = ArgumentCaptor.forClass(UpsertTcEqpPortStatus.class);
         verify(fixture.eqpPortStatusStore, org.mockito.Mockito.times(3)).upsert(portStatusCaptor.capture());
         assertEquals(List.of("1", "2", "3"), portStatusCaptor.getAllValues().stream().map(UpsertTcEqpPortStatus::portId).toList());
-        assertEquals(List.of("down", "down", "down"), portStatusCaptor.getAllValues().stream().map(UpsertTcEqpPortStatus::portState).toList());
+        assertEquals(List.of("DOWN", "DOWN", "DOWN"), portStatusCaptor.getAllValues().stream().map(UpsertTcEqpPortStatus::portState).toList());
     }
 
     @Test
