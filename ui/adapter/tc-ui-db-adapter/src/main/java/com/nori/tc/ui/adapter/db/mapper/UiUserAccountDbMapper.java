@@ -21,7 +21,8 @@ public final class UiUserAccountDbMapper {
                 source.userId(),
                 source.userIdNorm(),
                 source.passwordHash(),
-                UiUserStatus.valueOf(source.status().name())
+                UiUserStatus.valueOf(source.status().name()),
+                source.passwordChangedAt()
         );
     }
 }

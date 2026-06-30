@@ -105,7 +105,8 @@ public class AuthController {
             final LoginResponse response = new LoginResponse(
                     authToken.userPk(),
                     authToken.issuedAt(),
-                    authToken.expiresAt()
+                    authToken.expiresAt(),
+                    authToken.passwordExpired()
             );
             final ResponseCookie authCookie = authCookieFactory.buildAuthCookie(
                     authToken.token(),

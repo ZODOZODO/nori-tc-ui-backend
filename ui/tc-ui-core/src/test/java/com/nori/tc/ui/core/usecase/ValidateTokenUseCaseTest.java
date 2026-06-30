@@ -176,7 +176,8 @@ class ValidateTokenUseCaseTest {
                 "tester",
                 "tester",
                 "$2a$10$hash",
-                UiUserStatus.ACTIVE
+                UiUserStatus.ACTIVE,
+                java.time.OffsetDateTime.now()
         );
     }
 

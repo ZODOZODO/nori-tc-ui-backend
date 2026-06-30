@@ -25,6 +25,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -168,6 +169,54 @@ class LoginUseCaseTest {
     }
 
     /**
+     * 비밀번호 최종 변경 후 90일이 지나면 로그인은 성공하되 만료 플래그가 set 된다.
+     */
+    @Test
+    @DisplayName("비밀번호 변경 후 90일 초과 시 로그인은 성공하고 passwordExpired=true")
+    void 비밀번호_만료_플래그_set() {
+        final FakeUserPort userPort = new FakeUserPort();
+        userPort.userByUserIdNorm = Optional.of(
+                userWithPasswordChangedAt("expired-user", OffsetDateTime.now().minusDays(91)));
+
+        final LoginUseCase useCase = new LoginUseCase(
+                userPort,
+                new CapturingSessionPort(),
+                new StubPasswordVerifier(true),
+                createAuthProperties(),
+                UiAuthMetrics.noop(),
+                new RecordingAuditLogPort()
+        );
+
+        final AuthToken token = useCase.execute("expired-user", "password-raw");
+
+        assertTrue(token.passwordExpired(), "변경 후 90일 초과 시 passwordExpired=true 여야 한다.");
+    }
+
+    /**
+     * 비밀번호 최종 변경 후 90일 이내면 만료 플래그가 unset 이다.
+     */
+    @Test
+    @DisplayName("비밀번호 변경 후 90일 이내면 passwordExpired=false")
+    void 비밀번호_미만료_플래그_unset() {
+        final FakeUserPort userPort = new FakeUserPort();
+        userPort.userByUserIdNorm = Optional.of(
+                userWithPasswordChangedAt("fresh-user", OffsetDateTime.now().minusDays(89)));
+
+        final LoginUseCase useCase = new LoginUseCase(
+                userPort,
+                new CapturingSessionPort(),
+                new StubPasswordVerifier(true),
+                createAuthProperties(),
+                UiAuthMetrics.noop(),
+                new RecordingAuditLogPort()
+        );
+
+        final AuthToken token = useCase.execute("fresh-user", "password-raw");
+
+        assertFalse(token.passwordExpired(), "변경 후 90일 이내면 passwordExpired=false 여야 한다.");
+    }
+
+    /**
      * 테스트용 활성/비활성 사용자 도메인 객체를 생성합니다.
      *
      * @param userIdNorm 정규화 사용자 ID
@@ -175,7 +224,15 @@ class LoginUseCaseTest {
      * @return 테스트용 TcUserInfo
      */
     private static UiUserAccount activeUser(final String userIdNorm, final UiUserStatus status) {
-        return new UiUserAccount(20L, userIdNorm, userIdNorm, "$2a$10$hash", status);
+        // 비밀번호 변경 시각을 최근(now)으로 두어 기본 케이스는 만료되지 않도록 한다.
+        return new UiUserAccount(20L, userIdNorm, userIdNorm, "$2a$10$hash", status, OffsetDateTime.now());
+    }
+
+    private static UiUserAccount userWithPasswordChangedAt(
+            final String userIdNorm,
+            final OffsetDateTime passwordChangedAt
+    ) {
+        return new UiUserAccount(20L, userIdNorm, userIdNorm, "$2a$10$hash", UiUserStatus.ACTIVE, passwordChangedAt);
     }
 
     /**

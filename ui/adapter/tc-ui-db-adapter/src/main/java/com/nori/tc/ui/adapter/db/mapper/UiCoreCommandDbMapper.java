@@ -62,6 +62,7 @@ public final class UiCoreCommandDbMapper {
                 source.passwordHash(),
                 source.email(),
                 UiDomainEnumMapper.toDbUserStatus(source.status()),
+                source.passwordChangedAt(),
                 source.createdBy(),
                 source.updatedBy()
         );

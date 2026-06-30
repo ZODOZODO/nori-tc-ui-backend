@@ -140,7 +140,7 @@ public class UserAdminFacade {
             return false;
         }
 
-        final String passwordHash = passwordPolicyService.encodeNewPassword(request.newPassword());
+        final String passwordHash = passwordPolicyService.encodeChangedPassword(userPk, request.newPassword());
         userCrudPort.upsert(assembler.toPasswordResetCommand(request, optionalExisting.get(), passwordHash));
         return true;
     }
@@ -150,11 +150,12 @@ public class UserAdminFacade {
             final UserUpsertRequest request,
             final UiManagedUser existing
     ) {
-        final String passwordHash = assembler.hasPassword(request.password())
-                ? passwordPolicyService.encodeNewPassword(request.password())
+        final boolean passwordChanged = assembler.hasPassword(request.password());
+        final String passwordHash = passwordChanged
+                ? passwordPolicyService.encodeChangedPassword(userPk, request.password())
                 : existing.passwordHash();
         return assembler.toUserInfoResponse(
-                userCrudPort.upsert(assembler.toUpdateCommand(userPk, request, existing, passwordHash))
+                userCrudPort.upsert(assembler.toUpdateCommand(userPk, request, existing, passwordHash, passwordChanged))
         );
     }
 }

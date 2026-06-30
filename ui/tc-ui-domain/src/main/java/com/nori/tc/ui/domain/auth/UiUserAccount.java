@@ -1,5 +1,6 @@
 package com.nori.tc.ui.domain.auth;
 
+import java.time.OffsetDateTime;
 import java.util.Objects;
 
 /**
@@ -12,13 +13,15 @@ import java.util.Objects;
  * @param userIdNorm 정규화 로그인 ID
  * @param passwordHash BCrypt 해시
  * @param status 사용자 상태
+ * @param passwordChangedAt 비밀번호 최종 변경 시각(만료 판정용, Flyway V3 이전 행은 null 가능)
  */
 public record UiUserAccount(
         long userPk,
         String userId,
         String userIdNorm,
         String passwordHash,
-        UiUserStatus status
+        UiUserStatus status,
+        OffsetDateTime passwordChangedAt
 ) {
 
     public UiUserAccount {

@@ -16,6 +16,7 @@ import com.nori.tc.ui.domain.useradmin.UiUserGroup;
 import com.nori.tc.ui.domain.useradmin.UiUserGroupMember;
 import org.springframework.stereotype.Component;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -41,19 +42,23 @@ public class UserAdminAssembler {
             final UserUpsertRequest request,
             final String passwordHash
     ) {
-        return toUpsertCommand(null, request, passwordHash, resolveCreateStatus(request.status()));
+        // 신규 생성은 비밀번호를 새로 설정하므로 만료 카운트다운 기준 시각을 now 로 둔다.
+        return toUpsertCommand(null, request, passwordHash, resolveCreateStatus(request.status()), OffsetDateTime.now());
     }
 
     public UiUserUpsertCommand toUpdateCommand(
             final long userPk,
             final UserUpsertRequest request,
             final UiManagedUser existing,
-            final String passwordHash
+            final String passwordHash,
+            final boolean passwordChanged
     ) {
         final UiUserStatus status = request.status() == null
                 ? UiUserStatus.valueOf(existing.status().name())
                 : request.status();
-        return toUpsertCommand(userPk, request, passwordHash, status);
+        // 비밀번호가 변경된 경우에만 password_changed_at 을 now 로 갱신(미변경 시 null → DB 기존 값 보존).
+        final OffsetDateTime passwordChangedAt = passwordChanged ? OffsetDateTime.now() : null;
+        return toUpsertCommand(userPk, request, passwordHash, status, passwordChangedAt);
     }
 
     public UiUserUpsertCommand toPasswordResetCommand(
@@ -71,6 +76,8 @@ public class UserAdminAssembler {
                 passwordHash,
                 existing.email(),
                 UiUserStatus.valueOf(existing.status().name()),
+                // 비밀번호 초기화는 항상 비밀번호를 변경하므로 만료 기준 시각을 now 로 갱신한다.
+                OffsetDateTime.now(),
                 existing.createdBy(),
                 request.updatedBy()
         );
@@ -199,7 +206,8 @@ public class UserAdminAssembler {
             final Long userPk,
             final UserUpsertRequest request,
             final String passwordHash,
-            final UiUserStatus status
+            final UiUserStatus status,
+            final OffsetDateTime passwordChangedAt
     ) {
         final String normalizedUserId = normalizeUserId(request.userId());
         return new UiUserUpsertCommand(
@@ -212,6 +220,7 @@ public class UserAdminAssembler {
                 passwordHash,
                 request.email(),
                 status,
+                passwordChangedAt,
                 request.createdBy(),
                 request.updatedBy()
         );

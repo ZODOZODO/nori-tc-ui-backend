@@ -13,6 +13,7 @@ import org.springframework.context.annotation.Import;
         DemoJobJdbcCleanupPort.class,
         DeployJdbcStorePort.class,
         JdbcAuditLogPort.class,
+        JdbcPasswordHistoryPort.class,
         DeployPlanningStateJdbcPort.class,
         DeployScenarioCatalogMetaJdbcPort.class,
         EqpManagementDbSupport.class,

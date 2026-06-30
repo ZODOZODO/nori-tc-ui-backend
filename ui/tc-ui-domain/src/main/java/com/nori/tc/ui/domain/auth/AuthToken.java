@@ -21,12 +21,14 @@ import java.util.Objects;
  * @param userPk    토큰 소유 사용자의 PK (tc_user_info.user_pk)
  * @param issuedAt  토큰 발급 시각
  * @param expiresAt 토큰 만료 시각 (issuedAt + tc.ui.backend.auth.session-ttl-hours)
+ * @param passwordExpired 비밀번호 만료(최종 변경 + 90일 경과) 여부. 로그인은 성공하되 변경 권고 플래그로만 사용(하드 차단 아님).
  */
 public record AuthToken(
         String token,
         long userPk,
         OffsetDateTime issuedAt,
-        OffsetDateTime expiresAt
+        OffsetDateTime expiresAt,
+        boolean passwordExpired
 ) {
 
     /**

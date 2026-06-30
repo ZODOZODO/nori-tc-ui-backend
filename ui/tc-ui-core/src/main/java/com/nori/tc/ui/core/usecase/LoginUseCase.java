@@ -47,6 +47,9 @@ public class LoginUseCase {
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     private static final int TOKEN_LENGTH = 64;
 
+    // 비밀번호 만료 주기(일). account-lifecycle-policy.md §2.2 = 90일.
+    private static final long PASSWORD_EXPIRY_DAYS = 90L;
+
     // SecureRandom은 Thread-safe하므로 싱글톤으로 사용합니다.
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
@@ -130,8 +133,28 @@ public class LoginUseCase {
         authMetrics.recordLoginSuccess();
         auditLogPort.record(UiAuditEvent.loginSuccess(userIdNorm));
 
-        log.info("로그인 성공. userIdNorm={}, userPk={}, expiresAt={}", userIdNorm, userPk, expiresAt);
-        return new AuthToken(token, userPk, now, expiresAt);
+        final boolean passwordExpired = isPasswordExpired(userInfo.passwordChangedAt(), now);
+
+        log.info("로그인 성공. userIdNorm={}, userPk={}, expiresAt={}, passwordExpired={}",
+                userIdNorm, userPk, expiresAt, passwordExpired);
+        return new AuthToken(token, userPk, now, expiresAt, passwordExpired);
+    }
+
+    /**
+     * 비밀번호 만료 여부를 판정합니다(최종 변경 시각 + 90일 < 현재).
+     *
+     * <p>변경 시각이 null(Flyway V3 이전 행)이면 만료로 보지 않습니다 — 만료 카운트다운 기준 시각이
+     * 없으므로 변경 권고를 강제하지 않습니다.</p>
+     *
+     * @param passwordChangedAt 비밀번호 최종 변경 시각(null 가능)
+     * @param now               기준 현재 시각
+     * @return 만료되었으면 true
+     */
+    private static boolean isPasswordExpired(final OffsetDateTime passwordChangedAt, final OffsetDateTime now) {
+        if (passwordChangedAt == null) {
+            return false;
+        }
+        return passwordChangedAt.plusDays(PASSWORD_EXPIRY_DAYS).isBefore(now);
     }
 
     /**
