@@ -17,6 +17,7 @@ dependencies {
     implementation(libs.spring.boot.starter.security)
     implementation(libs.spring.boot.starter.actuator)
     implementation(libs.spring.boot.starter.validation)
+    implementation(libs.springdoc.openapi.starter.webmvc.ui)
     implementation(libs.jackson.databind)
     compileOnly(libs.spring.boot)
     compileOnly(libs.spring.boot.autoconfigure)
@@ -33,4 +34,10 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // W2-3: OpenApiDocsGenerationTest 가 /v3/api-docs 응답을 추적 경로(레포 루트 docs/api-reference)로 덤프한다.
+    // rootDir = nori-tc-ui-backend 레포 루트(모듈 작업 디렉터리 의존 제거). 크로스-레포 쓰기 금지(소유 레포 내).
+    systemProperty(
+        "openapi.output.file",
+        rootDir.resolve("docs/api-reference/openapi.json").absolutePath,
+    )
 }

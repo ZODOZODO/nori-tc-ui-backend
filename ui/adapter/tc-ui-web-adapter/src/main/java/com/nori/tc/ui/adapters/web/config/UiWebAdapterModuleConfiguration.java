@@ -43,6 +43,7 @@ import org.springframework.context.annotation.Import;
 @Import({
         UiSimulatorConfiguration.class,
         UiSecurityPolicyConfiguration.class,
+        OpenApiInfoConfig.class,
         GroupAdminAssembler.class,
         GroupAdminFacade.class,
         PermissionAdminAssembler.class,

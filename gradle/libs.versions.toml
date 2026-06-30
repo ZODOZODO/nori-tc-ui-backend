@@ -57,6 +57,14 @@ mssqlJdbc = "12.6.3.jre11"
 oracleJdbc = "23.4.0.24.05"
 
 ################################################################################
+# API Reference (OpenAPI)
+# - springdoc 3.x 라인이 Spring Boot 4.0.x(Spring Framework 7) 대상.
+#   2.x 라인은 Spring Boot 3.x 대상이라 SB4 와 비호환 → 3.x 명시 필수.
+# - Spring Boot BOM 비관리 라이브러리 → 버전 명시.
+################################################################################
+springdoc = "3.0.3"
+
+################################################################################
 # Test
 ################################################################################
 junit = "5.11.0"
@@ -121,6 +129,13 @@ spring-boot-starter-security-test = { module = "org.springframework.boot:spring-
 # - 기존 spring-boot-test-autoconfigure의 web.servlet 패키지가 이 모듈로 이동
 spring-boot-starter-webmvc-test = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }
 
+
+################################################################################
+# API Reference (OpenAPI)
+# - springdoc-openapi-starter-webmvc-ui: webmvc 계열(ui-backend 는 webflux 아님).
+#   springdoc 3.x = Spring Boot 4.0.x 대상(2.x 는 SB3 대상이라 비호환).
+################################################################################
+springdoc-openapi-starter-webmvc-ui = { module = "org.springdoc:springdoc-openapi-starter-webmvc-ui", version.ref = "springdoc" }
 
 ################################################################################
 # Kafka (New)
