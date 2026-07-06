@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 테스트는 콘솔 전용 — 파일 로그(APP_FILE/EQP_SIFT) 미생성. 공통 정의는 tc-common-logging 의 logback-console-only.xml. -->
+<configuration>
+    <include resource="logback-console-only.xml"/>
+</configuration>
