@@ -21,6 +21,8 @@ import com.nori.tc.ui.core.model.UiPageRequest;
 
 import java.time.OffsetDateTime;
 import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -102,6 +104,22 @@ public interface DeployStorePort {
 
     Optional<DeployStoredSnapshot> findLatestTargetSnapshot(
             long deployTargetKey,
+            DeploySnapshotScope snapshotScope,
+            String stepCode,
+            DeploySnapshotKind snapshotKind
+    );
+
+    /**
+     * 여러 deploy target 의 최신 스냅샷을 한 번에 조회합니다(polling N+1 완화, R5).
+     *
+     * @param deployTargetKeys 조회 대상 deploy_target_key 컬렉션
+     * @param snapshotScope 스냅샷 scope
+     * @param stepCode step code(null 허용)
+     * @param snapshotKind 스냅샷 kind
+     * @return deployTargetKey → 최신 스냅샷 (없는 target 은 부재)
+     */
+    Map<Long, DeployStoredSnapshot> findLatestTargetSnapshots(
+            Collection<Long> deployTargetKeys,
             DeploySnapshotScope snapshotScope,
             String stepCode,
             DeploySnapshotKind snapshotKind
