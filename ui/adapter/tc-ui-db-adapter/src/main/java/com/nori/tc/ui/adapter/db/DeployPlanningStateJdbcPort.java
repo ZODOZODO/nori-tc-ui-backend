@@ -10,7 +10,9 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -22,6 +24,28 @@ import java.util.Optional;
  */
 @Repository
 public class DeployPlanningStateJdbcPort implements DeployPlanningStatePort {
+
+    // 단건/배치 조회가 동일한 SELECT 절을 공유해 light 필드 동등성을 보장한다(WHERE 만 상이).
+    private static final String CURRENT_STATE_SELECT = """
+            SELECT e.eqp_key,
+                   e.eqp_id,
+                   e.comm_interface,
+                   e.comm_mode,
+                   e.eqp_ip,
+                   e.eqp_port,
+                   e.model_version_key,
+                   e.applied_param_version,
+                   e.gateway_jar_key,
+                   e.business_jar_key,
+                   e.route_partition,
+                   s.socket_protocol_type,
+                   h.device_id AS hsms_device_id
+              FROM tc_eqp e
+              LEFT JOIN tc_eqp_socket s
+                ON s.eqp_key = e.eqp_key
+              LEFT JOIN tc_eqp_hsms h
+                ON h.eqp_key = e.eqp_key
+            """;
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final EqpManagementDbSupport eqpManagementDbSupport;
@@ -39,29 +63,10 @@ public class DeployPlanningStateJdbcPort implements DeployPlanningStatePort {
         final MapSqlParameterSource parameters = new MapSqlParameterSource()
                 .addValue("eqpId", eqpId);
 
-        final List<DeployCurrentState> rows = jdbcTemplate.query("""
-                        SELECT e.eqp_key,
-                               e.eqp_id,
-                               e.comm_interface,
-                               e.comm_mode,
-                               e.eqp_ip,
-                               e.eqp_port,
-                               e.model_version_key,
-                               e.applied_param_version,
-                               e.gateway_jar_key,
-                               e.business_jar_key,
-                               e.route_partition,
-                               s.socket_protocol_type,
-                               h.device_id AS hsms_device_id
-                          FROM tc_eqp e
-                          LEFT JOIN tc_eqp_socket s
-                            ON s.eqp_key = e.eqp_key
-                          LEFT JOIN tc_eqp_hsms h
-                            ON h.eqp_key = e.eqp_key
-                         WHERE e.eqp_id = :eqpId
-                        """,
+        final List<DeployCurrentState> rows = jdbcTemplate.query(
+                CURRENT_STATE_SELECT + " WHERE e.eqp_id = :eqpId",
                 parameters,
-                (resultSet, rowNum) -> mapCurrentState(resultSet)
+                (resultSet, rowNum) -> mapCurrentStateRow(resultSet, resolveEquipmentProfile(resultSet.getString("eqp_id")))
         );
 
         if (rows.isEmpty()) {
@@ -70,14 +75,45 @@ public class DeployPlanningStateJdbcPort implements DeployPlanningStatePort {
         return Optional.of(rows.getFirst());
     }
 
-    private DeployCurrentState mapCurrentState(final ResultSet resultSet) throws SQLException {
-        final String eqpId = resultSet.getString("eqp_id");
-        final UiEquipmentProfileSnapshot equipmentProfile = eqpManagementDbSupport.loadSnapshotByEqpId(eqpId)
+    /**
+     * preview 전용 경량 배치 — 단건 SQL 을 IN-절로 확장하고 equipmentProfile 을 로드하지 않습니다(R2).
+     * SELECT 절은 단건과 동일하므로 light 필드는 단건 조회와 동등합니다.
+     */
+    @Override
+    public Map<String, DeployCurrentState> findCurrentLightStatesByEqpIds(final List<String> eqpIds) {
+        if (eqpIds.isEmpty()) {
+            return Map.of();
+        }
+
+        final MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("eqpIds", eqpIds);
+
+        final List<DeployCurrentState> rows = jdbcTemplate.query(
+                CURRENT_STATE_SELECT + " WHERE e.eqp_id IN (:eqpIds)",
+                parameters,
+                (resultSet, rowNum) -> mapCurrentStateRow(resultSet, null)
+        );
+
+        final Map<String, DeployCurrentState> result = new LinkedHashMap<>();
+        for (final DeployCurrentState row : rows) {
+            result.put(row.eqpId(), row);
+        }
+        return result;
+    }
+
+    private UiEquipmentProfileSnapshot resolveEquipmentProfile(final String eqpId) {
+        return eqpManagementDbSupport.loadSnapshotByEqpId(eqpId)
                 .map(this::toEquipmentProfile)
                 .orElse(null);
+    }
+
+    private DeployCurrentState mapCurrentStateRow(
+            final ResultSet resultSet,
+            final UiEquipmentProfileSnapshot equipmentProfile
+    ) throws SQLException {
         return new DeployCurrentState(
                 resultSet.getLong("eqp_key"),
-                eqpId,
+                resultSet.getString("eqp_id"),
                 resultSet.getString("comm_interface"),
                 resultSet.getString("comm_mode"),
                 resultSet.getString("eqp_ip"),

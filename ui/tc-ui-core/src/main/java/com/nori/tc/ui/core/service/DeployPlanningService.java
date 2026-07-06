@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -116,9 +117,16 @@ public class DeployPlanningService {
         final List<String> remainingEqpIds = new ArrayList<>();
         final LinkedHashSet<DeployDeltaKind> unionChangeKinds = new LinkedHashSet<>();
 
+        // preview 는 delta 4개 필드만 필요하므로 equipmentProfile 없는 경량 상태를 1회 배치 조회한다(근원 B, R2).
+        final Map<String, DeployCurrentState> currentStates = deployPlanningStatePort.findCurrentLightStatesByEqpIds(
+                command.targets().stream()
+                        .map(DeployRegisterScenarioPreviewCommand.TargetRequest::eqpId)
+                        .toList()
+        );
+
         for (DeployRegisterScenarioPreviewCommand.TargetRequest target : command.targets()) {
             final Optional<DeployCurrentState> currentStateOptional =
-                    deployPlanningStatePort.findCurrentStateByEqpId(target.eqpId());
+                    Optional.ofNullable(currentStates.get(target.eqpId()));
             validateCurrentStatePrecondition(UiCommandEventType.EQP_REGISTER_DEPLOY, target.eqpId(), currentStateOptional);
 
             final DeployCurrentState currentState = currentStateOptional.orElse(null);
