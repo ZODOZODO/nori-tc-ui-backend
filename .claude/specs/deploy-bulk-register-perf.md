@@ -35,16 +35,16 @@ Deploy 페이지 '등록'에서 B라인 전체 설비를 조회 → 전체 선�
 
 > `[repo]` 표기: **BE** = nori-tc-ui-backend, **FE** = nori-tc-ui-front
 
-- [ ] R1. `[BE]` `DeployPlanningStatePort` 에 **배치 조회 메서드** 추가 — `findCurrentStatesByEqpIds(List<String>) → Map<String, DeployCurrentState>` (또는 경량/전체 2종). 단건 `findCurrentStateByEqpId` 는 유지(다른 영향 최소화).
-- [ ] R2. `[BE]` **preview 경로 경량화** — preview 는 delta 4개 필드만 필요하므로 `equipmentProfile`(heavy `loadSnapshotByEqpId`)을 **로드하지 않는** 경량 current-state 를 1회 벌크 SQL(`tc_eqp` + socket/hsms join, `JpaDeployRegisterQueryPort` 패턴)로 조회. preview 루프의 per-eqp 호출 제거.
-- [ ] R3. `[BE]` **plan 경로 배치화** — plan 은 `injectEquipmentProfile`([`:683`](../../ui/tc-ui-core/src/main/java/com/nori/tc/ui/core/service/DeployPlanningService.java))에 `equipmentProfile` 이 필요하므로, 필요한 스냅샷을 **테이블별 IN-clause 벌크 로드**(선례 R3~R8 방식)로 전환. per-eqp `loadSnapshotByEqpId` 제거.
-- [ ] R4. `[BE]` **delta / 시나리오 / step 판정 결과는 전후 100% 동일**. 계산 로직(`calculateDeltaKinds` / `resolveScenario` / `resolveSteps`)은 불변, 데이터 공급 방식만 변경.
-- [ ] R5. `[BE]` **폴링 N+1 완화** — `resolveAsIsState` 의 per-target 스냅샷 조회를 `deployKey` 기준 배치 조회로. as-is 요약은 `summary-cache-ttl-seconds`(기 설정) 활용해 매 폴링 재계산 회피.
-- [ ] R6. `[BE]` 신규 컴포넌트(신규 port impl 등)는 같은 모듈의 `*ModuleConfiguration` 의 `@Import` 에 명시 등록(nori-tc-common 컨벤션).
-- [ ] R7. `[FE]` 등록 검색 테이블 + 선택 테이블에 `features={{ virtualization: true }}` 부여.
-- [ ] R8. `[FE]` `searchSelectionIds` 멤버십 조회를 `Set` 으로 → 체크박스 O(1). 동기화 effect 의 `selectedEqpIds.includes` 를 `Set` 으로 → filter O(n).
-- [ ] R9. `[FE]` **개수 가드** — 선택/배포 시점에 서버 상한(`max-targets-per-request`)과 정합한 개수 검증. 초과 시 raw 400 대신 "한 번에 최대 N대까지 배포 가능" 안내. (상한값 자체 변경은 Out of Scope.)
-- [ ] R10. `[FE]` 상호작용 동작 불변 — 전체선택/부분선택/추가/제거/파라미터 편집 등 기존 UX 그대로. 가상화로 off-screen 행 선택도 유지(SelectableTable 이 이미 지원).
+- [x] R1. `[BE]` `DeployPlanningStatePort` 에 **배치 조회 메서드** 추가 — `findCurrentStatesByEqpIds(List<String>) → Map<String, DeployCurrentState>` (또는 경량/전체 2종). 단건 `findCurrentStateByEqpId` 는 유지(다른 영향 최소화).
+- [x] R2. `[BE]` **preview 경로 경량화** — preview 는 delta 4개 필드만 필요하므로 `equipmentProfile`(heavy `loadSnapshotByEqpId`)을 **로드하지 않는** 경량 current-state 를 1회 벌크 SQL(`tc_eqp` + socket/hsms join, `JpaDeployRegisterQueryPort` 패턴)로 조회. preview 루프의 per-eqp 호출 제거.
+- [x] R3. `[BE]` **plan 경로 배치화** — plan 은 `injectEquipmentProfile`([`:683`](../../ui/tc-ui-core/src/main/java/com/nori/tc/ui/core/service/DeployPlanningService.java))에 `equipmentProfile` 이 필요하므로, 필요한 스냅샷을 **테이블별 IN-clause 벌크 로드**(선례 R3~R8 방식)로 전환. per-eqp `loadSnapshotByEqpId` 제거.
+- [x] R4. `[BE]` **delta / 시나리오 / step 판정 결과는 전후 100% 동일**. 계산 로직(`calculateDeltaKinds` / `resolveScenario` / `resolveSteps`)은 불변, 데이터 공급 방식만 변경.
+- [~] R5. `[BE]` **폴링 N+1 완화** — `resolveAsIsState` 의 per-target 스냅샷 조회를 `deployKey` 기준 배치 조회로. as-is 요약은 `summary-cache-ttl-seconds`(기 설정) 활용해 매 폴링 재계산 회피. — **부분**: per-target 배치화(`findLatestTargetSnapshots` DISTINCT ON) + 라이브 fallback 중복 조회(2→1) 제거 완료. as-is 캐시는 D4(c)로 후속 분리(Out of Scope 인접).
+- [x] R6. `[BE]` 신규 컴포넌트(신규 port impl 등)는 같은 모듈의 `*ModuleConfiguration` 의 `@Import` 에 명시 등록(nori-tc-common 컨벤션).
+- [x] R7. `[FE]` 등록 검색 테이블 + 선택 테이블에 `features={{ virtualization: true }}` 부여.
+- [x] R8. `[FE]` `searchSelectionIds` 멤버십 조회를 `Set` 으로 → 체크박스 O(1). 동기화 effect 의 `selectedEqpIds.includes` 를 `Set` 으로 → filter O(n).
+- [x] R9. `[FE]` **개수 가드** — 선택/배포 시점에 서버 상한(`max-targets-per-request`)과 정합한 개수 검증. 초과 시 raw 400 대신 "한 번에 최대 N대까지 배포 가능" 안내. (상한값 자체 변경은 Out of Scope.)
+- [x] R10. `[FE]` 상호작용 동작 불변 — 전체선택/부분선택/추가/제거/파라미터 편집 등 기존 UX 그대로. 가상화로 off-screen 행 선택도 유지(SelectableTable 이 이미 지원).
 
 ## Constraints
 
@@ -58,19 +58,21 @@ Deploy 페이지 '등록'에서 B라인 전체 설비를 조회 → 전체 선�
 
 ## Acceptance Criteria
 
+> Validate 결과(2026-07-06): 아래 [PASS]/[부분] 은 이번 검증 세션 실측. 명령별 출력은 dev-report §3 + Validate 세션 로그 참조.
+
 ### 백엔드 (BE)
-- `./gradlew :ui:tc-ui-core:test` PASS (planner/deploy 관련 포함).
-- `./gradlew :ui:adapter:tc-ui-db-adapter:test` PASS (신규 배치 어댑터 단위 테스트 포함).
-- `./gradlew build` PASS (전체).
-- **동등성 테스트**: 동일 입력(다중 target)에 대해 preview 의 `removedEqpIds/remainingEqpIds/unionChangeKinds/recommendedScenarioCode` 및 plan 의 target별 `deltaKinds/scenarioCode/resolvedSteps` 가 배치화 전후 **동일**(고정 fixture 스냅샷 테스트).
-- **쿼리 수 기준**: target 100건 배포의 preview 1회 SQL DEBUG 로그 라인 수 **≤ 30**(현재 ~1,400), plan 1회 **≤ 30**. (선례 측정 방식 재사용.)
-- ArchUnit 위반 0건.
+- [PASS] `./gradlew :ui:tc-ui-core:test` PASS (DeployPlanningServiceTest 13/0/0, DeployServiceTest 24/0/0, ArchUnit 3/0/0).
+- [PASS] `./gradlew :ui:adapter:tc-ui-db-adapter:test` PASS (LightBatch 3/0/0 실 PG **skip 아님**, BatchEquivalence 2/0/0).
+- [PASS] `./gradlew build` PASS (전체, `-PuseLocalMaven`, BUILD SUCCESSFUL).
+- [PASS] **동등성 테스트**: 서비스 계층(DeployPlanningServiceTest 배치화 후 무수정 GREEN) + 어댑터 계층(EqpManagementDbSupportBatchEquivalenceTest — 동일 store row 를 단건/배치 양 경로 주입, planner 필드 eqp/model/hsms/socket/plc/log/state/portStatus/param + param 정렬 동등 assert). Docker 가용으로 실 PG 테스트도 실행됨.
+- [부분] **쿼리 수 기준** ≤ 30: **코드 구조 검증 완료** — preview=1(light IN), plan≈10~14(light IN 1 + eqp/model findAll 스캔 각 1~2(SCAN_PAGE_LIMIT=500, 설비<1000) + hsms/socket/plc/log/state/portStatus/param IN 7). 쿼리 수가 **타깃 수가 아닌 (테이블 수+페이지 수)에 비례**하여 구조적으로 ≤30. **라이브 SQL DEBUG 100-eqp 실측은 미수행**(러닝 앱+100설비 시드+인증 필요).
+- [PASS] ArchUnit 위반 0건 (UiCoreArchitectureGuardTest 2/0/0 + UiCoreDependencyArchTest 1/0/0).
 
 ### 프론트 (FE)
-- `npm run test:unit` PASS.
-- e2e(worst-case): B라인 100+ 설비 mock 으로 등록 조회 → 전체 선택 → 선택에 추가 → 배포 시나리오 팝업 진입까지 Playwright assertion 통과 + `page.on('console'/'pageerror')` error level 0건.
-- 가상화 활성: 등록 검색 테이블 렌더 시 DOM 행 수가 전체 데이터 수보다 작음(가상 윈도우) — Playwright DOM 카운트로 검증.
-- 개수 가드: 상한 초과 선택 시 안내 문구 노출 + 서버 400 미도달(assertion).
+- [PASS] `npm run test:unit` PASS (167 pass / 0 fail / 0 skip, 개수 가드 경계값 테스트 포함).
+- [PASS] e2e(worst-case): 120대 mock 으로 등록 조회 → 전체 선택 → 선택에 추가 → **개수 가드 차단** + `page.on('console'/'pageerror')` error 0건 (deploy-register-bulk-guard.spec.ts 1 passed). ※ 100+ 는 가드가 팝업 진입 전 차단하므로 "시나리오 팝업 진입"은 유효 개수(≤100) 케이스인 deploy-register-scenario-modal.spec.ts 가 커버(동일 실행서 pass, 총 3 passed).
+- [PASS] 가상화 활성: 렌더 distinct 행 수 `>0 && <120`(전체) — Playwright DOM 카운트 assert.
+- [PASS] 개수 가드: "최대 100대" 안내 노출 + preview/create(서버 400) 미도달 assert.
 
 ## Out of Scope
 
@@ -83,9 +85,9 @@ Deploy 페이지 '등록'에서 B라인 전체 설비를 조회 → 전체 선�
 ## SDD 진행 상태
 
 - [x] **Specify** — 이 SPEC.md 작성 완료 (산출물: `.claude/specs/deploy-bulk-register-perf.md`)
-- [ ] **Plan** — 별 세션 Plan Mode 로 구현 계획 수립 (산출물: `.claude/specs/deploy-bulk-register-perf-plan.md`)
-- [ ] **Implement** — 별 세션에서 AC 만족 구현 (산출물: `.claude/specs/deploy-bulk-register-perf-dev-report.md`)
-- [ ] **Validate** — 별 세션에서 SPEC + Plan + Dev report 셋 다 입력으로 검증, 위 체크박스 업데이트
+- [x] **Plan** — 구현 계획 수립 완료 (산출물: `.claude/specs/deploy-bulk-register-perf-plan.md`)
+- [x] **Implement** — AC 만족 구현 완료 (산출물: `.claude/specs/deploy-bulk-register-perf-dev-report.md`)
+- [x] **Validate** — SPEC + Plan + Dev report 검증 완료(2026-07-06). AC 9/10 [PASS], AC 쿼리 수만 [부분](코드 구조 ≤30 검증, 라이브 실측 미수행). D1=B / D2 / D3 / D4=(c)후속 준수 확인. 불변식(EqpManagementSnapshot·단건 시그니처·delta/scenario 로직·신규 bean 0) 위반 없음.
 
 ## 다음 단계 진입 프롬프트
 
