@@ -42,8 +42,10 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -492,6 +494,61 @@ public class DeployJdbcStorePort implements DeployStorePort {
             return Optional.empty();
         }
         return Optional.of(rows.getFirst());
+    }
+
+    @Override
+    public Map<Long, DeployStoredSnapshot> findLatestTargetSnapshots(
+            final Collection<Long> deployTargetKeys,
+            final DeploySnapshotScope snapshotScope,
+            final String stepCode,
+            final DeploySnapshotKind snapshotKind
+    ) {
+        if (deployTargetKeys == null || deployTargetKeys.isEmpty()) {
+            return Map.of();
+        }
+
+        final MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("deployTargetKeys", deployTargetKeys)
+                .addValue("snapshotScope", snapshotScope.name())
+                .addValue("stepCode", support.normalizeOptionalText(stepCode))
+                .addValue("snapshotKind", snapshotKind.name());
+
+        // DISTINCT ON: deploy_target_key 별 최신(snapshot_key desc) 1행. 단건 findLatestTargetSnapshot 과 동일 조건.
+        final List<DeployStoredSnapshot> rows = jdbcTemplate.query("""
+                        SELECT DISTINCT ON (deploy_target_key)
+                               deploy_target_snapshot_key,
+                               deploy_target_key,
+                               snapshot_scope,
+                               step_code,
+                               snapshot_kind,
+                               source_of_truth,
+                               snapshot_data_json,
+                               captured_at
+                          FROM tc_deploy_target_snapshot
+                         WHERE deploy_target_key IN (:deployTargetKeys)
+                           AND snapshot_scope = :snapshotScope
+                           AND snapshot_kind = :snapshotKind
+                           AND step_code IS NOT DISTINCT FROM CAST(:stepCode AS VARCHAR)
+                         ORDER BY deploy_target_key, deploy_target_snapshot_key DESC
+                        """,
+                parameters,
+                (resultSet, rowNum) -> new DeployStoredSnapshot(
+                        resultSet.getLong("deploy_target_snapshot_key"),
+                        resultSet.getLong("deploy_target_key"),
+                        DeploySnapshotScope.valueOf(resultSet.getString("snapshot_scope")),
+                        resultSet.getString("step_code"),
+                        DeploySnapshotKind.valueOf(resultSet.getString("snapshot_kind")),
+                        resultSet.getString("source_of_truth"),
+                        support.parseJson(resultSet.getString("snapshot_data_json")),
+                        resultSet.getObject("captured_at", OffsetDateTime.class)
+                )
+        );
+
+        final Map<Long, DeployStoredSnapshot> result = new LinkedHashMap<>();
+        for (final DeployStoredSnapshot row : rows) {
+            result.put(row.deployTargetKey(), row);
+        }
+        return result;
     }
 
       @Override

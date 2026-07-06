@@ -48,6 +48,7 @@ import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -229,13 +230,16 @@ public class DeployService {
         final LinkedHashSet<String> businessJarNames = new LinkedHashSet<>();
         final LinkedHashSet<String> eqpParamVersions = new LinkedHashSet<>();
 
+        // polling N+1 완화(R5): target별 pre-state 스냅샷을 1회 배치 조회한다.
+        final Map<Long, DeployStoredSnapshot> preStateSnapshots = deployStorePort.findLatestTargetSnapshots(
+                targetPage.targets().stream().map(target -> target.deployTargetKey()).toList(),
+                DeploySnapshotScope.TARGET_PRE_STATE,
+                null,
+                DeploySnapshotKind.TARGET_FULL_STATE
+        );
+
         for (final var target : targetPage.targets()) {
-            final DeployStoredSnapshot snapshot = deployStorePort.findLatestTargetSnapshot(
-                    target.deployTargetKey(),
-                    DeploySnapshotScope.TARGET_PRE_STATE,
-                    null,
-                    DeploySnapshotKind.TARGET_FULL_STATE
-            ).orElse(null);
+            final DeployStoredSnapshot snapshot = preStateSnapshots.get(target.deployTargetKey());
 
             if (snapshot != null && snapshot.snapshotData() != null) {
                 final JsonNode snapshotData = snapshot.snapshotData();
@@ -246,9 +250,10 @@ public class DeployService {
                 addIfPresent(eqpParamVersions, snapshotData.path("eqpParams").path("version").asString(null));
                 continue;
             }
-            addIfPresent(interfaceTypes, resolveInterfaceType(target.eqpId()));
+            // 라이브 fallback: eqp 스냅샷을 1회만 조회해 interfaceType + as-is 를 함께 채운다(기존 2회 조회 제거).
             addAsIsFromLiveSnapshot(
                     target.eqpId(),
+                    interfaceTypes,
                     modelNames,
                     modelVersions,
                     businessJarNames,
@@ -286,15 +291,9 @@ public class DeployService {
         }
     }
 
-    private String resolveInterfaceType(final String eqpId) {
-        return eqpCrudPort.findSnapshotByEqpId(eqpId)
-                .map(EqpManagementSnapshot::eqp)
-                .map(eqp -> eqp.commInterface() == null ? null : eqp.commInterface().name())
-                .orElse(null);
-    }
-
     private void addAsIsFromLiveSnapshot(
             final String eqpId,
+            final LinkedHashSet<String> interfaceTypes,
             final LinkedHashSet<String> modelNames,
             final LinkedHashSet<String> modelVersions,
             final LinkedHashSet<String> businessJarNames,
@@ -303,6 +302,9 @@ public class DeployService {
         final EqpManagementSnapshot snapshot = eqpCrudPort.findSnapshotByEqpId(eqpId).orElse(null);
         if (snapshot == null) {
             return;
+        }
+        if (snapshot.eqp() != null && snapshot.eqp().commInterface() != null) {
+            addIfPresent(interfaceTypes, snapshot.eqp().commInterface().name());
         }
         if (snapshot.model() != null) {
             addIfPresent(modelNames, snapshot.model().modelName());

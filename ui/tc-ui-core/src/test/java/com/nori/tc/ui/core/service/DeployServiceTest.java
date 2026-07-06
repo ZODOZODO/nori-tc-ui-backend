@@ -1950,6 +1950,21 @@ class DeployServiceTest {
         }
 
         @Override
+        public synchronized Map<Long, DeployStoredSnapshot> findLatestTargetSnapshots(
+                final java.util.Collection<Long> deployTargetKeys,
+                final DeploySnapshotScope snapshotScope,
+                final String stepCode,
+                final DeploySnapshotKind snapshotKind
+        ) {
+            final Map<Long, DeployStoredSnapshot> result = new LinkedHashMap<>();
+            for (final Long deployTargetKey : deployTargetKeys) {
+                findLatestTargetSnapshot(deployTargetKey, snapshotScope, stepCode, snapshotKind)
+                        .ifPresent(snapshot -> result.put(deployTargetKey, snapshot));
+            }
+            return result;
+        }
+
+        @Override
         public synchronized Optional<DeploySummarySnapshot> findDeploySummary(final long deployKey) {
             final DeployRecord deploy = deploys.get(deployKey);
             if (deploy == null) {

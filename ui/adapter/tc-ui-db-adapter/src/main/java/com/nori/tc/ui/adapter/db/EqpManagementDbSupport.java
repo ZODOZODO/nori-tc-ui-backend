@@ -43,10 +43,16 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Locale;
+import java.util.Set;
+import java.util.function.ToLongFunction;
 
 /**
  * EQP 관리 DB 어댑터 공통 조회/스캔 헬퍼입니다.
@@ -151,6 +157,107 @@ class EqpManagementDbSupport {
                 gatewayJar,
                 businessJar
         ));
+    }
+
+    /**
+     * eqpId 목록 기준 배치 스냅샷 조립 — 단건 {@link #loadSnapshotByEqpId(String)} 의 N+1 을 제거합니다.
+     *
+     * <p>deploy planner(plan 경로) 전용. {@code toEquipmentProfile} 이 실제 사용하는 테이블만 배치 로드하고,
+     * 단건과 <b>동일한 매퍼/정렬</b>을 재사용해 결과 동등성을 보장합니다. planner 가 읽지 않는
+     * connectionState / paramVersionMetas / gatewayJar / businessJar 는 배치에서 생략(null/빈 값)합니다.</p>
+     *
+     * <p>hsms/socket/plc/log/state/portStatus/param 은 store 의 {@code findAllByEqpKeyIn} 배치를,
+     * eqp/model 은 전체 스캔({@code loadAllEqps}/{@code loadAllModels} 와 동일)을 재사용합니다.</p>
+     *
+     * @param eqpIds 조회 대상 설비 ID 목록
+     * @return eqpId → 스냅샷 (미존재 설비는 부재)
+     */
+    Map<String, EqpManagementSnapshot> loadSnapshotsByEqpIds(final List<String> eqpIds) {
+        if (eqpIds == null || eqpIds.isEmpty()) {
+            return Map.of();
+        }
+
+        final Set<String> wantedEqpIds = new HashSet<>(eqpIds);
+        final List<TcEqp> eqps = scanAllPages(eqpStore::findAll).stream()
+                .filter(eqp -> eqp != null && wantedEqpIds.contains(eqp.eqpId()))
+                .toList();
+        if (eqps.isEmpty()) {
+            return Map.of();
+        }
+
+        final List<Long> eqpKeys = eqps.stream().map(TcEqp::eqpKey).toList();
+
+        final Map<Long, TcModel> modelByVersionKey = new HashMap<>();
+        for (final TcModel model : scanAllPages(modelStore::findAll)) {
+            if (model != null) {
+                modelByVersionKey.putIfAbsent(model.modelVersionKey(), model);
+            }
+        }
+
+        final Map<Long, TcEqpHsms> hsmsByKey = indexByEqpKey(eqpHsmsStore.findAllByEqpKeyIn(eqpKeys), TcEqpHsms::eqpKey);
+        final Map<Long, TcEqpSocket> socketByKey = indexByEqpKey(eqpSocketStore.findAllByEqpKeyIn(eqpKeys), TcEqpSocket::eqpKey);
+        final Map<Long, TcEqpPlc> plcByKey = indexByEqpKey(eqpPlcStore.findAllByEqpKeyIn(eqpKeys), TcEqpPlc::eqpKey);
+        final Map<Long, TcEqpLog> logByKey = indexByEqpKey(eqpLogStore.findAllByEqpKeyIn(eqpKeys), TcEqpLog::eqpKey);
+        final Map<Long, TcEqpState> stateByKey = indexByEqpKey(eqpStateStore.findAllByEqpKeyIn(eqpKeys), TcEqpState::eqpKey);
+
+        // portStatus: encounter order 보존(단건 loadAllPortStatuses 와 동일 무정렬 매핑).
+        final Map<Long, List<UiEqpPortStatus>> portStatusesByKey = new LinkedHashMap<>();
+        for (final var row : eqpPortStatusStore.findAllByEqpKeyIn(eqpKeys)) {
+            final UiEqpPortStatus ui = UiEqpDbMapper.toDomain(row);
+            if (ui != null) {
+                portStatusesByKey.computeIfAbsent(ui.eqpKey(), key -> new ArrayList<>()).add(ui);
+            }
+        }
+
+        // param: key 별 group 후 단건 loadAllParams 와 동일 정렬/매핑 적용.
+        final Map<Long, List<TcEqpParam>> rawParamsByKey = new LinkedHashMap<>();
+        for (final TcEqpParam raw : eqpParamStore.findAllByEqpKeyIn(eqpKeys)) {
+            if (raw != null) {
+                rawParamsByKey.computeIfAbsent(raw.eqpKey(), key -> new ArrayList<>()).add(raw);
+            }
+        }
+
+        final Map<String, EqpManagementSnapshot> result = new LinkedHashMap<>();
+        for (final TcEqp eqp : eqps) {
+            final long eqpKey = eqp.eqpKey();
+            result.put(eqp.eqpId(), new EqpManagementSnapshot(
+                    UiEqpDbMapper.toDomain(eqp),
+                    UiModelDbMapper.toDomain(modelByVersionKey.get(eqp.modelVersionKey())),
+                    UiEqpDbMapper.toDomain(hsmsByKey.get(eqpKey)),
+                    UiEqpDbMapper.toDomain(socketByKey.get(eqpKey)),
+                    UiEqpDbMapper.toDomain(plcByKey.get(eqpKey)),
+                    UiEqpDbMapper.toDomain(logByKey.get(eqpKey)),
+                    UiEqpDbMapper.toDomain(stateByKey.get(eqpKey)),
+                    // connectionState: toEquipmentProfile 미사용 → 배치 생략(단건과 planner 결과 동등).
+                    null,
+                    portStatusesByKey.getOrDefault(eqpKey, List.of()),
+                    sortAndMapParams(rawParamsByKey.getOrDefault(eqpKey, List.of())),
+                    // paramVersionMetas / gatewayJar / businessJar: toEquipmentProfile 미사용 → 배치 생략.
+                    List.of(),
+                    null,
+                    null
+            ));
+        }
+        return result;
+    }
+
+    private static <T> Map<Long, T> indexByEqpKey(final List<T> rows, final ToLongFunction<T> eqpKeyExtractor) {
+        final Map<Long, T> map = new HashMap<>();
+        for (final T row : rows) {
+            if (row != null) {
+                map.putIfAbsent(eqpKeyExtractor.applyAsLong(row), row);
+            }
+        }
+        return map;
+    }
+
+    private static List<UiEqpParam> sortAndMapParams(final List<TcEqpParam> rawParams) {
+        return rawParams.stream()
+                .sorted(Comparator
+                        .comparing(TcEqpParam::paramVersion, Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(TcEqpParam::paramName, Comparator.nullsLast(String::compareToIgnoreCase)))
+                .map(UiEqpDbMapper::toDomain)
+                .toList();
     }
 
     List<UiEqp> loadAllEqps() {
