@@ -101,6 +101,40 @@ public class DeployPlanningStateJdbcPort implements DeployPlanningStatePort {
         return result;
     }
 
+    /**
+     * plan 전용 전체 배치 — light IN 조회 + {@link EqpManagementDbSupport#loadSnapshotsByEqpIds(List)} 배치 +
+     * 단건과 동일한 {@link #toEquipmentProfile} 를 per-eqp in-memory 적용합니다(R3). 쿼리 수는 대상 N 과 무관.
+     */
+    @Override
+    public Map<String, DeployCurrentState> findCurrentStatesByEqpIds(final List<String> eqpIds) {
+        if (eqpIds.isEmpty()) {
+            return Map.of();
+        }
+
+        final Map<String, EqpManagementSnapshot> snapshots = eqpManagementDbSupport.loadSnapshotsByEqpIds(eqpIds);
+
+        final MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("eqpIds", eqpIds);
+
+        final List<DeployCurrentState> rows = jdbcTemplate.query(
+                CURRENT_STATE_SELECT + " WHERE e.eqp_id IN (:eqpIds)",
+                parameters,
+                (resultSet, rowNum) -> {
+                    final String eqpId = resultSet.getString("eqp_id");
+                    final UiEquipmentProfileSnapshot equipmentProfile = Optional.ofNullable(snapshots.get(eqpId))
+                            .map(this::toEquipmentProfile)
+                            .orElse(null);
+                    return mapCurrentStateRow(resultSet, equipmentProfile);
+                }
+        );
+
+        final Map<String, DeployCurrentState> result = new LinkedHashMap<>();
+        for (final DeployCurrentState row : rows) {
+            result.put(row.eqpId(), row);
+        }
+        return result;
+    }
+
     private UiEquipmentProfileSnapshot resolveEquipmentProfile(final String eqpId) {
         return eqpManagementDbSupport.loadSnapshotByEqpId(eqpId)
                 .map(this::toEquipmentProfile)

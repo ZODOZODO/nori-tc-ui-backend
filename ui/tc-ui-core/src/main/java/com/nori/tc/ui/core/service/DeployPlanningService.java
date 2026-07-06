@@ -75,8 +75,20 @@ public class DeployPlanningService {
         final DeployScenarioCatalog catalog = deployScenarioCatalogService.currentCatalog();
         final List<DeployTargetPlanDraft> targetPlans = new ArrayList<>();
 
+        // plan 은 equipmentProfile 을 포함한 전체 상태를 1회 배치 조회한다(근원 B, R3). delta/scenario/step 계산 로직은 불변.
+        final Map<String, DeployCurrentState> currentStates = deployPlanningStatePort.findCurrentStatesByEqpIds(
+                command.targets().stream()
+                        .map(DeployPlanCommand.TargetRequest::eqpId)
+                        .toList()
+        );
+
         for (DeployPlanCommand.TargetRequest target : command.targets()) {
-            targetPlans.add(planTarget(command, target, catalog));
+            targetPlans.add(planTarget(
+                    command,
+                    target,
+                    catalog,
+                    Optional.ofNullable(currentStates.get(target.eqpId()))
+            ));
         }
 
         return new DeployPlanningResult(
@@ -204,10 +216,9 @@ public class DeployPlanningService {
     private DeployTargetPlanDraft planTarget(
             final DeployPlanCommand command,
             final DeployPlanCommand.TargetRequest target,
-            final DeployScenarioCatalog catalog
+            final DeployScenarioCatalog catalog,
+            final Optional<DeployCurrentState> currentStateOptional
     ) {
-        final Optional<DeployCurrentState> currentStateOptional =
-                deployPlanningStatePort.findCurrentStateByEqpId(target.eqpId());
         validateCurrentStatePrecondition(command.eventType(), target.eqpId(), currentStateOptional);
 
         final DeployCurrentState currentState = currentStateOptional.orElse(null);

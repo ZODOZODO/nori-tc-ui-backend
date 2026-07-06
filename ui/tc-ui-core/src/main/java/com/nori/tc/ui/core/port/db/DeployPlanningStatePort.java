@@ -37,4 +37,22 @@ public interface DeployPlanningStatePort {
         }
         return result;
     }
+
+    /**
+     * plan 전용 전체 배치 조회 — equipmentProfile 을 포함한 current state 를 eqpId 기준 Map 으로 반환합니다.
+     * 미존재 설비는 Map 에서 부재.
+     *
+     * <p>default 구현은 단건 {@link #findCurrentStateByEqpId(String)} 를 loop 합니다(테스트 stub 호환).
+     * 실 어댑터는 IN-절 배치 + 스냅샷 배치 로더로 override 하여 N+1 을 제거합니다.</p>
+     *
+     * @param eqpIds 조회 대상 설비 ID 목록
+     * @return eqpId → current state(전체)
+     */
+    default Map<String, DeployCurrentState> findCurrentStatesByEqpIds(final List<String> eqpIds) {
+        final Map<String, DeployCurrentState> result = new LinkedHashMap<>();
+        for (final String eqpId : eqpIds) {
+            findCurrentStateByEqpId(eqpId).ifPresent(state -> result.put(eqpId, state));
+        }
+        return result;
+    }
 }
