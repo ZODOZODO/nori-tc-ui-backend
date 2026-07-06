@@ -21,7 +21,9 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -339,6 +341,170 @@ class DeployPlanningServiceTest {
         assertEquals(3, plcSettings.path("unitId").asInt());
         assertEquals(3000, plcSettings.path("pollTimeoutMs").asInt());
         assertEquals(5, plcSettings.path("reconnectMaxRetries").asInt());
+    }
+
+    // === Phase 0 (deploy-bulk-register-perf) — 다중 target 동등성 baseline ===
+    // 배치화(Phase 2/3) 전후로 이 테스트들이 무수정 GREEN 이면 서비스 계층 loop→map-lookup 동등성이 보존된 것이다.
+    // 포트는 eqpId→상태 map 기반 stub 이므로 default 배치 메서드는 단건 lambda 를 loop 한다(어댑터 SQL 동등성은 별도 검증).
+
+    @Test
+    void previewRegisterScenarioAggregatesMixedTargetsIntoUnionAndRecommendation() {
+        final Map<String, DeployCurrentState> states = new LinkedHashMap<>();
+        // EQP_A: 모델·jar·param 모두 desired 와 동일 → NO_CHANGE → removed
+        states.put("EQP_A", socketCurrentState("EQP_A", 2002L, 9002L, "PARAM_V1", null));
+        // EQP_B: 모델만 상이(1001 vs 2002) → MODEL_CHANGED
+        states.put("EQP_B", socketCurrentState("EQP_B", 1001L, 9002L, "PARAM_V1", null));
+        // EQP_C: business jar 만 상이(8001 vs 9002) → BUSINESS_JAR_CHANGED
+        states.put("EQP_C", socketCurrentState("EQP_C", 2002L, 8001L, "PARAM_V1", null));
+        // EQP_D: param 만 상이(V1 vs override V2) → EQP_PARAM_CHANGED
+        states.put("EQP_D", socketCurrentState("EQP_D", 2002L, 9002L, "PARAM_V1", null));
+
+        final ObjectNode commonUiMessage = objectMapper.createObjectNode();
+        commonUiMessage.putObject("modelInfo").put("modelVersionKey", 2002L);
+        commonUiMessage.putObject("businessJar").put("jarRef", 9002L);
+
+        final var preview = serviceWithStates(states).previewRegisterScenarioSelection(
+                new DeployRegisterScenarioPreviewCommand(
+                        "SOCKET",
+                        commonUiMessage,
+                        List.of(
+                                new DeployRegisterScenarioPreviewCommand.TargetRequest("EQP_A", registerEqpParamUiMessage("PARAM_V1")),
+                                new DeployRegisterScenarioPreviewCommand.TargetRequest("EQP_B", registerEqpParamUiMessage("PARAM_V1")),
+                                new DeployRegisterScenarioPreviewCommand.TargetRequest("EQP_C", registerEqpParamUiMessage("PARAM_V1")),
+                                new DeployRegisterScenarioPreviewCommand.TargetRequest("EQP_D", registerEqpParamUiMessage("PARAM_V2"))
+                        )
+                )
+        );
+
+        assertEquals(List.of("EQP_A"), preview.removedEqpIds());
+        assertEquals(List.of("EQP_B", "EQP_C", "EQP_D"), preview.remainingEqpIds());
+        assertEquals(
+                Set.of(
+                        DeployDeltaKind.MODEL_CHANGED,
+                        DeployDeltaKind.BUSINESS_JAR_CHANGED,
+                        DeployDeltaKind.EQP_PARAM_CHANGED
+                ),
+                preview.unionChangeKinds()
+        );
+        assertEquals("REGISTER_MODEL_BUSINESS_JAR_EQP_PARAM", preview.recommendedScenarioCode());
+    }
+
+    @Test
+    void planRegisterDeployComputesPerTargetDeltaAndStepsForMixedInterfaces() {
+        final Map<String, DeployCurrentState> states = new LinkedHashMap<>();
+        // PLC 설비: 모델 변경 → MODEL_CHANGED + PLC_MODEL_CHANGED
+        states.put("PLC_1", plcCurrentState("PLC_1"));
+        // SOCKET 설비: 모델만 변경 → MODEL_CHANGED
+        states.put("SOCKET_1", socketCurrentState("SOCKET_1", 1001L, 4001L, "EQP_PARAM_V1", "REMOTE"));
+
+        final ObjectNode commonUiMessage = objectMapper.createObjectNode();
+        commonUiMessage.putObject("modelInfo").put("modelVersionKey", 2002L);
+        commonUiMessage.putObject("businessJar").put("jarRef", 4001L);
+
+        final DeployPlanCommand command = new DeployPlanCommand(
+                "Register Deploy Mixed",
+                UiCommandEventType.EQP_REGISTER_DEPLOY,
+                DeployExecutionPolicy.BEST_EFFORT,
+                new DeployPlanCommand.CommonRequest("SOCKET", commonUiMessage, "REGISTER_MODEL_BUSINESS_JAR_EQP_PARAM"),
+                List.of(
+                        new DeployPlanCommand.TargetRequest("PLC_1", objectMapper.createObjectNode()),
+                        new DeployPlanCommand.TargetRequest("SOCKET_1", objectMapper.createObjectNode())
+                )
+        );
+
+        final DeployPlanningResult result = serviceWithStates(states).plan(command);
+        final var plcTarget = result.targets().get(0);
+        final var socketTarget = result.targets().get(1);
+
+        assertEquals(
+                Set.of(DeployDeltaKind.MODEL_CHANGED, DeployDeltaKind.PLC_MODEL_CHANGED),
+                plcTarget.deltaKinds()
+        );
+        assertEquals("REGISTER_MODEL_BUSINESS_JAR_EQP_PARAM", plcTarget.resolvedScenarioCode());
+        assertIterableEquals(
+                List.of("UPSERT_GATEWAY_CONTEXT", "UPDATE_MODEL_BINDING"),
+                plcTarget.resolvedSteps().stream().map(step -> step.code()).toList()
+        );
+
+        assertEquals(Set.of(DeployDeltaKind.MODEL_CHANGED), socketTarget.deltaKinds());
+        assertEquals("REGISTER_MODEL_BUSINESS_JAR_EQP_PARAM", socketTarget.resolvedScenarioCode());
+        assertIterableEquals(
+                List.of("UPDATE_MODEL_BINDING"),
+                socketTarget.resolvedSteps().stream().map(step -> step.code()).toList()
+        );
+    }
+
+    @Test
+    void planUpdateFiltersReconnectStepByPerTargetControlState() {
+        final Map<String, DeployCurrentState> states = new LinkedHashMap<>();
+        // controlState REMOTE → RECONNECT_GATEWAY 허용
+        states.put("REMOTE_1", socketCurrentState("REMOTE_1", 1001L, 4001L, "EQP_PARAM_V1", "REMOTE"));
+        // controlState OFFLINE → RECONNECT_GATEWAY 차단(step 필터)
+        states.put("OFFLINE_1", socketCurrentState("OFFLINE_1", 1001L, 4001L, "EQP_PARAM_V1", "OFFLINE"));
+
+        final DeployPlanCommand command = new DeployPlanCommand(
+                "Update Reconnect Mixed",
+                UiCommandEventType.EQP_UPDATE,
+                DeployExecutionPolicy.BEST_EFFORT,
+                new DeployPlanCommand.CommonRequest("SOCKET", updateUiMessage(), null),
+                List.of(
+                        new DeployPlanCommand.TargetRequest("REMOTE_1", objectMapper.createObjectNode()),
+                        new DeployPlanCommand.TargetRequest("OFFLINE_1", objectMapper.createObjectNode())
+                )
+        );
+
+        final DeployPlanningResult result = serviceWithStates(states).plan(command);
+        final var remoteTarget = result.targets().get(0);
+        final var offlineTarget = result.targets().get(1);
+
+        assertEquals(Set.of(DeployDeltaKind.CONNECTION_ENDPOINT_CHANGED), remoteTarget.deltaKinds());
+        assertIterableEquals(
+                List.of("UPSERT_GATEWAY_CONTEXT", "RECONNECT_GATEWAY"),
+                remoteTarget.resolvedSteps().stream().map(step -> step.code()).toList()
+        );
+        assertEquals(Set.of(DeployDeltaKind.CONNECTION_ENDPOINT_CHANGED), offlineTarget.deltaKinds());
+        assertIterableEquals(
+                List.of("UPSERT_GATEWAY_CONTEXT"),
+                offlineTarget.resolvedSteps().stream().map(step -> step.code()).toList()
+        );
+    }
+
+    private DeployPlanningService serviceWithStates(final Map<String, DeployCurrentState> states) {
+        final DeployScenarioCatalogService catalogService = new DeployScenarioCatalogService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                new InMemoryCatalogMetaPort(),
+                objectMapper
+        );
+        catalogService.initializeCatalog();
+        return new DeployPlanningService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                eqpId -> Optional.ofNullable(states.get(eqpId)),
+                catalogService,
+                objectMapper
+        );
+    }
+
+    private DeployCurrentState socketCurrentState(
+            final String eqpId,
+            final long modelVersionKey,
+            final Long businessJarRef,
+            final String paramVersion,
+            final String controlState
+    ) {
+        return new DeployCurrentState(
+                1L, eqpId, "SOCKET", "ACTIVE", "10.10.10.1", 6000,
+                modelVersionKey, paramVersion, 3001L, businessJarRef, "TEST01", null, 0,
+                controlState == null ? null : socketEquipmentProfile(eqpId, controlState)
+        );
+    }
+
+    private UiEquipmentProfileSnapshot socketEquipmentProfile(final String eqpId, final String controlState) {
+        return new UiEquipmentProfileSnapshot(
+                1L, eqpId, "SOCKET", "TEST01", null, "10.10.10.1", 6000, 1001L, 3001L, 4001L, "ACTIVE", 0, true,
+                null, null,
+                new UiEquipmentProfileSnapshot.CurrentStateSnapshot(controlState, null, null, null, null, null),
+                null, null, null, null, "ENDED", null
+        );
     }
 
     private DeployCurrentState plcCurrentState(final String eqpId) {
