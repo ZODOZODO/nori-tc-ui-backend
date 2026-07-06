@@ -193,6 +193,11 @@ public final class LiveMapSimulatorRunFacade {
         return client.getRun(runId);
     }
 
+    /** run 이력 목록(DB 출처, R4) — 모달 '시뮬레이션 진행 현황' 이 과거·실행중 run 을 모두 표시(재부착 포함). */
+    public List<SimulatorRunResponse> listRuns() {
+        return client.listRuns();
+    }
+
     public SimulatorRunResponse stopRun(final String runId) {
         final long timeoutMs = dualRequestProperties.getDualRequestTimeoutMs();
         // 추적된 run(ALL·EQUIPMENT_ONLY)은 원자적 claim 한 captured-set 으로만 해제 → 사전 연결 설비 미손상(R5),

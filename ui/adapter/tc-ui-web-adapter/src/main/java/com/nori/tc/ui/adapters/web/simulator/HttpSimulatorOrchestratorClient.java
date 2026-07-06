@@ -48,6 +48,11 @@ public class HttpSimulatorOrchestratorClient implements SimulatorOrchestratorCli
     }
 
     @Override
+    public List<SimulatorRunResponse> listRuns() {
+        return sendJson("GET", "/api/demo-runs", null, new TypeReference<>() {});
+    }
+
+    @Override
     public SimulatorRunResponse stopRun(final String runId) {
         return sendJson("POST", "/api/demo-runs/" + runId + "/stop", null, SimulatorRunResponse.class);
     }

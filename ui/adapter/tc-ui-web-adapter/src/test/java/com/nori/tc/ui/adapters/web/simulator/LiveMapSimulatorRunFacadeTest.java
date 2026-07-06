@@ -236,7 +236,7 @@ class LiveMapSimulatorRunFacadeTest {
                 List.of(
                         new SimulatorRunResponse.SimulatorTargetResponse("CLN_001", "RUNNING", "SOCKET", 0, 0, List.of()),
                         new SimulatorRunResponse.SimulatorTargetResponse("PLC_MBT_001", "RUNNING", "PLC", 0, 0, List.of())
-                )));
+                ), "2026-07-06T00:00:00Z", "normal-flow"));
         final SimulatorRunResponse stopped = runResponse("RUN-1");
         when(client.stopRun("RUN-1")).thenReturn(stopped);
 
@@ -290,7 +290,7 @@ class LiveMapSimulatorRunFacadeTest {
         when(connectionGate.ensureActiveTargetsConnected(eq(List.of("CLN_001", "PLC_MBT_001")), anyLong()))
                 .thenReturn(Set.of("CLN_001", "PLC_MBT_001"));
         when(client.stopTarget("RUN-1", "PLC_MBT_001"))
-                .thenReturn(new SimulatorRunResponse("RUN-1", "ALL", "CANCELED", List.of()));
+                .thenReturn(new SimulatorRunResponse("RUN-1", "ALL", "CANCELED", List.of(), "2026-07-06T00:00:00Z", "normal-flow"));
 
         facade.startRun("E2E", "default", List.of("CLN_001", "PLC_MBT_001"));
         facade.stopTarget("RUN-1", "PLC_MBT_001");
@@ -370,7 +370,7 @@ class LiveMapSimulatorRunFacadeTest {
     }
 
     private static SimulatorRunResponse runResponse(final String runId) {
-        return new SimulatorRunResponse(runId, "ALL", "RUNNING", List.of());
+        return new SimulatorRunResponse(runId, "ALL", "RUNNING", List.of(), "2026-07-06T00:00:00Z", "normal-flow");
     }
 
     private static EqpManagementSnapshot snapshot(final String eqpId, final String... portIds) {

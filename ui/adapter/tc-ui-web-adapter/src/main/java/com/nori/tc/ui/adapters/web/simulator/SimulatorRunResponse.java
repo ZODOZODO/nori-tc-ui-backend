@@ -14,7 +14,10 @@ public record SimulatorRunResponse(
         String runId,
         String mode,
         String state,
-        List<SimulatorTargetResponse> targets
+        List<SimulatorTargetResponse> targets,
+        // 이력/목록 표시용 append-only(R5). createdAt=ISO-8601 문자열(orchestrator Instant.toString()), scenarioId=시나리오 id.
+        String createdAt,
+        String scenarioId
 ) {
 
     /** 설비 target 관측 verdict — 모달 진행/종료 표시. commInterface=설비 통신타입(SOCKET/SECS/PLC, tc_eqp.comm_interface). */

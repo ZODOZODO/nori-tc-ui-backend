@@ -126,7 +126,7 @@ class DemoRunConnectionReaperTest {
     }
 
     private static SimulatorRunResponse run(final String runId, final String state) {
-        return new SimulatorRunResponse(runId, "ALL", state, List.of());
+        return new SimulatorRunResponse(runId, "ALL", state, List.of(), "2026-07-06T00:00:00Z", "normal-flow");
     }
 
     @SuppressWarnings("unchecked")

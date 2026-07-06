@@ -58,7 +58,7 @@ class HttpSimulatorOrchestratorClientTest {
             capturedMethod.set(exchange.getRequestMethod());
             capturedBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             final byte[] body = mapper.writeValueAsBytes(
-                    new SimulatorRunResponse("run-abc", "ALL", "RUNNING", List.of()));
+                    new SimulatorRunResponse("run-abc", "ALL", "RUNNING", List.of(), "2026-07-06T00:00:00Z", "modbus-tcp-normal-flow"));
             exchange.sendResponseHeaders(200, body.length);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(body);
@@ -83,6 +83,34 @@ class HttpSimulatorOrchestratorClientTest {
         assertEquals("PLC", sent.targets().get(0).commInterface(), "wire commInterface");
         assertEquals("ACTIVE", sent.targets().get(0).commMode(), "wire commMode");
         assertEquals(7101, sent.targets().get(0).bindPort(), "wire bindPort(eqp_port)");
+    }
+
+    @Test
+    void listRunsGetsDemoRunsPathAsArray() throws Exception {
+        final AtomicReference<String> capturedMethod = new AtomicReference<>();
+        server.createContext("/api/demo-runs", exchange -> {
+            capturedMethod.set(exchange.getRequestMethod());
+            final byte[] body = mapper.writeValueAsBytes(List.of(
+                    new SimulatorRunResponse("run-1", "ALL", "TERMINAL",
+                            List.of(new SimulatorRunResponse.SimulatorTargetResponse(
+                                    "EQP_A", "COMPLETED", "SOCKET", 1, 0, List.of())),
+                            "2026-07-06T01:00:00Z", "normal-flow"),
+                    new SimulatorRunResponse("run-2", "EQUIPMENT_ONLY", "RUNNING", List.of(),
+                            "2026-07-06T00:00:00Z", "modbus-tcp-normal-flow")));
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(body);
+            }
+        });
+
+        final List<SimulatorRunResponse> runs = client.listRuns();
+
+        assertEquals("GET", capturedMethod.get(), "목록은 GET /api/demo-runs");
+        assertEquals(2, runs.size(), "배열 역직렬화 — 2건");
+        assertEquals("run-1", runs.get(0).runId());
+        assertEquals("2026-07-06T01:00:00Z", runs.get(0).createdAt(), "createdAt 역직렬화");
+        assertEquals("normal-flow", runs.get(0).scenarioId(), "scenarioId 역직렬화");
+        assertEquals("COMPLETED", runs.get(0).targets().get(0).state(), "per-target 상세 보존");
     }
 
     @Test

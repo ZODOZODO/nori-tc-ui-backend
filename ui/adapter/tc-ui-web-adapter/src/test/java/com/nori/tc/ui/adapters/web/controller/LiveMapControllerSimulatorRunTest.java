@@ -34,7 +34,7 @@ class LiveMapControllerSimulatorRunTest {
     @Test
     void startSimulatorRunRoutesToOrchestrator() {
         when(simulatorRunFacade.startRun("E2E", "normal-flow", List.of("DIFF_001")))
-                .thenReturn(new SimulatorRunResponse("run-1", "ALL", "RUNNING", List.of()));
+                .thenReturn(new SimulatorRunResponse("run-1", "ALL", "RUNNING", List.of(), "2026-07-06T00:00:00Z", "normal-flow"));
         final LiveMapController controller = new LiveMapController(liveMapQueryService, simulatorRunFacade);
 
         final ResponseEntity<ApiResponse<SimulatorRunResponse>> response = controller.startSimulatorRun(
@@ -43,5 +43,23 @@ class LiveMapControllerSimulatorRunTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("run-1", response.getBody().data().runId(), "orchestrator runId 반환");
         verify(simulatorRunFacade).startRun("E2E", "normal-flow", List.of("DIFF_001"));
+    }
+
+    @Test
+    void listSimulatorRunsReturnsApiResponseListPreservingCreatedAtAndScenarioId() {
+        // AC-B2: 목록이 ApiResponse<List<>> 로 감싸지고, 각 원소가 orchestrator 응답의 createdAt/scenarioId 를 보존.
+        when(simulatorRunFacade.listRuns()).thenReturn(List.of(
+                new SimulatorRunResponse("run-1", "ALL", "TERMINAL", List.of(), "2026-07-06T01:00:00Z", "normal-flow"),
+                new SimulatorRunResponse("run-2", "EQUIPMENT_ONLY", "RUNNING", List.of(), "2026-07-06T00:00:00Z", "modbus-tcp-normal-flow")));
+        final LiveMapController controller = new LiveMapController(liveMapQueryService, simulatorRunFacade);
+
+        final ResponseEntity<ApiResponse<List<SimulatorRunResponse>>> response = controller.listSimulatorRuns();
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        final List<SimulatorRunResponse> runs = response.getBody().data();
+        assertEquals(2, runs.size(), "목록 2건");
+        assertEquals("2026-07-06T01:00:00Z", runs.get(0).createdAt(), "createdAt 보존");
+        assertEquals("normal-flow", runs.get(0).scenarioId(), "scenarioId 보존");
+        verify(simulatorRunFacade).listRuns();
     }
 }

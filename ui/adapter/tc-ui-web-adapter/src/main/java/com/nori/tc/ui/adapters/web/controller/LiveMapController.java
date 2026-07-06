@@ -62,6 +62,15 @@ public class LiveMapController {
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
+    /**
+     * run 이력 목록(DB 출처, R4) — '시뮬레이션 진행 현황' 이 과거·실행중 run 을 최신순으로 모두 표시(재부착 포함).
+     * 권한은 기존 {@code LIVE_MAP_DEMO_RUN_READ}(PREFIX /api/live-map/demo-runs, GET)가 커버(C4, 신규 매핑 0).
+     */
+    @GetMapping("/demo-runs")
+    public ResponseEntity<ApiResponse<List<SimulatorRunResponse>>> listSimulatorRuns() {
+        return ResponseEntity.ok(ApiResponse.success(simulatorRunFacade.listRuns()));
+    }
+
     @GetMapping("/demo-runs/{runId}")
     public ResponseEntity<ApiResponse<SimulatorRunResponse>> getSimulatorRun(
             @PathVariable final String runId

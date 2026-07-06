@@ -14,6 +14,9 @@ public interface SimulatorOrchestratorClient {
     /** {@code GET /api/demo-runs/{runId}} — Run 상태 폴링(진행/종료). */
     SimulatorRunResponse getRun(String runId);
 
+    /** {@code GET /api/demo-runs} — run 이력 목록(DB 출처, 완전한 이력). created_at DESC 최대 200건(R3/R7). */
+    List<SimulatorRunResponse> listRuns();
+
     /** {@code POST /api/demo-runs/{runId}/stop} — Run 중단(in-flight lot abort). */
     SimulatorRunResponse stopRun(String runId);
 
