@@ -10,6 +10,7 @@ import com.nori.tc.db.core.model.store.TcModelMesMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowDcopItemStore;
 import com.nori.tc.db.core.model.store.TcModelPlcGroupStore;
 import com.nori.tc.db.core.model.store.TcModelPlcRegisterStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
@@ -44,10 +45,13 @@ import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * {@link ModelDetailQueryPort}의 DB Store 기반 구현체입니다.
@@ -71,6 +75,7 @@ public class JpaModelDetailQueryPort implements ModelDetailQueryPort {
     private final TcModelMessageFlowStore modelMessageFlowStore;
     private final TcModelMdfStore modelMdfStore;
     private final TcModelDcopItemStore modelDcopItemStore;
+    private final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore;
     private final TcModelPlcGroupStore modelPlcGroupStore;
     private final TcModelPlcRegisterStore modelPlcRegisterStore;
 
@@ -88,6 +93,7 @@ public class JpaModelDetailQueryPort implements ModelDetailQueryPort {
             final TcModelMessageFlowStore modelMessageFlowStore,
             final TcModelMdfStore modelMdfStore,
             final TcModelDcopItemStore modelDcopItemStore,
+            final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore,
             final TcModelPlcGroupStore modelPlcGroupStore,
             final TcModelPlcRegisterStore modelPlcRegisterStore
     ) {
@@ -101,6 +107,8 @@ public class JpaModelDetailQueryPort implements ModelDetailQueryPort {
         this.modelMessageFlowStore = Objects.requireNonNull(modelMessageFlowStore, "modelMessageFlowStore is null");
         this.modelMdfStore = Objects.requireNonNull(modelMdfStore, "modelMdfStore is null");
         this.modelDcopItemStore = Objects.requireNonNull(modelDcopItemStore, "modelDcopItemStore is null");
+        this.modelMessageFlowDcopItemStore = Objects.requireNonNull(
+                modelMessageFlowDcopItemStore, "modelMessageFlowDcopItemStore is null");
         this.modelPlcGroupStore = Objects.requireNonNull(modelPlcGroupStore, "modelPlcGroupStore is null");
         this.modelPlcRegisterStore = Objects.requireNonNull(modelPlcRegisterStore, "modelPlcRegisterStore is null");
         log.info("JpaModelDetailQueryPort initialized.");
@@ -201,6 +209,39 @@ public class JpaModelDetailQueryPort implements ModelDetailQueryPort {
                 .sorted(Comparator.comparing(TcModelDcopItem::dcopItemKey, Comparator.nullsLast(Long::compareTo)))
                 .map(UiModelDbMapper::toDomain)
                 .toList();
+    }
+
+    @Override
+    public Map<Long, List<String>> findFlowDcopItemNamesByModelVersionKey(final long modelVersionKey) {
+        validateModelVersionKey(modelVersionKey);
+
+        final List<Long> messageFlowKeys = loadAllByPage(
+                page -> modelMessageFlowStore.findAllByModelVersionKey(modelVersionKey, page))
+                .stream()
+                .map(TcModelMessageFlow::messageFlowKey)
+                .toList();
+        if (messageFlowKeys.isEmpty()) {
+            return Map.of();
+        }
+
+        // dcop_item 본체는 model_version pool 을 한 번 로드해 key→name 사전으로 만든다(바인딩은 name 을 안 담음).
+        final Map<Long, String> dcopItemNameByKey = loadAllByPage(
+                page -> modelDcopItemStore.findAllByModelVersionKey(modelVersionKey, page))
+                .stream()
+                .filter(item -> item.dcopItemKey() != null && item.dcopItemName() != null)
+                .collect(Collectors.toMap(TcModelDcopItem::dcopItemKey, TcModelDcopItem::dcopItemName, (first, ignored) -> first));
+
+        final Map<Long, List<String>> flowDcopItemNames = new HashMap<>();
+        modelMessageFlowDcopItemStore.findAllByMessageFlowKeyIn(messageFlowKeys).forEach(binding -> {
+            final String dcopItemName = dcopItemNameByKey.get(binding.dcopItemKey());
+            if (dcopItemName == null) {
+                return;
+            }
+            flowDcopItemNames.computeIfAbsent(binding.messageFlowKey(), key -> new ArrayList<>()).add(dcopItemName);
+        });
+        // diff 는 값 문자열 동등 비교라 순서가 흔들리면 오탐이 난다 — 이름 오름차순으로 안정화한다.
+        flowDcopItemNames.values().forEach(names -> names.sort(Comparator.naturalOrder()));
+        return flowDcopItemNames;
     }
 
     @Override

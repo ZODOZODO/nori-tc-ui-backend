@@ -12,6 +12,7 @@ import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelStore;
 import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowDcopItemStore;
 import com.nori.tc.db.core.model.store.TcModelPlcGroupStore;
 import com.nori.tc.db.core.model.store.TcModelPlcRegisterStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
@@ -30,6 +31,7 @@ import com.nori.tc.db.domain.model.TcModelReportId;
 import com.nori.tc.db.domain.model.TcModelSecsMessage;
 import com.nori.tc.db.domain.model.TcModelSocketMessage;
 import com.nori.tc.db.domain.model.TcModelMessageFlow;
+import com.nori.tc.db.domain.model.TcModelMessageFlowDcopItem;
 import com.nori.tc.db.domain.model.TcModelVariableId;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
@@ -156,6 +158,7 @@ final class JpaModelManagementSupport {
             final TcModelMessageFlowStore modelMessageFlowStore,
             final TcModelMdfStore modelMdfStore,
             final TcModelDcopItemStore modelDcopItemStore,
+            final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore,
             final TcModelPlcGroupStore modelPlcGroupStore,
             final TcModelPlcRegisterStore modelPlcRegisterStore
     ) {
@@ -172,6 +175,7 @@ final class JpaModelManagementSupport {
                 Objects.requireNonNull(modelMessageFlowStore, "modelMessageFlowStore is null"),
                 Objects.requireNonNull(modelMdfStore, "modelMdfStore is null"),
                 Objects.requireNonNull(modelDcopItemStore, "modelDcopItemStore is null"),
+                Objects.requireNonNull(modelMessageFlowDcopItemStore, "modelMessageFlowDcopItemStore is null"),
                 Objects.requireNonNull(modelPlcGroupStore, "modelPlcGroupStore is null"),
                 Objects.requireNonNull(modelPlcRegisterStore, "modelPlcRegisterStore is null")
         );
@@ -583,6 +587,7 @@ final class JpaModelManagementSupport {
             List<TcModelMessageFlow> messageFlows,
             List<TcModelMdf> mdfs,
             List<TcModelDcopItem> dcopItems,
+            List<TcModelMessageFlowDcopItem> messageFlowDcopItems,
             List<TcModelPlcGroup> plcGroups,
             List<TcModelPlcRegister> plcRegisters
     ) {

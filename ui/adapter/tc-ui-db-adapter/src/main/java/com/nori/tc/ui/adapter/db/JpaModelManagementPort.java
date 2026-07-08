@@ -11,6 +11,7 @@ import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelStore;
 import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowDcopItemStore;
 import com.nori.tc.db.core.model.store.TcModelPlcGroupStore;
 import com.nori.tc.db.core.model.store.TcModelPlcRegisterStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
@@ -87,6 +88,7 @@ public class JpaModelManagementPort implements ModelRootCommandPort, ModelBranch
             final TcModelMessageFlowStore modelMessageFlowStore,
             final TcModelMdfStore modelMdfStore,
             final TcModelDcopItemStore modelDcopItemStore,
+            final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore,
             final TcModelPlcGroupStore modelPlcGroupStore,
             final TcModelPlcRegisterStore modelPlcRegisterStore
     ) {
@@ -105,6 +107,7 @@ public class JpaModelManagementPort implements ModelRootCommandPort, ModelBranch
                 modelMessageFlowStore,
                 modelMdfStore,
                 modelDcopItemStore,
+                modelMessageFlowDcopItemStore,
                 modelPlcGroupStore,
                 modelPlcRegisterStore
         );

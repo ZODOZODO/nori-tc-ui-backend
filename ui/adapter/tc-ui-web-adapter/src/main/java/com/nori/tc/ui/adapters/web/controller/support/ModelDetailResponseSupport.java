@@ -25,7 +25,9 @@ import com.nori.tc.ui.domain.model.UiModelVariableId;
 import com.nori.tc.ui.domain.model.UiModelMessageFlow;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * ModelController 응답 매핑과 상세 테이블 조립을 담당하는 보조 유틸리티입니다.
@@ -73,14 +75,16 @@ public final class ModelDetailResponseSupport {
             "TransactionId",
             "Filter",
             "Action Name",
-            "Data Index"
+            "Data Index",
+            "Collect"
     );
     private static final List<String> SOCKET_WORKFLOW_COLUMNS = List.of(
             "Workflow Name",
             "Message Name",
             "Filter",
             "Action Name",
-            "Data Index"
+            "Data Index",
+            "Collect"
     );
     private static final List<String> SECS_DCOP_ITEM_COLUMNS = List.of(
             "Dcop Item Name",
@@ -188,10 +192,15 @@ public final class ModelDetailResponseSupport {
             case "workflow" -> {
                 final boolean socketModel = ModelControllerRequestSupport.isSocketModel(model);
                 final List<String> workflowColumns = socketModel ? SOCKET_WORKFLOW_COLUMNS : SECS_WORKFLOW_COLUMNS;
+                final Map<Long, List<String>> flowDcopItemNames =
+                        modelDetailQueryPort.findFlowDcopItemNamesByModelVersionKey(modelVersionKey);
                 yield new ModelDetailDataResponse(
                         workflowColumns,
                         modelDetailQueryPort.findMessageFlowsByModelVersionKey(modelVersionKey).stream()
-                                .map(messageFlow -> toWorkflowRow(messageFlow, socketModel))
+                                .map(messageFlow -> toWorkflowRow(
+                                        messageFlow,
+                                        socketModel,
+                                        flowDcopItemNames.getOrDefault(messageFlow.messageFlowKey(), List.of())))
                                 .toList(),
                         List.of()
                 );
@@ -366,31 +375,34 @@ public final class ModelDetailResponseSupport {
         ));
     }
 
-    private static ModelDetailRowResponse toWorkflowRow(final UiModelMessageFlow messageFlow, final boolean excludeEventFields) {
-        final List<String> values;
-        if (excludeEventFields) {
-            values = List.of(
-                    nullToEmpty(messageFlow.workflowName()),
-                    nullToEmpty(messageFlow.messageName()),
-                    nullToEmpty(messageFlow.workflowFilter()),
-                    nullToEmpty(messageFlow.actionName()),
-                    nullToEmpty(messageFlow.actionDataIndex())
-            );
-        } else {
-            values = List.of(
-                    nullToEmpty(messageFlow.workflowName()),
-                    nullToEmpty(messageFlow.messageName()),
-                    nullToEmpty(messageFlow.eventId()),
-                    nullToEmpty(messageFlow.transactionId()),
-                    nullToEmpty(messageFlow.workflowFilter()),
-                    nullToEmpty(messageFlow.actionName()),
-                    nullToEmpty(messageFlow.actionDataIndex())
-            );
+    private static ModelDetailRowResponse toWorkflowRow(
+            final UiModelMessageFlow messageFlow,
+            final boolean excludeEventFields,
+            final List<String> collectDcopItemNames
+    ) {
+        // Collect 컬럼 = 이 flow 에 바인딩된 dcop item 이름들. diff 안정성을 위해 조회 계층에서 정렬된 상태로 온다.
+        final String collect = String.join(", ", collectDcopItemNames);
+        final List<String> values = new ArrayList<>();
+        values.add(nullToEmpty(messageFlow.workflowName()));
+        values.add(nullToEmpty(messageFlow.messageName()));
+        if (!excludeEventFields) {
+            values.add(nullToEmpty(messageFlow.eventId()));
+            values.add(nullToEmpty(messageFlow.transactionId()));
         }
+        values.add(nullToEmpty(messageFlow.workflowFilter()));
+        values.add(nullToEmpty(messageFlow.actionName()));
+        values.add(nullToEmpty(messageFlow.actionDataIndex()));
+        values.add(collect);
+
+        // buildWorkflowPreviewValues 는 SECS 기준 7개를 반환 — Collect 를 덧붙여 SECS 에서 values 와 길이를 맞춰야
+        // (8=8) FE 가 preview(요약된 Filter/Data Index)를 채택한다. 길이가 어긋나면 raw 값으로 폴백된다.
+        final List<String> previewValues = new ArrayList<>(
+                ModelDetailPreviewSupport.buildWorkflowPreviewValues(messageFlow));
+        previewValues.add(collect);
         return new ModelDetailRowResponse(
                 modelRowId("workflow", messageFlow.messageFlowKey()),
-                values,
-                ModelDetailPreviewSupport.buildWorkflowPreviewValues(messageFlow)
+                List.copyOf(values),
+                List.copyOf(previewValues)
         );
     }
 

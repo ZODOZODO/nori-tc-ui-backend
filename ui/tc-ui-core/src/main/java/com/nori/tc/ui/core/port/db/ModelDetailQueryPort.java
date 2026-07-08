@@ -14,6 +14,7 @@ import com.nori.tc.ui.domain.model.UiModelVariableId;
 import com.nori.tc.ui.domain.model.UiModelMessageFlow;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -84,6 +85,15 @@ public interface ModelDetailQueryPort {
      * model_version_key 기준 Dcop Itemes 목록을 조회합니다.
      */
     List<UiModelDcopItem> findDcopItemsByModelVersionKey(long modelVersionKey);
+
+    /**
+     * model_version_key 기준으로 각 Message Flow(message_flow_key)에 바인딩된 DCOP item 이름 목록을 조회합니다.
+     *
+     * <p>Collect 바인딩(tc_model_message_flow_dcop_item) 변경이 model check-in '변경사항 미리보기' diff 에
+     * 반영되도록, workflow 노드 응답에 실을 flow 별 dcop item 이름을 정렬된 형태로 제공합니다. 바인딩이 없는
+     * flow 는 결과 맵에 포함되지 않습니다(호출자가 빈 목록으로 대체).</p>
+     */
+    Map<Long, List<String>> findFlowDcopItemNamesByModelVersionKey(long modelVersionKey);
 
     /**
      * model_version_key 기준 PLC 폴링 그룹 목록을 조회합니다(tc_model_plc_group).

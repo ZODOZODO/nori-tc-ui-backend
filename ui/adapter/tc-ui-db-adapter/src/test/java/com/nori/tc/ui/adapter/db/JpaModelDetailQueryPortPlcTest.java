@@ -4,6 +4,7 @@ import com.nori.tc.db.core.model.store.TcModelDcopItemStore;
 import com.nori.tc.db.core.model.store.TcModelEventIdStore;
 import com.nori.tc.db.core.model.store.TcModelMdfStore;
 import com.nori.tc.db.core.model.store.TcModelMesMessageStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowDcopItemStore;
 import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
 import com.nori.tc.db.core.model.store.TcModelParamStore;
 import com.nori.tc.db.core.model.store.TcModelPlcGroupStore;
@@ -120,6 +121,7 @@ class JpaModelDetailQueryPortPlcTest {
                 mock(TcModelMessageFlowStore.class),
                 mock(TcModelMdfStore.class),
                 mock(TcModelDcopItemStore.class),
+                mock(TcModelMessageFlowDcopItemStore.class),
                 modelPlcGroupStore,
                 modelPlcRegisterStore
         );

@@ -11,6 +11,7 @@ import com.nori.tc.db.core.model.store.TcModelSecsMessageStore;
 import com.nori.tc.db.core.model.store.TcModelSocketMessageStore;
 import com.nori.tc.db.core.model.store.TcModelVariableIdStore;
 import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowDcopItemStore;
 import com.nori.tc.db.core.model.store.TcModelPlcGroupStore;
 import com.nori.tc.db.core.model.store.TcModelPlcRegisterStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelDcopItem;
@@ -23,6 +24,7 @@ import com.nori.tc.db.core.model.upsert.UpsertTcModelSecsMessage;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelSocketMessage;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelVariableId;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMessageFlow;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelMessageFlowDcopItem;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelPlcGroup;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelPlcRegister;
 import com.nori.tc.db.domain.model.TcModelDcopItem;
@@ -35,6 +37,7 @@ import com.nori.tc.db.domain.model.TcModelSecsMessage;
 import com.nori.tc.db.domain.model.TcModelSocketMessage;
 import com.nori.tc.db.domain.model.TcModelVariableId;
 import com.nori.tc.db.domain.model.TcModelMessageFlow;
+import com.nori.tc.db.domain.model.TcModelMessageFlowDcopItem;
 import com.nori.tc.db.domain.model.TcModelPlcGroup;
 import com.nori.tc.db.domain.model.TcModelPlcRegister;
 import com.nori.tc.ui.core.port.db.ModelParentCommitPort;
@@ -66,6 +69,7 @@ final class JpaModelManagementDetailSupport {
     private final TcModelMessageFlowStore modelMessageFlowStore;
     private final TcModelMdfStore modelMdfStore;
     private final TcModelDcopItemStore modelDcopItemStore;
+    private final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore;
     private final TcModelPlcGroupStore modelPlcGroupStore;
     private final TcModelPlcRegisterStore modelPlcRegisterStore;
 
@@ -80,6 +84,7 @@ final class JpaModelManagementDetailSupport {
             final TcModelMessageFlowStore modelMessageFlowStore,
             final TcModelMdfStore modelMdfStore,
             final TcModelDcopItemStore modelDcopItemStore,
+            final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore,
             final TcModelPlcGroupStore modelPlcGroupStore,
             final TcModelPlcRegisterStore modelPlcRegisterStore
     ) {
@@ -93,6 +98,8 @@ final class JpaModelManagementDetailSupport {
         this.modelMessageFlowStore = Objects.requireNonNull(modelMessageFlowStore, "modelMessageFlowStore is null");
         this.modelMdfStore = Objects.requireNonNull(modelMdfStore, "modelMdfStore is null");
         this.modelDcopItemStore = Objects.requireNonNull(modelDcopItemStore, "modelDcopItemStore is null");
+        this.modelMessageFlowDcopItemStore = Objects.requireNonNull(
+                modelMessageFlowDcopItemStore, "modelMessageFlowDcopItemStore is null");
         this.modelPlcGroupStore = Objects.requireNonNull(modelPlcGroupStore, "modelPlcGroupStore is null");
         this.modelPlcRegisterStore = Objects.requireNonNull(modelPlcRegisterStore, "modelPlcRegisterStore is null");
     }
@@ -149,34 +156,73 @@ final class JpaModelManagementDetailSupport {
                 eventId.description(),
                 eventId.enabled()
         )));
-        snapshot.messageFlows().forEach(messageFlow -> modelMessageFlowStore.upsert(new UpsertTcModelMessageFlow(
-                null,
-                targetModelVersionKey,
-                messageFlow.workflowName(),
-                messageFlow.messageName(),
-                messageFlow.eventId(),
-                messageFlow.transactionId(),
-                messageFlow.workflowFilter(),
-                messageFlow.actionName(),
-                messageFlow.actionDataIndex()
-        )));
+        // message flow / dcop item 은 타깃 버전에서 새 key 를 부여받으므로, Collect 바인딩을 재작성하려면
+        // source key → target key 매핑을 각각 만들어 둔다(PLC group 의 groupKeyMapping 패턴과 동일).
+        final Map<Long, Long> messageFlowKeyMapping = new HashMap<>();
+        snapshot.messageFlows().forEach(messageFlow -> {
+            final TcModelMessageFlow created = modelMessageFlowStore.upsert(new UpsertTcModelMessageFlow(
+                    null,
+                    targetModelVersionKey,
+                    messageFlow.workflowName(),
+                    messageFlow.messageName(),
+                    messageFlow.eventId(),
+                    messageFlow.transactionId(),
+                    messageFlow.workflowFilter(),
+                    messageFlow.actionName(),
+                    messageFlow.actionDataIndex()
+            ));
+            messageFlowKeyMapping.put(messageFlow.messageFlowKey(), created.messageFlowKey());
+        });
         snapshot.mdfs().forEach(mdf -> modelMdfStore.upsert(new UpsertTcModelMdf(
                 null,
                 targetModelVersionKey,
                 mdf.mdfName(),
                 mdf.mdfFile()
         )));
-        snapshot.dcopItems().forEach(dcopItem -> modelDcopItemStore.upsert(new UpsertTcModelDcopItem(
-                null,
-                targetModelVersionKey,
-                dcopItem.dcopItemName(),
-                dcopItem.eventId(),
-                dcopItem.variableId(),
-                dcopItem.collectionRule(),
-                dcopItem.calculationRule(),
-                dcopItem.orderRule()
-        )));
+        final Map<Long, Long> dcopItemKeyMapping = new HashMap<>();
+        snapshot.dcopItems().forEach(dcopItem -> {
+            final TcModelDcopItem created = modelDcopItemStore.upsert(new UpsertTcModelDcopItem(
+                    null,
+                    targetModelVersionKey,
+                    dcopItem.dcopItemName(),
+                    dcopItem.eventId(),
+                    dcopItem.variableId(),
+                    dcopItem.collectionRule(),
+                    dcopItem.calculationRule(),
+                    dcopItem.orderRule()
+            ));
+            dcopItemKeyMapping.put(dcopItem.dcopItemKey(), created.dcopItemKey());
+        });
+        cloneMessageFlowDcopItems(snapshot, targetModelVersionKey, messageFlowKeyMapping, dcopItemKeyMapping);
         clonePlcDetails(snapshot, targetModelVersionKey);
+    }
+
+    /**
+     * Flow ↔ DCOP item N:M 바인딩(tc_model_message_flow_dcop_item)을 타깃 버전으로 복제합니다.
+     *
+     * <p>source 바인딩의 message_flow_key / dcop_item_key 는 source 버전의 key 이므로, 앞서 만든
+     * source→target key 매핑으로 치환해 타깃 버전 key 로 재작성한다. 매핑이 없으면(스냅샷 정합성 위반)
+     * 타깃에서 FK 위반을 유발하므로 해당 바인딩은 건너뛴다.</p>
+     */
+    private void cloneMessageFlowDcopItems(
+            final JpaModelManagementSupport.ModelDetailSnapshot snapshot,
+            final long targetModelVersionKey,
+            final Map<Long, Long> messageFlowKeyMapping,
+            final Map<Long, Long> dcopItemKeyMapping
+    ) {
+        snapshot.messageFlowDcopItems().forEach(binding -> {
+            final Long targetMessageFlowKey = messageFlowKeyMapping.get(binding.messageFlowKey());
+            final Long targetDcopItemKey = dcopItemKeyMapping.get(binding.dcopItemKey());
+            if (targetMessageFlowKey == null || targetDcopItemKey == null) {
+                return;
+            }
+            modelMessageFlowDcopItemStore.upsert(new UpsertTcModelMessageFlowDcopItem(
+                    null,
+                    targetMessageFlowKey,
+                    targetDcopItemKey,
+                    targetModelVersionKey
+            ));
+        });
     }
 
     /**
@@ -313,6 +359,15 @@ final class JpaModelManagementDetailSupport {
         for (TcModelPlcGroup group : plcGroups) {
             plcRegisters.addAll(modelPlcRegisterStore.findAllByGroupKey(group.groupKey()));
         }
+        // message flow 는 Collect 바인딩(tc_model_message_flow_dcop_item)을 message_flow_key IN 으로
+        // 함께 로드하기 위해 변수로 먼저 적재한다. 바인딩까지 스냅샷에 담아야 버전 clone 시 유실되지 않는다.
+        final List<TcModelMessageFlow> messageFlows =
+                loadAllByModelVersionKey(modelVersionKey, modelMessageFlowStore::findAllByModelVersionKey);
+        final List<Long> messageFlowKeys = messageFlows.stream()
+                .map(TcModelMessageFlow::messageFlowKey)
+                .toList();
+        final List<TcModelMessageFlowDcopItem> messageFlowDcopItems =
+                modelMessageFlowDcopItemStore.findAllByMessageFlowKeyIn(messageFlowKeys);
         return new JpaModelManagementSupport.ModelDetailSnapshot(
                 loadAllByModelVersionKey(modelVersionKey, modelParamStore::findAllByModelVersionKey),
                 loadAllByModelVersionKey(modelVersionKey, modelSecsMessageStore::findAllByModelVersionKey),
@@ -321,9 +376,10 @@ final class JpaModelManagementDetailSupport {
                 loadAllByModelVersionKey(modelVersionKey, modelVariableIdStore::findAllByModelVersionKey),
                 loadAllByModelVersionKey(modelVersionKey, modelReportIdStore::findAllByModelVersionKey),
                 loadAllByModelVersionKey(modelVersionKey, modelEventIdStore::findAllByModelVersionKey),
-                loadAllByModelVersionKey(modelVersionKey, modelMessageFlowStore::findAllByModelVersionKey),
+                messageFlows,
                 loadAllByModelVersionKey(modelVersionKey, modelMdfStore::findAllByModelVersionKey),
                 loadAllByModelVersionKey(modelVersionKey, modelDcopItemStore::findAllByModelVersionKey),
+                messageFlowDcopItems,
                 plcGroups,
                 plcRegisters
         );

@@ -3,6 +3,7 @@ package com.nori.tc.ui.adapter.db;
 import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.eqp.store.TcEqpStore;
 import com.nori.tc.db.core.model.store.TcModelDcopItemStore;
+import com.nori.tc.db.core.model.store.TcModelMessageFlowDcopItemStore;
 import com.nori.tc.db.core.model.store.TcModelEventIdStore;
 import com.nori.tc.db.core.model.store.TcModelMdfStore;
 import com.nori.tc.db.core.model.store.TcModelMesMessageStore;
@@ -16,7 +17,10 @@ import com.nori.tc.db.core.model.store.TcModelMessageFlowStore;
 import com.nori.tc.db.core.model.store.TcModelPlcGroupStore;
 import com.nori.tc.db.core.model.store.TcModelPlcRegisterStore;
 import com.nori.tc.db.core.model.upsert.UpsertTcModel;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelDcopItem;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelMdf;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelMessageFlow;
+import com.nori.tc.db.core.model.upsert.UpsertTcModelMessageFlowDcopItem;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelParam;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelPlcGroup;
 import com.nori.tc.db.core.model.upsert.UpsertTcModelPlcRegister;
@@ -37,6 +41,7 @@ import com.nori.tc.db.domain.model.TcModelSecsMessage;
 import com.nori.tc.db.domain.model.TcModelSocketMessage;
 import com.nori.tc.db.domain.model.TcModelVariableId;
 import com.nori.tc.db.domain.model.TcModelMessageFlow;
+import com.nori.tc.db.domain.model.TcModelMessageFlowDcopItem;
 import com.nori.tc.db.domain.model.TcModelPlcGroup;
 import com.nori.tc.db.domain.model.TcModelPlcRegister;
 import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
@@ -210,6 +215,43 @@ class JpaModelManagementPortTest {
         verify(fixture.modelMessageFlowStore, times(1)).upsert(any());
         verify(fixture.modelMdfStore, times(1)).upsert(any());
         verify(fixture.modelDcopItemStore, times(1)).upsert(any());
+    }
+
+    @Test
+    @DisplayName("branch 생성 clone 은 Flow-DCOP Collect 바인딩을 새 버전 key 로 재매핑해 복제합니다")
+    void createBranchModelClonesMessageFlowDcopBindings() {
+        final Fixture fixture = new Fixture();
+        final TcModel parentLatest = model(2001L, 601L, "ROOT_MODEL", null, "1.2.0", ProtocolType.SOCKET, ModelStatus.OPERATE);
+        final TcModel branchCreated = model(3001L, 701L, "ROOT_MODEL_feature_tester", "ROOT_MODEL", INITIAL_BRANCH_VERSION, ProtocolType.SOCKET, ModelStatus.DEVELOP);
+
+        fixture.allModels.add(parentLatest);
+        // source flow / dcop 는 helper 빌더가 key=1L 로 고정 생성. 그 둘을 잇는 Collect 바인딩(1,1)을 둔다.
+        fixture.messageFlowsByVersion.put(parentLatest.modelVersionKey(),
+                List.of(workflow(parentLatest.modelVersionKey(), "FLOW_01", "S1F1")));
+        fixture.dcopItemsByVersion.put(parentLatest.modelVersionKey(),
+                List.of(dcop(parentLatest.modelVersionKey(), "TEMP")));
+        fixture.messageFlowDcopItemsByFlowKey.put(1L, List.of(new TcModelMessageFlowDcopItem(
+                1L, 1L, 1L, parentLatest.modelVersionKey(), OffsetDateTime.parse("2026-03-11T10:15:30+09:00"))));
+
+        when(fixture.modelStore.upsert(any())).thenReturn(branchCreated);
+
+        fixture.port.createBranchModel(new ModelBranchCommandPort.CreateBranchModelCommand(
+                parentLatest.modelKey(),
+                "feature",
+                null,
+                "tester"
+        ));
+
+        // Collect 바인딩이 소실되지 않고, 타깃 버전에서 새로 부여된 flow/dcop key(스텁 시퀀스 9001/8001)로
+        // 재작성되어야 한다. modelVersionKey 는 타깃(branch) 버전.
+        final ArgumentCaptor<UpsertTcModelMessageFlowDcopItem> captor =
+                ArgumentCaptor.forClass(UpsertTcModelMessageFlowDcopItem.class);
+        verify(fixture.modelMessageFlowDcopItemStore, times(1)).upsert(captor.capture());
+        final UpsertTcModelMessageFlowDcopItem saved = captor.getValue();
+        assertNull(saved.mfdiKey());
+        assertEquals(9001L, saved.messageFlowKey());
+        assertEquals(8001L, saved.dcopItemKey());
+        assertEquals(branchCreated.modelVersionKey(), saved.modelVersionKey());
     }
 
     @Test
@@ -739,6 +781,8 @@ class JpaModelManagementPortTest {
         private final TcModelMessageFlowStore modelMessageFlowStore = mock(TcModelMessageFlowStore.class);
         private final TcModelMdfStore modelMdfStore = mock(TcModelMdfStore.class);
         private final TcModelDcopItemStore modelDcopItemStore = mock(TcModelDcopItemStore.class);
+        private final TcModelMessageFlowDcopItemStore modelMessageFlowDcopItemStore =
+                mock(TcModelMessageFlowDcopItemStore.class);
         private final TcModelPlcGroupStore modelPlcGroupStore = mock(TcModelPlcGroupStore.class);
         private final TcModelPlcRegisterStore modelPlcRegisterStore = mock(TcModelPlcRegisterStore.class);
 
@@ -754,6 +798,7 @@ class JpaModelManagementPortTest {
         private final Map<Long, List<TcModelMessageFlow>> messageFlowsByVersion = new HashMap<>();
         private final Map<Long, List<TcModelMdf>> mdfsByVersion = new HashMap<>();
         private final Map<Long, List<TcModelDcopItem>> dcopItemsByVersion = new HashMap<>();
+        private final Map<Long, List<TcModelMessageFlowDcopItem>> messageFlowDcopItemsByFlowKey = new HashMap<>();
         private final Map<Long, List<TcModelPlcGroup>> plcGroupsByVersion = new HashMap<>();
         private final Map<Long, List<TcModelPlcRegister>> plcRegistersByGroupKey = new HashMap<>();
 
@@ -770,6 +815,7 @@ class JpaModelManagementPortTest {
                 modelMessageFlowStore,
                 modelMdfStore,
                 modelDcopItemStore,
+                modelMessageFlowDcopItemStore,
                 modelPlcGroupStore,
                 modelPlcRegisterStore
         ) {
@@ -814,6 +860,47 @@ class JpaModelManagementPortTest {
             when(modelDcopItemStore.findAllByModelVersionKey(anyLong(), any())).thenAnswer(invocation ->
                     paginate(dcopItemsByVersion.getOrDefault(invocation.getArgument(0), List.of()), invocation.getArgument(1))
             );
+            // clone 이 upsert 반환 엔티티의 새 key 로 Collect 바인딩을 재매핑하므로, 실제 store 처럼
+            // 새 message_flow_key / dcop_item_key 를 부여해 반환하도록 스텁한다(null 반환 시 NPE).
+            final java.util.concurrent.atomic.AtomicLong messageFlowKeySeq = new java.util.concurrent.atomic.AtomicLong(9000L);
+            when(modelMessageFlowStore.upsert(any())).thenAnswer(invocation -> {
+                final UpsertTcModelMessageFlow command = invocation.getArgument(0);
+                return new TcModelMessageFlow(
+                        messageFlowKeySeq.incrementAndGet(),
+                        command.modelVersionKey(),
+                        command.workflowName(),
+                        command.messageName(),
+                        command.eventId(),
+                        command.transactionId(),
+                        command.workflowFilter(),
+                        command.actionName(),
+                        command.actionDataIndex(),
+                        OffsetDateTime.parse("2026-03-11T10:15:30+09:00")
+                );
+            });
+            final java.util.concurrent.atomic.AtomicLong dcopItemKeySeq = new java.util.concurrent.atomic.AtomicLong(8000L);
+            when(modelDcopItemStore.upsert(any())).thenAnswer(invocation -> {
+                final UpsertTcModelDcopItem command = invocation.getArgument(0);
+                return new TcModelDcopItem(
+                        dcopItemKeySeq.incrementAndGet(),
+                        command.modelVersionKey(),
+                        command.dcopItemName(),
+                        command.eventId(),
+                        command.variableId(),
+                        command.collectionRule(),
+                        command.calculationRule(),
+                        command.orderRule(),
+                        OffsetDateTime.parse("2026-03-11T10:15:30+09:00")
+                );
+            });
+            when(modelMessageFlowDcopItemStore.findAllByMessageFlowKeyIn(any())).thenAnswer(invocation -> {
+                final java.util.Collection<Long> flowKeys = invocation.getArgument(0);
+                final List<TcModelMessageFlowDcopItem> bindings = new ArrayList<>();
+                for (final Long flowKey : flowKeys) {
+                    bindings.addAll(messageFlowDcopItemsByFlowKey.getOrDefault(flowKey, List.of()));
+                }
+                return bindings;
+            });
             // PLC store 는 페이지 계약이 아닌 List 직접 반환(group=by modelVersionKey, register=by groupKey).
             when(modelPlcGroupStore.findAllByModelVersionKey(anyLong())).thenAnswer(invocation ->
                     plcGroupsByVersion.getOrDefault(invocation.getArgument(0), List.of())
