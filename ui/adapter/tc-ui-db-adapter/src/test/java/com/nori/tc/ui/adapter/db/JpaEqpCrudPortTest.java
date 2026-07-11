@@ -41,6 +41,7 @@ import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.port.db.DemoJobCleanupPort;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
+import com.nori.tc.ui.domain.eqp.UiEqpPortStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -324,6 +325,81 @@ class JpaEqpCrudPortTest {
         final ArgumentCaptor<UpsertTcEqpPortStatus> portStatusCaptor = ArgumentCaptor.forClass(UpsertTcEqpPortStatus.class);
         verify(fixture.eqpPortStatusStore, org.mockito.Mockito.times(4)).upsert(portStatusCaptor.capture());
         assertEquals(List.of("1", "2", "3", "4"), portStatusCaptor.getAllValues().stream().map(UpsertTcEqpPortStatus::portId).toList());
+    }
+
+    @Test
+    @DisplayName("EQP 수정으로 파라미터 버전이 바뀌면 PORTCOUNT 초과 포트를 제거하고 겹치는 포트는 보존합니다")
+    void updateSyncsPortStatusesDownToPortCount() {
+        final Fixture fixture = new Fixture();
+        final String eqpId = "ETC-UPD-DOWN";
+        when(fixture.dbSupport.loadSnapshotByEqpId(eqpId))
+                .thenReturn(Optional.of(snapshot(existingSecsEqp(eqpId, "v1", 101L))));
+        when(fixture.eqpStore.upsert(any())).thenReturn(updatedSecsEqp(eqpId, "v2", 101L));
+        when(fixture.dbSupport.loadAllPortStatuses(12L)).thenReturn(List.of(
+                portStatus(12L, "1"), portStatus(12L, "2"), portStatus(12L, "3"), portStatus(12L, "4")));
+        when(fixture.eqpParamStore.findAllByEqpKeyAndVersion(12L, "v2"))
+                .thenReturn(List.of(eqpParam(12L, "v2", "PORTCOUNT", "1")));
+
+        fixture.port.update(eqpId, updateCommand("v2", 101L));
+
+        verify(fixture.eqpPortStatusStore).deleteByEqpKeyPortId(12L, "2");
+        verify(fixture.eqpPortStatusStore).deleteByEqpKeyPortId(12L, "3");
+        verify(fixture.eqpPortStatusStore).deleteByEqpKeyPortId(12L, "4");
+        verify(fixture.eqpPortStatusStore, never()).deleteByEqpKeyPortId(12L, "1");
+        verify(fixture.eqpPortStatusStore, never()).upsert(any());
+    }
+
+    @Test
+    @DisplayName("EQP 수정으로 PORTCOUNT가 늘면 부족한 포트만 추가하고 기존 포트는 재생성하지 않습니다")
+    void updateSyncsPortStatusesUpToPortCount() {
+        final Fixture fixture = new Fixture();
+        final String eqpId = "ETC-UPD-UP";
+        when(fixture.dbSupport.loadSnapshotByEqpId(eqpId))
+                .thenReturn(Optional.of(snapshot(existingSecsEqp(eqpId, "v1", 101L))));
+        when(fixture.eqpStore.upsert(any())).thenReturn(updatedSecsEqp(eqpId, "v2", 101L));
+        when(fixture.dbSupport.loadAllPortStatuses(12L)).thenReturn(List.of(portStatus(12L, "1")));
+        when(fixture.eqpParamStore.findAllByEqpKeyAndVersion(12L, "v2"))
+                .thenReturn(List.of(eqpParam(12L, "v2", "PORTCOUNT", "3")));
+
+        fixture.port.update(eqpId, updateCommand("v2", 101L));
+
+        final ArgumentCaptor<UpsertTcEqpPortStatus> captor = ArgumentCaptor.forClass(UpsertTcEqpPortStatus.class);
+        verify(fixture.eqpPortStatusStore, org.mockito.Mockito.times(2)).upsert(captor.capture());
+        assertEquals(List.of("2", "3"), captor.getAllValues().stream().map(UpsertTcEqpPortStatus::portId).toList());
+        verify(fixture.eqpPortStatusStore, never()).deleteByEqpKeyPortId(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("EQP 수정 시 PORTCOUNT가 1 미만이면 거부하고 port_status를 건드리지 않습니다")
+    void updateRejectsPortCountBelowOne() {
+        final Fixture fixture = new Fixture();
+        final String eqpId = "ETC-UPD-ZERO";
+        when(fixture.dbSupport.loadSnapshotByEqpId(eqpId))
+                .thenReturn(Optional.of(snapshot(existingSecsEqp(eqpId, "v1", 101L))));
+        when(fixture.eqpStore.upsert(any())).thenReturn(updatedSecsEqp(eqpId, "v2", 101L));
+        when(fixture.eqpParamStore.findAllByEqpKeyAndVersion(12L, "v2"))
+                .thenReturn(List.of(eqpParam(12L, "v2", "PORTCOUNT", "0")));
+
+        assertThrows(UiBadRequestException.class, () -> fixture.port.update(eqpId, updateCommand("v2", 101L)));
+
+        verify(fixture.eqpPortStatusStore, never()).deleteByEqpKeyPortId(anyLong(), any());
+        verify(fixture.eqpPortStatusStore, never()).upsert(any());
+    }
+
+    @Test
+    @DisplayName("EQP 수정에서 모델/파라미터 버전이 그대로면 port_status를 재동기화하지 않습니다")
+    void updateWithoutVersionChangeLeavesPortStatusesUntouched() {
+        final Fixture fixture = new Fixture();
+        final String eqpId = "ETC-UPD-NOOP";
+        when(fixture.dbSupport.loadSnapshotByEqpId(eqpId))
+                .thenReturn(Optional.of(snapshot(existingSecsEqp(eqpId, "v1", 101L))));
+        when(fixture.eqpStore.upsert(any())).thenReturn(updatedSecsEqp(eqpId, "v1", 101L));
+
+        fixture.port.update(eqpId, updateCommand("v1", 101L));
+
+        verify(fixture.dbSupport, never()).loadAllPortStatuses(anyLong());
+        verify(fixture.eqpPortStatusStore, never()).deleteByEqpKeyPortId(anyLong(), any());
+        verify(fixture.eqpPortStatusStore, never()).upsert(any());
     }
 
     @Test
@@ -1106,6 +1182,29 @@ class JpaEqpCrudPortTest {
                 null,
                 null
         );
+    }
+
+    private static TcEqp existingSecsEqp(final String eqpId, final String appliedParamVersion, final long modelVersionKey) {
+        return eqp(12L, eqpId, ProtocolType.SECS, "ACTIVE", true, 3, "10.10.0.1", 5000,
+                modelVersionKey, "SYSTEM", appliedParamVersion);
+    }
+
+    private static TcEqp updatedSecsEqp(final String eqpId, final String appliedParamVersion, final long modelVersionKey) {
+        return eqp(12L, eqpId, ProtocolType.SECS, "ACTIVE", true, 3, "10.10.0.1", 5000,
+                modelVersionKey, "tester", appliedParamVersion);
+    }
+
+    private static EqpManagementCommand.Update updateCommand(final String appliedParamVersion, final long modelVersionKey) {
+        return new EqpManagementCommand.Update(
+                "tester", 1L, "ACTIVE", true, 3, "10.10.0.1", 5000,
+                modelVersionKey, appliedParamVersion, null, null, null,
+                new EqpManagementCommand.HsmsSettings(0, 45, 10, 5, 10, 5, true, 60, 10_485_760L),
+                null, null);
+    }
+
+    private static UiEqpPortStatus portStatus(final long eqpKey, final String portId) {
+        return new UiEqpPortStatus(0L, eqpKey, portId, null, "DOWN", null, null, null,
+                OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
     }
 
     private static TcEqpParam eqpParam(

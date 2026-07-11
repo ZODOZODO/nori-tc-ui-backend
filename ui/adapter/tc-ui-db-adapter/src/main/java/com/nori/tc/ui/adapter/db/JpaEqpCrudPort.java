@@ -224,6 +224,17 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             );
             upsertLogPolicy(eqpKey, resolveUpdateLogSettings(command.logSettings(), existing.logPolicy()));
 
+            // 모델/파라미터 버전이 실제로 바뀌면 tc_eqp_port_status 를 PORTCOUNT 에 맞춰 재동기화한다.
+            // 모든 param/model 변경이 이 update() 를 통과하므로(deploy 확정 · 편집), 여기서 한 번 맞추면
+            // 어느 경로로 바꿔도 port_status 가 PORTCOUNT 와 어긋나지 않는다(drift 원천 차단).
+            final boolean paramVersionChanged = !Objects.equals(
+                    normalizeOptionalText(command.appliedParamVersion()),
+                    existing.eqp().appliedParamVersion());
+            final boolean modelVersionChanged = command.modelVersionKey() != existing.eqp().modelVersionKey();
+            if (paramVersionChanged || modelVersionChanged) {
+                syncPortStatusesToCount(updatedEqp, normalizeOptionalText(command.appliedParamVersion()));
+            }
+
             return requireSnapshot(eqpId);
         } catch (RuntimeException exception) {
             throw toUiException("EQP 수정", exception);
@@ -494,6 +505,54 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         }
     }
 
+    /**
+     * tc_eqp_port_status 를 PORTCOUNT 목표 개수로 맞춘다.
+     *
+     * <p>초과 포트(목표 범위 밖)는 제거하고 부족 포트는 추가하되, 겹치는 포트는 재생성하지 않아
+     * carrier/state 등 런타임 값을 보존한다. PORTCOUNT 가 1 미만이면 {@link #resolveInitialPortCount}
+     * 안에서 {@link UiBadRequestException} 이 발생해 아무 포트도 건드리지 않고 트랜잭션이 롤백된다.</p>
+     */
+    private void syncPortStatusesToCount(final TcEqp eqp, final String appliedParamVersion) {
+        final int targetCount = resolveInitialPortCount(eqp, appliedParamVersion);
+        final long eqpKey = eqp.eqpKey();
+        final List<UiEqpPortStatus> existingPortStatuses = dbSupport.loadAllPortStatuses(eqpKey);
+        final List<String> existingPortIds = existingPortStatuses.stream()
+                .map(UiEqpPortStatus::portId)
+                .toList();
+
+        for (final UiEqpPortStatus status : existingPortStatuses) {
+            if (!isWithinPortCount(status.portId(), targetCount)) {
+                eqpPortStatusStore.deleteByEqpKeyPortId(eqpKey, status.portId());
+            }
+        }
+
+        final OffsetDateTime timestamp = OffsetDateTime.now();
+        for (int portNumber = 1; portNumber <= targetCount; portNumber++) {
+            final String portId = Integer.toString(portNumber);
+            if (!existingPortIds.contains(portId)) {
+                eqpPortStatusStore.upsert(new UpsertTcEqpPortStatus(
+                        eqpKey,
+                        portId,
+                        null,
+                        INITIAL_PORT_STATE,
+                        null,
+                        null,
+                        null,
+                        timestamp
+                ));
+            }
+        }
+    }
+
+    private boolean isWithinPortCount(final String portId, final int targetCount) {
+        try {
+            final int parsed = Integer.parseInt(portId);
+            return parsed >= 1 && parsed <= targetCount;
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
+    }
+
     private int resolveInitialPortCount(final TcEqp eqp, final String appliedParamVersion) {
         return findEqpPortCount(eqp.eqpKey(), appliedParamVersion)
                 .or(() -> findModelPortCount(eqp.modelVersionKey()))
@@ -551,7 +610,12 @@ public class JpaEqpCrudPort implements EqpCrudPort {
 
         try {
             final int parsed = Integer.parseInt(normalized);
-            return parsed > 0 ? Optional.of(parsed) : Optional.empty();
+            // PORTCOUNT 가 명시됐는데 1 미만이면 거부한다 — 포트 0개 설비는 성립 불가.
+            // 조용히 기본값으로 fallback 하면 잘못된 설정이 그대로 적용되므로 명시적으로 실패시킨다.
+            if (parsed < 1) {
+                throw new UiBadRequestException("PORTCOUNT는 1 이상이어야 합니다. 입력값=" + parsed);
+            }
+            return Optional.of(parsed);
         } catch (NumberFormatException ignored) {
             return Optional.empty();
         }
