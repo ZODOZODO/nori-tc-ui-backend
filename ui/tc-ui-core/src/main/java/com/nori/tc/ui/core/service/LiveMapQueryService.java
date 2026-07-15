@@ -201,6 +201,9 @@ public class LiveMapQueryService {
         return new LiveMapPortView(
                 portId,
                 portId,
+                portStatus.carrierId() == null || portStatus.carrierId().isBlank()
+                        ? null
+                        : portStatus.carrierId(),
                 status,
                 status
         );

@@ -30,6 +30,7 @@ public record LiveMapResponse(
     public record PortResponse(
             String id,
             String label,
+            String carrierId,
             String status,
             String statusLabel
     ) {

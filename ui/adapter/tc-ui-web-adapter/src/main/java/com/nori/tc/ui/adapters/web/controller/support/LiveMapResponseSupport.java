@@ -45,6 +45,7 @@ public final class LiveMapResponseSupport {
         return new LiveMapResponse.PortResponse(
                 source.id(),
                 source.label(),
+                source.carrierId(),
                 source.status(),
                 source.statusLabel()
         );

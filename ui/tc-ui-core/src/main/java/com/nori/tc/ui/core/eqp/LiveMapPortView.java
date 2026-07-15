@@ -8,6 +8,7 @@ import java.util.Objects;
 public record LiveMapPortView(
         String id,
         String label,
+        String carrierId,
         String status,
         String statusLabel
 ) {

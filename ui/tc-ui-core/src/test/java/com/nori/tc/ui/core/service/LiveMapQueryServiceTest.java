@@ -76,6 +76,7 @@ class LiveMapQueryServiceTest {
         assertEquals("cvd", result.getFirst().clusterId());
         assertEquals("RUN", result.getFirst().status());
         assertEquals("SINGLE", result.getFirst().equipmentModeLabel());
+        assertEquals("CAR-01", result.getFirst().portItems().getFirst().carrierId());
         assertEquals("LP1 · CARID CAR-01", result.getFirst().tooltipMeta());
     }
 
@@ -113,6 +114,7 @@ class LiveMapQueryServiceTest {
         assertEquals("photo", result.getFirst().clusterId());
         assertEquals("DOWN", result.getFirst().status());
         assertEquals("BATCH", result.getFirst().equipmentModeLabel());
+        assertEquals(null, result.getFirst().portItems().getFirst().carrierId());
         assertEquals("LP2 · CARID Empty", result.getFirst().tooltipMeta());
     }
 
