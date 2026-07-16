@@ -60,7 +60,8 @@ public final class EqpControllerResponseSupport {
                         : new EqpManageDetailResponse.RuntimeStateResponse(
                         snapshot.runtimeState().controlState(),
                         snapshot.runtimeState().eqpState(),
-                        snapshot.connectionState()
+                        snapshot.connectionState(),
+                        snapshot.runtimeState().desiredState()
                 ),
                 snapshot.logPolicy() == null
                         ? null

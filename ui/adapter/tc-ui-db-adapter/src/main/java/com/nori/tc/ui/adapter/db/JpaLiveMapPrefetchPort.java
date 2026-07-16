@@ -242,7 +242,10 @@ public class JpaLiveMapPrefetchPort implements LiveMapPrefetchPort {
         final String connectionState = latestConn == null || latestConn.toState() == null
                 ? null
                 : trimToNull(latestConn.toState());
-        return new EqpRuntimeStateView(controlState, eqpState, connectionState);
+        final String desiredState = state == null || state.desiredState() == null
+                ? null
+                : state.desiredState().name();
+        return new EqpRuntimeStateView(controlState, eqpState, connectionState, desiredState);
     }
 
     private static String trimToNull(final String value) {

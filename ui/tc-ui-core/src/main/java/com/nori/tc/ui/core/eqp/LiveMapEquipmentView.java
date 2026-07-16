@@ -17,6 +17,9 @@ public record LiveMapEquipmentView(
         String equipmentModeLabel,
         String status,
         String statusLabel,
+        // 연결 의도(STARTED/ENDED, null=미확정). status enum(4값 RUN/IDLE/ERROR/DOWN)은 그대로 두되(D6),
+        // desiredState 를 함께 실어 소비자가 stuck(STARTED+끊김)을 정상-ended(ENDED+끊김)와 구분한다(R-C3).
+        String desiredState,
         List<LiveMapPortView> portItems,
         String tooltipMeta,
         String tooltipStep,

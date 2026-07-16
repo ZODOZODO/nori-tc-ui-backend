@@ -30,6 +30,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -146,7 +147,7 @@ class DeployServiceCommandSupportPlcProfileTest {
     }
 
     @Test
-    void neverStartedPlcSnapshotDefaultsDesiredStateToEnded() {
+    void neverStartedPlcSnapshotPreservesNullDesiredState() {
         final DeployServiceCommandSupport support = newSupport(mock(ModelDetailQueryPort.class));
         final EqpManagementSnapshot snapshot = plcSnapshot(null);
 
@@ -157,7 +158,8 @@ class DeployServiceCommandSupportPlcProfileTest {
         );
 
         assertNotNull(profile.plcSettings());
-        assertEquals("ENDED", profile.desiredState());
+        // R-A5: desired_state=null(never-started)은 ENDED 로 무음 승격하지 않고 null 로 보존한다.
+        assertNull(profile.desiredState());
     }
 
     private PersistedDeployTarget plcTarget() {

@@ -60,7 +60,7 @@ public class LiveMapQueryService {
         final String clusterId = normalizeClusterId(processType);
         final String clusterName = processType;
         final EqpQueryPort.EqpRuntimeStateView runtimeState = row.runtimeState() == null
-                ? new EqpQueryPort.EqpRuntimeStateView(null, null, null)
+                ? new EqpQueryPort.EqpRuntimeStateView(null, null, null, null)
                 : row.runtimeState();
         final String status = resolveEquipmentStatus(runtimeState.controlState(), runtimeState.eqpState());
         final List<UiEqpPortStatus> portStatuses = row.portStatuses() == null ? List.of() : row.portStatuses();
@@ -80,6 +80,7 @@ public class LiveMapQueryService {
                 resolveWaferMode(row, modelParams),
                 status,
                 status,
+                runtimeState.desiredState(),
                 portItems,
                 buildTooltipMeta(portStatuses),
                 buildTooltipStep(runtimeState),

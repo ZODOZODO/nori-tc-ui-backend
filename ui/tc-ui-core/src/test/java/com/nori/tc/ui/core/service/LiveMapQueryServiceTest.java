@@ -62,7 +62,7 @@ class LiveMapQueryServiceTest {
                         UiCarrierState.CLAMPED,
                         OffsetDateTime.now()
                 )),
-                new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED")
+                new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED", "STARTED")
         );
         // eqp param 우선이라 modelParam 값은 의도적으로 무시되어야 함을 확인하기 위해 다른 값 주입.
         final Map<Long, List<UiModelParam>> modelParams = Map.of(
@@ -99,7 +99,7 @@ class LiveMapQueryServiceTest {
                         UiCarrierState.UNKNOWN,
                         OffsetDateTime.now()
                 )),
-                new EqpQueryPort.EqpRuntimeStateView("OFFLINE", "IDLE", "ENDED")
+                new EqpQueryPort.EqpRuntimeStateView("OFFLINE", "IDLE", "ENDED", "ENDED")
         );
         final Map<Long, List<UiModelParam>> modelParams = Map.of(
                 101L, List.of(
@@ -127,7 +127,7 @@ class LiveMapQueryServiceTest {
                 "C Line",
                 List.of(new UiEqpParam(3L, 1L, "PROCESS_TYPE", "v3", "CMP", null, "tester", OffsetDateTime.now())),
                 List.of(),
-                new EqpQueryPort.EqpRuntimeStateView("LOCAL", "MAINTENANCE", "CONNECTED")
+                new EqpQueryPort.EqpRuntimeStateView("LOCAL", "MAINTENANCE", "CONNECTED", "STARTED")
         );
         when(liveMapPrefetchPort.prefetch()).thenReturn(new LiveMapPrefetchSnapshot(List.of(row), Map.of()));
 
@@ -145,7 +145,7 @@ class LiveMapQueryServiceTest {
                 "C Line",
                 List.of(new UiEqpParam(4L, 1L, "PROCESS_TYPE", "v4", "ETCH", null, "tester", OffsetDateTime.now())),
                 List.of(),
-                new EqpQueryPort.EqpRuntimeStateView("REMOTE", "SERVICE_UNAVAILABLE", "CONNECTED")
+                new EqpQueryPort.EqpRuntimeStateView("REMOTE", "SERVICE_UNAVAILABLE", "CONNECTED", "STARTED")
         );
         when(liveMapPrefetchPort.prefetch()).thenReturn(new LiveMapPrefetchSnapshot(List.of(row), Map.of()));
 
@@ -163,7 +163,7 @@ class LiveMapQueryServiceTest {
                 "C Line",
                 List.of(new UiEqpParam(5L, 1L, "PROCESS_TYPE", "v5", "CLN", null, "tester", OffsetDateTime.now())),
                 List.of(),
-                new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED")
+                new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED", "STARTED")
         );
         when(liveMapPrefetchPort.prefetch()).thenReturn(new LiveMapPrefetchSnapshot(List.of(row), Map.of()));
 
@@ -184,7 +184,7 @@ class LiveMapQueryServiceTest {
                 "B Line",
                 List.of(new UiEqpParam(9L, 1L, "PROCESS_TYPE", "v1", "ETCH", null, "tester", OffsetDateTime.now())),
                 List.of(),
-                new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED")
+                new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED", "STARTED")
         );
         when(liveMapPrefetchPort.prefetch()).thenReturn(new LiveMapPrefetchSnapshot(List.of(row), Map.of()));
 
@@ -205,13 +205,46 @@ class LiveMapQueryServiceTest {
                 "B Line",
                 List.of(new UiEqpParam(11L, 1L, "PROCESS_TYPE", "v1", "ETCH", null, "tester", OffsetDateTime.now())),
                 List.of(),
-                new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED")
+                new EqpQueryPort.EqpRuntimeStateView("REMOTE", "RUN", "CONNECTED", "STARTED")
         );
         when(liveMapPrefetchPort.prefetch()).thenReturn(new LiveMapPrefetchSnapshot(List.of(row), Map.of()));
 
         final List<LiveMapEquipmentView> result = liveMapQueryService.getEquipmentViews();
 
         assertEquals(1L, result.getFirst().eqpKey());
+    }
+
+    @Test
+    void liveMapProjectionExposesDesiredStateToDistinguishStuckFromEndedWhileStatusEnumStays() {
+        // AC-C3: (STARTED,OFFLINE)=stuck 과 (ENDED,OFFLINE)=정상-ended 를 desiredState 로 구분 가능해야 한다.
+        // status enum 은 4값 유지(둘 다 DOWN) — 5번째 값 신설 없음(D6).
+        final LiveMapEqpPrefetchRow stuckRow = new LiveMapEqpPrefetchRow(
+                createEqp("EQP-STUCK", "v1"), "B_LINE", "B Line",
+                List.of(new UiEqpParam(21L, 1L, "PROCESS_TYPE", "v1", "ETCH", null, "tester", OffsetDateTime.now())),
+                List.of(),
+                new EqpQueryPort.EqpRuntimeStateView("OFFLINE", "IDLE", "STARTED", "STARTED")
+        );
+        final LiveMapEqpPrefetchRow endedRow = new LiveMapEqpPrefetchRow(
+                createEqp("EQP-ENDED", "v1"), "B_LINE", "B Line",
+                List.of(new UiEqpParam(22L, 1L, "PROCESS_TYPE", "v1", "ETCH", null, "tester", OffsetDateTime.now())),
+                List.of(),
+                new EqpQueryPort.EqpRuntimeStateView("OFFLINE", "IDLE", "ENDED", "ENDED")
+        );
+        when(liveMapPrefetchPort.prefetch())
+                .thenReturn(new LiveMapPrefetchSnapshot(List.of(stuckRow, endedRow), Map.of()));
+
+        final List<LiveMapEquipmentView> result = liveMapQueryService.getEquipmentViews();
+
+        final LiveMapEquipmentView stuck = result.stream()
+                .filter(v -> "STARTED".equals(v.desiredState())).findFirst().orElseThrow();
+        final LiveMapEquipmentView ended = result.stream()
+                .filter(v -> "ENDED".equals(v.desiredState())).findFirst().orElseThrow();
+        // status enum 은 4값 유지 — 둘 다 DOWN(끊김)이라 status 만으로는 구분 불가.
+        assertEquals("DOWN", stuck.status());
+        assertEquals("DOWN", ended.status());
+        // desiredState 노출로 stuck 과 정상-ended 를 구분한다.
+        assertEquals("STARTED", stuck.desiredState());
+        assertEquals("ENDED", ended.desiredState());
     }
 
     private UiEqp createEqp(final String eqpId, final String appliedParamVersion) {

@@ -44,11 +44,13 @@ public record EqpManageDetailResponse(
      * @param controlState control state
      * @param eqpState eqp state
      * @param connectionState connection state
+     * @param desiredState 연결 의도(STARTED/ENDED, null=미확정) — stuck 식별용(R-C2)
      */
     public record RuntimeStateResponse(
             UiControlState controlState,
             UiEqpState eqpState,
-            String connectionState
+            String connectionState,
+            String desiredState
     ) {
     }
 

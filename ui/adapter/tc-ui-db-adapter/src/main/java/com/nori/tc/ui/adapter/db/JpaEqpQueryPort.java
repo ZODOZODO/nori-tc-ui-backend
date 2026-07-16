@@ -422,6 +422,7 @@ public class JpaEqpQueryPort implements EqpQueryPort {
             final Optional<TcEqpState> optionalState = eqpStateStore.findByEqpKey(eqpKey);
             final String controlState = optionalState.map(TcEqpState::controlState).map(Enum::name).orElse(null);
             final String eqpState = optionalState.map(TcEqpState::eqpState).map(Enum::name).orElse(null);
+            final String desiredState = optionalState.map(TcEqpState::desiredState).map(Enum::name).orElse(null);
 
             final String connectionState = eqpStateHistStore
                     .findAllByEqpKey(eqpKey, com.nori.tc.db.core.common.PageRequest.of(0, CONNECTION_STATE_HISTORY_LIMIT))
@@ -432,7 +433,7 @@ public class JpaEqpQueryPort implements EqpQueryPort {
                     .findFirst()
                     .orElse(null);
 
-            return Optional.of(new EqpRuntimeStateView(controlState, eqpState, connectionState));
+            return Optional.of(new EqpRuntimeStateView(controlState, eqpState, connectionState, desiredState));
         } catch (RuntimeException e) {
             if (UiDbAdapterExceptionSupport.isBadRequest(e)) {
                 log.warn("설비 런타임 상태 조회 요청 거부 - 잘못된 입력. eqpId={}, reason={}",

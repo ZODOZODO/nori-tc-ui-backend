@@ -242,7 +242,8 @@ public class EqpController {
         return ResponseEntity.ok(ApiResponse.success(new EqpRuntimeStateResponse(
                 state.controlState(),
                 state.eqpState(),
-                state.connectionState()
+                state.connectionState(),
+                state.desiredState()
         )));
     }
 
@@ -369,6 +370,35 @@ public class EqpController {
 
         try (TcLogContext ignored = TcLogContext.withTraceId(acceptResult.traceId())) {
             log.info("EQP_END 요청. eqpId={}, interfaceType={}, traceId={}",
+                    eqpId, request.interfaceType(), acceptResult.traceId());
+            return toAsyncAcceptResponse(acceptResult);
+        }
+    }
+
+    /**
+     * 설비 재연결 명령을 Gateway에 전송합니다(EQP_RECONNECT).
+     *
+     * <p>stuck(desired_state=STARTED + control=OFFLINE) 인 ACTIVE 설비 복구용. EQP_START 는 desired!=ENDED 를
+     * 거부하므로 이미 STARTED 인 stuck 설비의 재연결 액션은 이 엔드포인트(EQP_RECONNECT)로 라우팅한다(R-B2).</p>
+     *
+     * @param eqpId 설비 ID
+     * @param request 재연결 요청
+     * @return 202 Accepted 응답
+     */
+    @PostMapping("/{eqpId}/reconnect")
+    public ResponseEntity<ApiResponse<AsyncAcceptResponse>> reconnect(
+            @PathVariable final String eqpId,
+            @Valid @RequestBody final EqpLifecycleRequest request
+    ) {
+        final EqpAsyncAcceptResult acceptResult = eqpManagementService.reconnectAsync(
+                eqpId,
+                request.interfaceType(),
+                request.uiMessage(),
+                dualRequestProperties.getDualRequestTimeoutMs()
+        );
+
+        try (TcLogContext ignored = TcLogContext.withTraceId(acceptResult.traceId())) {
+            log.info("EQP_RECONNECT 요청. eqpId={}, interfaceType={}, traceId={}",
                     eqpId, request.interfaceType(), acceptResult.traceId());
             return toAsyncAcceptResponse(acceptResult);
         }

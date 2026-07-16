@@ -204,6 +204,27 @@ public class EqpManagementService {
     }
 
     /**
+     * EQP 재연결 명령을 scenario 경로로 비동기 실행하고 polling traceId를 반환합니다.
+     *
+     * <p>stuck(desired_state=STARTED + control=OFFLINE) 인 ACTIVE 설비 복구용. EQP_START 는 desired!=ENDED 를
+     * 거부(정상 lifecycle 시맨틱)하므로, 이미 STARTED 인 stuck 설비의 재연결은 EQP_RECONNECT 로 라우팅한다(R-B1/R-B2).</p>
+     */
+    public EqpAsyncAcceptResult reconnectAsync(
+            final String eqpId,
+            final String interfaceType,
+            final JsonNode uiMessage,
+            final long timeoutMs
+    ) {
+        return submitAsyncScenario(
+                eqpId,
+                interfaceType,
+                UiCommandEventType.EQP_RECONNECT,
+                timeoutMs,
+                () -> eqpDirectScenarioService.executeReconnect(eqpId, interfaceType, uiMessage, "SYSTEM")
+        );
+    }
+
+    /**
      * PLC 폴링 그룹 시작 명령을 scenario 경로로 비동기 실행하고 polling traceId를 반환합니다.
      * gateway accept(PASS) 후 enabled_poll_groups add 까지는 {@link EqpDirectScenarioService#executeGroupStart} 가 수행합니다.
      */

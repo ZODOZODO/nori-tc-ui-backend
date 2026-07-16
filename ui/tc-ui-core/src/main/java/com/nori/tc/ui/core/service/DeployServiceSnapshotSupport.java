@@ -475,8 +475,8 @@ final class DeployServiceSnapshotSupport {
                         ))
                         .toList(),
                 snapshot.eqp().updatedAt() == null ? OffsetDateTime.now(ZoneOffset.UTC).toString() : snapshot.eqp().updatedAt().toString(),
-                snapshot.runtimeState() == null || snapshot.runtimeState().desiredState() == null
-                        ? "ENDED" : snapshot.runtimeState().desiredState(),
+                // desired_state 는 null(never-started)을 보존한다 — null→ENDED 무음 승격 금지(R-A5).
+                snapshot.runtimeState() == null ? null : snapshot.runtimeState().desiredState(),
                 snapshot.plc() == null ? null : new UiEquipmentProfileSnapshot.PlcSettingsSnapshot(
                         snapshot.plc().plcProtocol(),
                         snapshot.plc().transport(),

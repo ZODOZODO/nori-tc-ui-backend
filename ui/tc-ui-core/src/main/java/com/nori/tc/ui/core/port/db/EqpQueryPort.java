@@ -31,11 +31,14 @@ public interface EqpQueryPort {
      * @param controlState tc_eqp_state.control_state 문자열
      * @param eqpState tc_eqp_state.eqp_state 문자열
      * @param connectionState tc_eqp_state_hist(CONN)의 최신 to_state 문자열
+     * @param desiredState tc_eqp_state.desired_state 문자열(연결 의도 STARTED/ENDED, null=미확정).
+     *                     control_state 와 함께 노출해 stuck(STARTED+끊김)을 정상-ended(ENDED+끊김)와 구분한다(R-C).
      */
     record EqpRuntimeStateView(
             String controlState,
             String eqpState,
-            String connectionState
+            String connectionState,
+            String desiredState
     ) {
     }
 
