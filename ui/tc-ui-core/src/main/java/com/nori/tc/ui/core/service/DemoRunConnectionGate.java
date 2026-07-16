@@ -22,12 +22,13 @@ import java.util.Set;
  * 데모-run 시작/종료 시 ACTIVE 대상 설비의 gateway 연결 라이프사이클을 조율하는 게이트입니다.
  *
  * <p>배경: ACTIVE 설비는 {@code desired_state=STARTED} 일 때만 gateway 가 dial-out 한다. 데모-run 은 실사용자가
- * UI 에서 EQP_START 로 연결한 뒤 시나리오를 돌리는 절차를 모사해야 하므로, run 시작 전 ENDED 상태인 ACTIVE 대상에
- * EQP_START 를 발행해 연결(EQP_START_REP PASS)을 확인한 뒤에만 진행한다. PASSIVE 는 dial-in 이라 listener 가 상시
- * 개방돼 있어(생성 시 desired_state=STARTED 고정) per-run 동작이 필요 없으므로 skip 한다.</p>
+ * UI 에서 연결한 뒤 시나리오를 돌리는 절차를 모사해야 하므로, run 시작 전 미연결(control_state 기준) ACTIVE 대상에
+ * EQP_START(desired=ENDED) 또는 EQP_RECONNECT(desired=STARTED, stuck)를 발행해 연결을 확인한 뒤에만 진행한다.
+ * PASSIVE 는 dial-in 이라 listener 가 상시 개방돼 있어(enabled 로 gate — gateway R-E1) per-run 동작이 필요 없으므로
+ * skip 한다.</p>
  *
- * <p>설계 제약: gateway / orchestrator 코드는 건드리지 않는다. desired_state 의 STARTED/ENDED 전이는 EQP_START/END
- * 시나리오(단일 writer)가 수행하며, 본 게이트는 그 명령을 발행하고 결과를 관측할 뿐 desired_state 를 직접 쓰지 않는다.</p>
+ * <p>desired_state 의 STARTED/ENDED 전이는 EQP_START/END 시나리오(단일 writer)가 수행하며, 본 게이트는 그 명령을
+ * 발행하고 결과를 관측할 뿐 desired_state 를 직접 쓰지 않는다.</p>
  */
 @Service
 public class DemoRunConnectionGate {
@@ -44,11 +45,13 @@ public class DemoRunConnectionGate {
     }
 
     /**
-     * 데모-run 대상 중 미연결 ACTIVE 설비에 EQP_START 를 발행하고 gateway 연결(PASS)을 확인합니다.
+     * 데모-run 대상 중 미연결 ACTIVE 설비에 EQP_START/EQP_RECONNECT 를 발행하고 gateway 연결(PASS)을 확인합니다.
      *
-     * <p>PASSIVE 대상과 이미 desired_state=STARTED 인 ACTIVE 대상은 skip 합니다. 대상 전부에 EQP_START 를 먼저
-     * 발행한 뒤 공유 deadline 으로 동시에 await 하여 최악 1 timeout window 안에 끝냅니다. 하나라도 발행 실패/FAIL/TIMEOUT
-     * 이면 이번 호출이 START 한 설비 전부에 보상 EQP_END 를 발행한 뒤 예외를 던집니다(조용한 부분 시작 금지).</p>
+     * <p>PASSIVE 대상과 이미 연결된(control_state=REMOTE/LOCAL) ACTIVE 대상은 skip 합니다. 끊김 대상은 desired 로
+     * 라우팅합니다 — ENDED 는 EQP_START(run 소유), STARTED(stuck)는 EQP_RECONNECT(run 소유 아님, R-B1). 대상 전부에
+     * 먼저 발행한 뒤 공유 deadline 으로 동시에 await 하여 최악 1 timeout window 안에 끝냅니다. 하나라도 발행
+     * 실패/FAIL/TIMEOUT 이면 이번 호출이 EQP_START 한 설비 전부에 보상 EQP_END 를 발행한 뒤 예외를 던집니다(조용한
+     * 부분 시작 금지).</p>
      *
      * @param eqpIds run 대상 설비 ID 목록
      * @param timeoutMs EQP_START 응답 대기 최대 시간(ms)
@@ -210,11 +213,13 @@ public class DemoRunConnectionGate {
     }
 
     /**
-     * 데모-run 종료 시 run 의 ACTIVE 대상 중 연결된(desired_state=STARTED) 설비에 EQP_END 를 발행합니다(best-effort).
+     * 데모-run 종료 시 호출자가 지정한 ACTIVE 설비들에 EQP_END 를 발행합니다(best-effort).
      *
-     * <p>PASSIVE 또는 이미 STARTED 가 아닌 대상은 skip 합니다. EQP_END 발행/응답이 실패해도 예외를 던지지 않고
-     * 로그만 남깁니다(run 종료 자체는 진행되어야 함). 어떤 설비를 END 할지는 run 의 ACTIVE STARTED 상태로 재해석하며,
-     * R1 로 at-rest ACTIVE 는 ENDED 이므로 STARTED 인 ACTIVE 설비는 run 이 START 시킨 것과 동치다.</p>
+     * <p>END 대상은 현재 상태(desired/control)로 재해석하지 않고 호출자가 넘긴 목록으로 한정한다(D3). 추적 run
+     * (ALL/EQUIPMENT_ONLY)은 {@link #ensureActiveTargetsConnected} 가 반환한 captured set(run 이 EQP_START 로
+     * 연결시킨 run 소유 집합)을 넘기므로, EQP_RECONNECT 로 복구만 한 stuck 대상(이미 desired=STARTED)은 종료되지
+     * 않는다. PASSIVE 대상은 skip 하며, EQP_END 발행/응답이 실패해도 예외를 던지지 않고 로그만 남깁니다(run 종료
+     * 자체는 진행되어야 함).</p>
      *
      * @param eqpIds run 대상 설비 ID 목록
      * @param timeoutMs EQP_END 응답 대기 최대 시간(ms)
