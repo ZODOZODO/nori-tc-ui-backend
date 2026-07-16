@@ -61,33 +61,54 @@ public class DemoRunConnectionGate {
             return Set.of();
         }
 
-        // 1) EQP_START 가 필요한 ACTIVE 대상만 선별 (PASSIVE / 이미 STARTED 는 skip)
+        // 1) ACTIVE 대상을 실연결(control_state)로 분류 (PASSIVE 는 skip):
+        //    - 연결됨(REMOTE/LOCAL) → skip
+        //    - 끊김 + desired=STARTED(stuck) → EQP_RECONNECT (run 소유 아님 — 이미 STARTED)
+        //    - 끊김 + desired=ENDED → EQP_START (run 이 연결시킴 = run 소유)
         final Map<String, String> startTargets = new LinkedHashMap<>();
+        final Map<String, String> reconnectTargets = new LinkedHashMap<>();
         for (final String eqpId : distinctEqpIds) {
             final EqpManagementSnapshot snapshot = requireSnapshot(eqpId);
-            if (isPassive(snapshot) || isStarted(snapshot)) {
+            if (isPassive(snapshot) || isConnected(snapshot)) {
                 continue;
             }
-            startTargets.put(eqpId, snapshot.eqp().commInterface().name());
+            final String interfaceType = snapshot.eqp().commInterface().name();
+            if (isStarted(snapshot)) {
+                reconnectTargets.put(eqpId, interfaceType);
+            } else {
+                startTargets.put(eqpId, interfaceType);
+            }
         }
-        if (startTargets.isEmpty()) {
+        if (startTargets.isEmpty() && reconnectTargets.isEmpty()) {
             return Set.of();
         }
 
-        // 2) 대상 전부에 EQP_START 동시 발행 (traceId 수집). 발행 실패 시 이미 발행분 보상 후 거부.
-        final Map<String, String> issuedInterfaceByEqpId = new LinkedHashMap<>();
+        // 2) 발행 (traceId 수집). run 소유(보상 END 대상)는 EQP_START 발행분에 한정한다.
+        final Map<String, String> issuedStartInterfaceByEqpId = new LinkedHashMap<>();
         final Map<String, String> traceIdByEqpId = new LinkedHashMap<>();
         for (final Map.Entry<String, String> target : startTargets.entrySet()) {
             final String eqpId = target.getKey();
             final String interfaceType = target.getValue();
             final EqpAsyncAcceptResult accept = eqpManagementService.startAsync(eqpId, interfaceType, null, timeoutMs);
             if (!accept.accepted()) {
-                releaseIssued(issuedInterfaceByEqpId, timeoutMs);
+                releaseIssued(issuedStartInterfaceByEqpId, timeoutMs);
                 throw new UiConflictException(
                         "데모-run 대상 설비 연결(EQP_START) 발행에 실패했습니다. eqpId=" + eqpId
                                 + ", errorCode=" + accept.errorCode() + ", errorMessage=" + accept.errorMessage());
             }
-            issuedInterfaceByEqpId.put(eqpId, interfaceType);
+            issuedStartInterfaceByEqpId.put(eqpId, interfaceType);
+            traceIdByEqpId.put(eqpId, accept.traceId());
+        }
+        for (final Map.Entry<String, String> target : reconnectTargets.entrySet()) {
+            final String eqpId = target.getKey();
+            final String interfaceType = target.getValue();
+            final EqpAsyncAcceptResult accept = eqpManagementService.reconnectAsync(eqpId, interfaceType, null, timeoutMs);
+            if (!accept.accepted()) {
+                releaseIssued(issuedStartInterfaceByEqpId, timeoutMs);
+                throw new UiConflictException(
+                        "데모-run 대상 설비 재연결(EQP_RECONNECT) 발행에 실패했습니다. eqpId=" + eqpId
+                                + ", errorCode=" + accept.errorCode() + ", errorMessage=" + accept.errorMessage());
+            }
             traceIdByEqpId.put(eqpId, accept.traceId());
         }
 
@@ -103,15 +124,18 @@ public class DemoRunConnectionGate {
             }
         }
 
-        // 4) 하나라도 실패 → 이번 호출이 START 한 전체에 보상 END 후 throw (R4: 조용한 부분 시작 금지)
+        // 4) 하나라도 실패 → 이번 호출이 EQP_START 한 run 소유 설비만 보상 END 후 throw (조용한 부분 시작 금지).
+        //    EQP_RECONNECT 한 stuck 대상은 run 소유가 아니므로 보상 END 대상이 아니다(이미 desired=STARTED).
         if (!failures.isEmpty()) {
-            releaseIssued(issuedInterfaceByEqpId, timeoutMs);
+            releaseIssued(issuedStartInterfaceByEqpId, timeoutMs);
             throw new UiConflictException(
                     "데모-run 대상 설비 연결에 실패했습니다. 부분 시작을 롤백했습니다. 실패=" + failures);
         }
 
-        log.info("데모-run ACTIVE 대상 연결 완료. startedEqpIds={}", issuedInterfaceByEqpId.keySet());
-        return new LinkedHashSet<>(issuedInterfaceByEqpId.keySet());
+        log.info("데모-run ACTIVE 대상 연결 완료. startedEqpIds={}, reconnectedStuckEqpIds={}",
+                issuedStartInterfaceByEqpId.keySet(), reconnectTargets.keySet());
+        // run 소유(EQP_START) 집합만 반환 → run 종료 시 이 집합만 EQP_END(stuck 재연결분 제외, D3).
+        return new LinkedHashSet<>(issuedStartInterfaceByEqpId.keySet());
     }
 
     /**
@@ -167,17 +191,20 @@ public class DemoRunConnectionGate {
         for (final String eqpId : distinctEqpIds) {
             try {
                 final EqpManagementSnapshot snapshot = requireSnapshot(eqpId);
-                if (isPassive(snapshot) || isStarted(snapshot)) {
+                if (isPassive(snapshot) || isConnected(snapshot)) {
                     continue;
                 }
-                final EqpAsyncAcceptResult accept = eqpManagementService.startAsync(
-                        eqpId, snapshot.eqp().commInterface().name(), null, timeoutMs);
+                final String interfaceType = snapshot.eqp().commInterface().name();
+                // 끊김+desired=STARTED(stuck)→EQP_RECONNECT / 끊김+desired=ENDED→EQP_START (R-B1).
+                final EqpAsyncAcceptResult accept = isStarted(snapshot)
+                        ? eqpManagementService.reconnectAsync(eqpId, interfaceType, null, timeoutMs)
+                        : eqpManagementService.startAsync(eqpId, interfaceType, null, timeoutMs);
                 if (!accept.accepted()) {
-                    log.warn("UPSTREAM_ONLY EQP_START 발행 실패(무시하고 진행). eqpId={}, errorCode={}, errorMessage={}",
+                    log.warn("UPSTREAM_ONLY 연결 발행 실패(무시하고 진행). eqpId={}, errorCode={}, errorMessage={}",
                             eqpId, accept.errorCode(), accept.errorMessage());
                 }
             } catch (RuntimeException exception) {
-                log.warn("UPSTREAM_ONLY EQP_START 처리 실패(무시하고 진행). eqpId={}", eqpId, exception);
+                log.warn("UPSTREAM_ONLY 연결 처리 실패(무시하고 진행). eqpId={}", eqpId, exception);
             }
         }
     }
@@ -197,9 +224,11 @@ public class DemoRunConnectionGate {
         for (final String eqpId : distinctEqpIds) {
             try {
                 final EqpManagementSnapshot snapshot = eqpManagementService.getManageDetail(eqpId).orElse(null);
-                if (snapshot == null || isPassive(snapshot) || !isStarted(snapshot)) {
+                if (snapshot == null || isPassive(snapshot)) {
                     continue;
                 }
+                // 이 목록은 ensureActiveTargetsConnected 가 반환한 "이 run 이 EQP_START 로 연결시킨 run 소유 집합"이다.
+                // EQP_RECONNECT 로 복구만 한 stuck 대상은 애초에 이 집합에 없어 종료되지 않는다(control_state 재해석 금지 — D3).
                 issueEnd(eqpId, snapshot.eqp().commInterface().name(), timeoutMs);
             } catch (RuntimeException exception) {
                 log.warn("데모-run 종료 시 EQP_END 처리 실패(무시하고 진행). eqpId={}", eqpId, exception);

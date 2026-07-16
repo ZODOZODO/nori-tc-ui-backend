@@ -2,9 +2,12 @@ package com.nori.tc.ui.adapters.web.controller.support;
 
 import com.nori.tc.ui.adapters.web.dto.response.EqpManageDetailResponse;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
+import com.nori.tc.ui.domain.common.eqp.UiControlState;
+import com.nori.tc.ui.domain.common.eqp.UiEqpState;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import com.nori.tc.ui.domain.eqp.UiEqp;
 import com.nori.tc.ui.domain.eqp.UiEqpPlc;
+import com.nori.tc.ui.domain.eqp.UiEqpRuntimeState;
 import org.junit.jupiter.api.Test;
 
 import java.time.OffsetDateTime;
@@ -52,6 +55,23 @@ class EqpControllerResponseSupportTest {
         final EqpManageDetailResponse response = EqpControllerResponseSupport.toManageDetailResponse(snapshot);
 
         assertNull(response.plcSettings());
+    }
+
+    @Test
+    void manageDetailRuntimeStateExposesDesiredState() {
+        final UiEqpRuntimeState runtimeState = new UiEqpRuntimeState(
+                1L, UiControlState.OFFLINE, UiEqpState.IDLE, "STARTED", NOW, "R", "r", NOW);
+        final EqpManagementSnapshot snapshot = new EqpManagementSnapshot(
+                uiEqp("SOCKET_001", UiProtocolType.SOCKET),
+                null, null, null, null, null, runtimeState, null, null, null, null, null, null
+        );
+
+        final EqpManageDetailResponse response = EqpControllerResponseSupport.toManageDetailResponse(snapshot);
+
+        // AC-C2: manage-detail 의 runtimeState 가 desiredState 를 포함하고 값이 일치한다.
+        assertNotNull(response.runtimeState());
+        assertEquals("STARTED", response.runtimeState().desiredState());
+        assertEquals(UiControlState.OFFLINE, response.runtimeState().controlState());
     }
 
     private UiEqp uiEqp(final String eqpId, final UiProtocolType commInterface) {

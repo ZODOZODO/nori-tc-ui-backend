@@ -656,9 +656,8 @@ final class DeployServiceCommandSupport {
                         // 디코드 스펙(groups)을 최신 모델로 운반한다(event-sourced — gateway 런타임 DB 재조회 0, R6).
                         assemblePlcGroups(resolvedModelVersionKey)
                 );
-        final String resolvedDesiredState = textValue(gatewayProfile, "desiredState") == null
-                ? "ENDED"
-                : textValue(gatewayProfile, "desiredState");
+        // desired_state 는 null(never-started)을 보존한다 — null→ENDED 무음 승격 금지(R-A5).
+        final String resolvedDesiredState = textValue(gatewayProfile, "desiredState");
 
         return new UiEquipmentProfileSnapshot(
                 eqpKey,
@@ -766,9 +765,9 @@ final class DeployServiceCommandSupport {
                         // 디코드 스펙(groups)을 최신 모델로 운반한다(event-sourced — gateway 런타임 DB 재조회 0, R6).
                         assemblePlcGroups(resolvedModelVersionKey)
                 );
+        // desired_state 는 null(never-started)을 보존한다 — null→ENDED 무음 승격 금지(R-A5).
         final String desiredState = executionSnapshot.runtimeState() == null
-                || executionSnapshot.runtimeState().desiredState() == null
-                ? "ENDED"
+                ? null
                 : executionSnapshot.runtimeState().desiredState();
         final UiEquipmentProfileSnapshot.CurrentStateSnapshot currentStateSnapshot =
                 executionSnapshot.runtimeState() == null ? null : new UiEquipmentProfileSnapshot.CurrentStateSnapshot(

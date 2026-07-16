@@ -38,6 +38,9 @@ import com.nori.tc.ui.adapter.db.mapper.UiDomainEnumMapper;
 import com.nori.tc.ui.adapter.db.mapper.UiEqpDbMapper;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
+import com.nori.tc.ui.domain.common.eqp.UiControlState;
+import com.nori.tc.ui.domain.common.eqp.UiEqpState;
+import com.nori.tc.ui.domain.eqp.UiEqpRuntimeState;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.port.db.DemoJobCleanupPort;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
@@ -51,6 +54,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.eq;
@@ -75,7 +79,6 @@ class JpaEqpCrudPortTest {
         final UpsertTcEqpState command = JpaEqpCrudPort.createInitialStateCommand(
                 100L,
                 UiProtocolType.SECS,
-                "ACTIVE",
                 fixedTimestamp
         );
 
@@ -466,8 +469,8 @@ class JpaEqpCrudPortTest {
         verify(fixture.eqpStateStore).upsert(stateCaptor.capture());
         assertEquals(ControlState.DISCONNECTED, stateCaptor.getValue().controlState());
         assertEquals(EqpState.SERVICE_UNAVAILABLE, stateCaptor.getValue().eqpState());
-        // create() 가 command.commMode()(PASSIVE)를 upsertInitialState 로 전달해 desired_state=STARTED 를 박는지 배선 검증.
-        assertEquals(DesiredState.STARTED, stateCaptor.getValue().desiredState());
+        // 신규 생성은 통신 방향과 무관하게 desired_state=ENDED(R-E2/R-E3 — PASSIVE=STARTED seed 폐기).
+        assertEquals(DesiredState.ENDED, stateCaptor.getValue().desiredState());
     }
 
     @Test
@@ -830,7 +833,6 @@ class JpaEqpCrudPortTest {
         final UpsertTcEqpState command = JpaEqpCrudPort.createInitialStateCommand(
                 200L,
                 UiProtocolType.SOCKET,
-                "ACTIVE",
                 fixedTimestamp
         );
 
@@ -844,33 +846,50 @@ class JpaEqpCrudPortTest {
     }
 
     @Test
-    @DisplayName("PASSIVE 설비 생성 초기 desired_state는 STARTED로 고정됩니다(dial-in listener 개방 의도)")
-    void createInitialStateCommandForPassiveUsesStartedDesiredState() {
-        final OffsetDateTime fixedTimestamp = OffsetDateTime.parse("2026-03-11T10:15:30+09:00");
+    @DisplayName("AC-A5: restore 경로는 desired_state=null(never-started)을 ENDED 로 승격하지 않고 null 로 보존합니다")
+    void restorePreservesNullDesiredState() {
+        final Fixture fixture = new Fixture();
+        final TcEqp passiveEqp = eqp(30L, "EQP-PASSIVE-NULL", ProtocolType.SOCKET, "PASSIVE",
+                false, 1, "127.0.0.1", 6000, 1L, "SYSTEM");
+        when(fixture.eqpStore.upsert(any())).thenReturn(passiveEqp);
 
-        final UpsertTcEqpState command = JpaEqpCrudPort.createInitialStateCommand(
-                300L,
-                UiProtocolType.SOCKET,
-                "PASSIVE",
-                fixedTimestamp
-        );
+        // desired_state=null(PASSIVE never-started) 인 runtimeState 를 담은 복구 스냅샷.
+        final UiEqpRuntimeState runtimeState = new UiEqpRuntimeState(
+                30L, UiControlState.OFFLINE, UiEqpState.IDLE, null,
+                OffsetDateTime.parse("2026-03-11T10:15:30+09:00"), "R", "r",
+                OffsetDateTime.parse("2026-03-11T10:15:30+09:00"));
+        final EqpManagementSnapshot snapshot = new EqpManagementSnapshot(
+                UiEqpDbMapper.toDomain(passiveEqp), null, null, null, null, null, runtimeState, null,
+                List.of(), List.of(), List.of(), null, null);
 
-        assertEquals(DesiredState.STARTED, command.desiredState());
+        fixture.port.restore(snapshot);
+
+        final ArgumentCaptor<UpsertTcEqpState> stateCaptor = ArgumentCaptor.forClass(UpsertTcEqpState.class);
+        verify(fixture.eqpStateStore).upsert(stateCaptor.capture());
+        // 핵심: null→ENDED 무음 승격 없이 null 보존.
+        assertNull(stateCaptor.getValue().desiredState());
     }
 
     @Test
-    @DisplayName("ACTIVE 설비 생성 초기 desired_state는 ENDED로 유지됩니다(STARTED 전이는 EQP_START 시 gateway가 영속)")
-    void createInitialStateCommandForActiveUsesEndedDesiredState() {
+    @DisplayName("신규 설비 생성 초기 desired_state는 통신 방향과 무관하게 ENDED입니다(R-E2/R-E3 — PASSIVE=STARTED seed 폐기)")
+    void createInitialStateCommandAlwaysUsesEndedDesiredState() {
         final OffsetDateTime fixedTimestamp = OffsetDateTime.parse("2026-03-11T10:15:30+09:00");
 
-        final UpsertTcEqpState command = JpaEqpCrudPort.createInitialStateCommand(
-                301L,
+        // PASSIVE 도 ENDED — PASSIVE listener 는 desired 가 아니라 enabled 로 개방(R-E1 gateway)하므로 seed STARTED 불요.
+        final UpsertTcEqpState passiveCommand = JpaEqpCrudPort.createInitialStateCommand(
+                300L,
                 UiProtocolType.SOCKET,
-                "ACTIVE",
                 fixedTimestamp
         );
+        assertEquals(DesiredState.ENDED, passiveCommand.desiredState());
 
-        assertEquals(DesiredState.ENDED, command.desiredState());
+        // ACTIVE 도 ENDED — STARTED 전이는 EQP_START 시 gateway 가 영속(단일 writer).
+        final UpsertTcEqpState activeCommand = JpaEqpCrudPort.createInitialStateCommand(
+                301L,
+                UiProtocolType.SOCKET,
+                fixedTimestamp
+        );
+        assertEquals(DesiredState.ENDED, activeCommand.desiredState());
     }
 
     @Test
