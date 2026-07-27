@@ -162,7 +162,15 @@ grep -rl "^@\(RestController\|Service\|Component\|Repository\)" --include="*.jav
 ### 1.2 죽은 코드 / 불필요 로직 — 16건 (전부 P3)
 
 > 서브에이전트가 P2 로 올린 A-1·A-8 두 건은 메인 세션 재검증에서 **기능 실패 시나리오가 성립하지 않아 P3 로 강등**했다(§0.6 연장 — 아래 각 항목에 근거 기재).
-> 트랙은 전부 **R**, 요구 축은 A-1~A-8·A-13~A-16 = **R1/R2**, A-9~A-12 = **R1**.
+> 트랙은 전부 **R**, 요구 축은 A-1~A-8·A-13~A-16 = **R1/R2**, A-9~A-12 = **R1**, 심각도는 16건 전부 **P3**.
+>
+> **[검증 보정] 다운스트림 영향 (S09 세션 완결성 게이트에서 누락 필드 보완)** — 8필드 중 `다운스트림`이 원 표에 없어 추가한다.
+> - **A-14** → **nori-tc-exec**: 분할된 `tc.ui.backend.async` prefix 의 실제 값이 exec config 에 있다
+>   (`nori-tc-exec\apps\tc-ui-backend-app\config\tc-ui-backend.properties:62,66,69` — 직접 확인). 설정 surface 통합 시 exec 동기 필수.
+> - **A-12** → **nori-tc-exec**: exec 의 `apps/tc-ui-backend-app/build.gradle.kts` 에 actuator 직접 선언이 없어(직접 확인) 전이 의존에 의존한다. 제거 시 부팅 검증 필요.
+> - **A-10** → 없음(빌드 경고 재확인만) / **A-9·A-11** → 없음(모듈 내 gradle 선언).
+> - **나머지 11건(A-1~A-8·A-13·A-15·A-16)** → **없음**. 전부 ui-backend 내부의 `private`/`package-private` 멤버 또는 javadoc 이며 타 레포 참조 0건
+>   (§1.3 의 `c:\workspace_nori` 전 레포 grep 범위로 확인).
 
 | ID | 위치 | 문제 | 확신도 | 난이도 |
 |---|---|---|---|---|
@@ -232,6 +240,15 @@ reflection/DI/직렬화/라우팅 경유 사용도 위 표대로 개별 확인�
 
 ### 1.4 축 A 0건 항목 — 도달 불가 분기(hotspot 5파일 한정)
 
+**[검증 보정] 실행 명령·검색 범위** (원문에 0건 축의 명령이 없어 보완):
+```bash
+# 검색 범위 = hotspot 5파일 전문 정독 + 아래 패턴 grep (cwd = c:\workspace_nori\nori-tc-ui-backend)
+grep -nE "default ->|default:|if \(true\)|if \(false\)|== null\) \{ *return" \
+  ui/tc-ui-core/src/main/java/com/nori/tc/ui/core/service/{DeployServiceCommandSupport,DeployPlanningService,DeployService}.java \
+  ui/adapter/tc-ui-db-adapter/src/main/java/com/nori/tc/ui/adapter/db/{DeployJdbcStorePort,JpaEqpCrudPort}.java
+# 레포 전체 도달 불가 분기 후보: grep -rn "default ->" --include=*.java ui/*/src/main ui/*/*/src/main
+```
+
 hotspot 5개 파일(`DeployServiceCommandSupport`, `DeployJdbcStorePort`, `DeployPlanningService`,
 `JpaEqpCrudPort`, `DeployService`, 합 5,153 LOC)에서 A-15/A-16 외 도달 불가 분기 **0건**.
 `DeployScenarioAction` switch 는 exhaustive 라 조용한 누락이 구조적으로 불가능하다(C-12).
@@ -289,12 +306,15 @@ private String normalizeOptionalText(final String value) {
 
 같은 22-필드 record 를 채우는데 8번째 슬롯 `Long modelKey` 의 의미가 이미 갈라져 있다:
 ```java
-// DeployPlanningStateJdbcPort.java:174
+// DeployPlanningStateJdbcPort.java:175   [검증 보정] 원문 :174 → 실제 :175 (1줄 드리프트, 코드 내용은 일치)
 snapshot.model() == null ? null : snapshot.model().modelKey(),        // ← modelKey (모델 정체성)
-// DeployServiceSnapshotSupport.java:412-413
+// DeployServiceSnapshotSupport.java:413-414   [검증 보정] 원문 :412-413 → 실제 :413-414
 // F1: gateway-bound 보상 pre-state 의 modelKey 슬롯 = modelVersionKey(정체성 아님) — boot/런타임 키 공간 통일.
 snapshot.eqp().modelVersionKey(),                                      // ← modelVersionKey (버전)
 ```
+> **[검증 보정]** 두 인용의 **외곽 메서드 범위**(`:166-252` / `:404-493` / `:689-826`)와 인용 코드 문자열은 재검증에서 정확했고,
+> 내부 라인 번호만 각 1줄 어긋나 있었다. 슬롯 위치(둘 다 `eqpPort` 다음·`gatewayJarKey` 앞 = record 8번째 필드
+> `UiEquipmentProfileSnapshot.java:20 Long modelKey`)는 재확인 결과 동일하므로 **발견 자체는 유효**하다.
 record 정의(`ui/tc-ui-core/.../model/UiEquipmentProfileSnapshot.java:20`)는 `Long modelKey` 단일 필드다.
 **문제** 22-필드 매핑이 3벌 존재하고, 그중 한 슬롯의 키 공간이 이미 서로 다르다. 주석은 "modelKey 슬롯 = modelVersionKey" 로
 통일을 선언하는데 JDBC planner 경로만 그 규약을 위반한다. record 에 필드를 추가하면 3곳을 모두 고쳐야 하고,
@@ -645,6 +665,12 @@ DLQ 모니터링 화면이 조용히 무력해진다.
 
 ### 4.2 P3 (7건)
 
+> **[검증 보정] 트랙 · 다운스트림 (S09 완결성 게이트에서 누락 필드 보완)** — 심각도는 7건 전부 **P3**(섹션 제목).
+> 트랙은 방법론 매핑(D·E → F, 요구 축 R6 → R)에 따라 **D-11~D-15·D-17 = F**, **D-16 = R**(요구 축 R6, 품질 강등 항목).
+> 다운스트림은 각 행의 실패 시나리오에서 직접 도출: **D-12·D-13·D-17 → nori-tc-ui-front**(각각 원인불명 500 / 인프라장애가 404 로 / 400 오분류가 그대로 노출),
+> **D-14 → nori-tc-ui-front(성공 오표시) + nori-tc-gateway(step 미실행 = 설비 미적용)**,
+> **D-11·D-15·D-16 → 없음**(fd 누적 / 스레드 기아 / 드라이버 의존 — ui-backend 내부에서 완결).
+
 | ID | 요구 축 | 위치 | 문제 · 실패 시나리오 | 난이도 |
 |---|---|---|---|---|
 | D-11 | R4 | `DeployScenarioCatalogService.java:281` | `Files.list(...)` 를 try-with-resources 없이 사용 → `DirectoryStream` 미해제. catalog reload API 반복 호출 시 fd 누적. 반증: 호출이 `@PostConstruct` 1회뿐인지 확인했으나 `reload` 경로에서도 재호출됨(빈도 낮아 P3) | S |
@@ -709,8 +735,24 @@ if (matching.isEmpty()) {
 기동 로드 실패 시 failsafe(`:107-116, 131-135`)도 전면 차단이다("로드 실패 시 전체 허용" 반대 방향).
 
 **권한 행 ↔ 엔드포인트 전수 대조 결과** — 미게이팅(= 어느 경로에도 안 걸리는) 엔드포인트 **0건**.
-git-tracked 시드/패치 SQL 에서 추출한 API 권한 30행이 108개 엔드포인트를 전부 덮는다(§5.2 표).
-`permitAll` 5개 + actuator 4개 + 권한행 매칭 99개 = 108.
+git-tracked 시드/패치 SQL 에서 추출한 API 권한 행이 108개 엔드포인트를 전부 덮는다(§5.2 표).
+
+> **[검증 보정] 108 의 분할식 정정 (S09 완결성 게이트)** — 원문의 `permitAll 5개 + actuator 4개 + 권한행 매칭 99개 = 108` 은
+> **집합이 섞인 오류**다. `permitAll` 5개 중 `/error`·ERROR 디스패치·`GET /api/actuator/health(/**)`·`OPTIONS /**` 와
+> actuator 4개는 **컨트롤러 엔드포인트가 아니라서 애초에 108 에 포함되지 않는다**(108 = `@RestController` 20개의 핸들러 메서드 수).
+> 재계산한 올바른 분할은 다음과 같다.
+>
+> | 구분 | 개수 | 근거 |
+> |---|---|---|
+> | `permitAll` (108 안) | **2** | `POST /api/auth/login`(`UiSecurityConfig.java:124`), `GET /api/auth/csrf`(`:125`) — `AuthController.java:96,255` |
+> | `anyRequest().access()` → DB 권한행 매칭 | **106** | 나머지 전부 |
+> | **합계** | **108** | — |
+>
+> `permitAll` 의 나머지 3항목(`/error`+ERROR 디스패치 / `GET /api/actuator/health(/**)` / `OPTIONS /**`)과
+> actuator 4항목(`prometheus`/`info`/`metrics`/`metrics/**`)은 **108 밖의 별도 표면**이며 §5.1 의 경로 1·2 표에 그대로 유효하다.
+> 컨트롤러 내부 분기 2개(`AuthController` logout/me)는 별도 버킷이 아니라 **권한행 매칭 106 에 포함**된 뒤 추가로 적용되는 2차 분기다
+> (`AUTH_LOGOUT_PERM`/`AUTH_ME_PERM` 행이 실재 — §5.2).
+> **정정 후에도 결론(미게이팅 0건 = P1 0건)은 그대로다.** 오히려 권한행이 덮는 범위가 99 → 106 으로 넓어진다.
 
 **전제 재확인 (프롬프트 제시 서술의 검증 결과)**
 
@@ -722,7 +764,13 @@ git-tracked 시드/패치 SQL 에서 추출한 API 권한 30행이 108개 엔드
 | 신규 권한은 ADMIN 행 명시 INSERT 필요 | **부분 정정** | 시드는 그 반대다 — `postgres_insert_sample_data.sql:809-820` 이 ADMIN 에 `p.is_active = TRUE` 인 **전 권한을 자동 조인 부여**한다("새 permission seed가 추가되더라도 ADMIN은 별도 목록 수정 없이 모든 활성 권한을 자동으로 받습니다"). 다만 이는 **시드 재실행 시**에만 적용되고, 운영 중 patch SQL 로 권한을 추가할 때는 각 patch 가 ADMIN 매핑 INSERT 를 명시해야 한다(예: `postgres_2026_06_22_...:58`). 즉 "ADMIN 명시 INSERT 필요"는 **patch 경로에 한해 참**이다 |
 | 라이브 DB 권한이 시드와 drift | **미확인** | 본 감사는 git-tracked SQL 만 대조했다. 라이브 `tc_ui_permission`/`tc_user_group_permission` 조회는 수행하지 않았다 |
 
-### 5.2 API 권한 인벤토리 (git-tracked SQL 전수 — 30행)
+### 5.2 API 권한 인벤토리 (git-tracked SQL 전수 — **29 permCode**)
+
+> **[검증 보정]** 원문 제목은 "30행"이었으나 아래 표가 실제로 열거하는 permCode 는 **29개**다
+> (`_READ / _WRITE` 결합 표기 3쌍을 2개씩 계산한 값). 시드(`postgres_insert_sample_data.sql:761-787`)의
+> `resource_type='API'` 행 22개 + 패치 7개 = 29 로 일치한다. 같은 블록의 `DASH_READ`(`:778`)는
+> `resource_type='PAGE'` 라 API 인가 대조 대상이 아니다.
+> **라이브 DB 의 실제 행 수는 여전히 미확인**(§5.1 전제 표) — 이 29 는 git-tracked SQL 기준값이다.
 
 | permCode | matchType | resource | httpMethod | 출처 |
 |---|---|---|---|---|
@@ -1237,3 +1285,32 @@ $ git status --porcelain
 중점: 축 E 에 XSS/토큰 저장 포함. 렌더링 성능은 제외(Phase 3 P 트랙). 미사용=knip, 중복=jscpd(없으면 `npx --yes` 일회 실행 + 버전 기록).
 hotspot: 6개 초대형 컴포넌트(1400~1712 LOC) 전부 unit 부재 — deep 배분 **1순위**.
 본 감사에서 넘기는 입력: §6.2 REST DTO 76개(ui-front 가 소비), E-2(권한 상수·`GroupPermissionsModal` 게이팅), D-8/D-9(비동기 polling 오탐).
+
+### 8.7 완결성 검증 게이트 결과 (S09 세션 수행, 2026-07-27)
+
+S09 세션 진입 시 본 감사에 **완결성·정직성 게이트**를 적용했다(깊은 반증 재검토는 별도 트랙). BLOCK 사유 없음 → 아래 6건을 in-place 보정했다.
+
+| # | 보정 지점 | 내용 |
+|---|---|---|
+| 1 | §1.2 표 머리말 | 8필드 중 `다운스트림` 누락 → A-14/A-12 = nori-tc-exec, 나머지 14건 = 없음 으로 보완 |
+| 2 | §1.4 | 0건 축의 실행 명령·검색 범위 미기재 → grep 명령 추가 |
+| 3 | §2 B-3 | 내부 인용 라인 1줄 드리프트(`:174`→`:175`, `:412-413`→`:413-414`) 정정. 외곽 범위·인용 코드는 정확했음 |
+| 4 | §4.2 표 머리말 | 8필드 중 `트랙`·`다운스트림` 누락 → 방법론 매핑과 각 행 시나리오에서 도출해 보완 |
+| 5 | §5.1 | `permitAll 5 + actuator 4 + 권한행 99 = 108` 분할식 오류 정정 → **permitAll 2 + 권한행 106 = 108**. 결론 불변 |
+| 6 | §5.2 | 제목 "30행" ↔ 표 실제 29 permCode 불일치 정정 |
+
+**게이트에서 독립 재계산·재확인해 원문과 일치한 항목** (보정 불필요):
+- 규모 472 main / 91 test / generated 0 + 모듈별 7행 전부 일치. `*ModuleConfiguration` 6개 `find` 재확인 일치.
+- 엔드포인트 **108** 독립 재계산 일치 — `@(Get|Post|Put|Patch|Delete|Request)Mapping` 총 128 − 클래스 레벨 `@RequestMapping` 20 = 108,
+  컨트롤러 20개 개별 수치도 전부 일치.
+- **P1 0 = 실제 게이팅 확인 결과임을 확인**(관성 답습 아님). 게이트가 표본 대조한 엔드포인트:
+  `GET /api/live-map`(LIVE_MAP_READ EXACT) / `DELETE /api/live-map/demo-runs/scenarios/{id}`(패치 permCode PREFIX) /
+  `POST /api/deploys/{k}/start`(DEPLOY_ACTION REGEX) / `GET /api/line`(LINE_READ EXACT — `@GetMapping` 무경로라 EXACT 성립) /
+  `POST /api/auth/login`(permitAll) / `GET /api/eqp/gateway-shard-leases`(EQP_READ PREFIX).
+  컨트롤러 base path 15종 전수를 §5.2 의 PREFIX/EXACT/REGEX resource 와 대조 → 누락 0.
+- **P1/P2 14건 전건**의 인용 file:line 을 게이트가 직접 열람 — 13건 완전 일치, B-3 만 위 #3 의 1줄 드리프트.
+- CVE 수치 독립 재계산 일치: 리포트 고유 CVE `138`(`grep -o "CVE-[0-9]\{4\}-[0-9]*" ... | sort -u | wc -l`),
+  게이트 트립 `74`(저장된 실행 로그의 CVSS>7.0 목록 `sort -u`). 인용된 `BUILD FAILED in 1m 5s` / `5 actionable tasks: 1 executed, 4 up-to-date` 도 로그 원문과 일치.
+- 읽기 전용 준수: `git status --porcelain` 0줄, S08 커밋 `372aaac` 은 본 md 1파일(+1239)만 변경.
+
+**깊은 재검토 이관 후보**(이 게이트에서 등급을 바꾸지 않음): §8.4 의 미확인 6항목 그대로 승계.
