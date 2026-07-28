@@ -6,9 +6,9 @@ stages:
 pipeline-ok:
   stage: check
   # 비코드(docs 등) 푸시의 placeholder. GitLab.com 공유러너(월 400분 그룹 쿼터)를 쓰지 않도록
-  # 자체호스팅 norilab 러너에서 실행한다(ci_quota_exceeded 회피). publish 잡과 동일 러너/이미지.
+  # 자체호스팅 nori-msa 러너에서 실행한다(ci_quota_exceeded 회피). publish 잡과 동일 러너/이미지.
   tags:
-    - norilab
+    - nori-msa
   image: harbor.nori.local/library/maven:3.9-eclipse-temurin-21
   script:
     - echo "no relevant changes"
@@ -32,10 +32,10 @@ pipeline-ok:
 test:
   stage: check
   tags:
-    - norilab
+    - nori-msa
   image: harbor.nori.local/library/maven:3.9-eclipse-temurin-21
   script:
-    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/norilab/tc-mes/nori-tc-common.git ../nori-tc-common
+    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.noricloud.org/norisystem/nori-tc/nori-tc-common.git ../nori-tc-common
     - chmod +x ./gradlew
     - ./gradlew test --no-daemon
   rules:
@@ -58,10 +58,10 @@ test:
 openapi-docs:
   stage: check
   tags:
-    - norilab
+    - nori-msa
   image: harbor.nori.local/library/maven:3.9-eclipse-temurin-21
   script:
-    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/norilab/tc-mes/nori-tc-common.git ../nori-tc-common
+    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.noricloud.org/norisystem/nori-tc/nori-tc-common.git ../nori-tc-common
     - chmod +x ./gradlew
     - ./gradlew :ui:adapter:tc-ui-web-adapter:test --tests "com.nori.tc.ui.adapters.web.config.OpenApiDocsGenerationTest" --no-daemon
     - git diff --exit-code docs/api-reference/openapi.json
@@ -80,10 +80,10 @@ publish:
   # W3-2 게이트: test 실패 시 publish 차단(allow_failure 기본 false) → trigger → exec deploy 까지 연쇄 차단.
   needs: ["test"]
   tags:
-    - norilab
+    - nori-msa
   image: harbor.nori.local/library/maven:3.9-eclipse-temurin-21
   script:
-    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/norilab/tc-mes/nori-tc-common.git ../nori-tc-common
+    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.noricloud.org/norisystem/nori-tc/nori-tc-common.git ../nori-tc-common
     - chmod +x ./gradlew
     - ./gradlew publish --no-daemon
   rules:
@@ -105,7 +105,7 @@ trigger-exec:
   variables:
     TRIGGER_APP: "tc-ui-backend"
   trigger:
-    project: norilab/tc-mes/nori-tc-exec
+    project: norisystem/nori-tc/nori-tc-exec
     branch: main
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web"'
