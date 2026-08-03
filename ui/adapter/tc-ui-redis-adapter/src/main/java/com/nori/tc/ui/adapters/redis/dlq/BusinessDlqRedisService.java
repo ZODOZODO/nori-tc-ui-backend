@@ -11,10 +11,13 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.stereotype.Service;
 
+import tools.jackson.databind.ObjectMapper;
+
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -29,9 +32,13 @@ import java.util.Objects;
  * </ul>
  *
  * <p>역직렬화:</p>
- * <p>항목은 {@link java.io.Serializable} 기반 JDK 직렬화로 저장되어 있습니다.
- * {@link RedisBusinessDlqEntry}는 {@code tc-db-domain}에 위치하여
- * Business 어댑터(쓰기)와 UI 어댑터(읽기)가 동일 클래스를 공유합니다.</p>
+ * <p>적재 측(nori-tc-business {@code RedisBusinessDlqPublisher})은 common
+ * {@code TcDbRedisAutoConfiguration} 의 <b>typeless</b> JSON 직렬화기로 값을 쓰고,
+ * 이 어댑터의 {@code businessRedisTemplate} 은 {@code RedisSerializer.json()}(<b>typed</b>)로 읽는다.
+ * 두 mode 가 다르므로 typed 역직렬화는 도메인 타입 대신 {@code Map} 을 돌려준다 —
+ * 형제 경로({@code AsyncResultStoreService} / {@code DualResponseRedisAdapter} /
+ * {@code RedisEqpRepairTaskStore})와 동일하게 {@code Map} fallback 으로 변환한다.
+ * {@link RedisBusinessDlqEntry} 는 {@code tc-db-domain}(common)에 위치해 양측이 같은 계약을 공유한다.</p>
  */
 @Service
 public class BusinessDlqRedisService implements BusinessDlqPort {
@@ -47,12 +54,16 @@ public class BusinessDlqRedisService implements BusinessDlqPort {
     private static final int SCAN_COUNT_HINT = 100;
 
     private final RedisTemplate<String, Object> businessRedisTemplate;
+    private final ObjectMapper redisObjectMapper;
 
     public BusinessDlqRedisService(
-            @Qualifier("businessRedisTemplate") final RedisTemplate<String, Object> businessRedisTemplate
+            @Qualifier("businessRedisTemplate") final RedisTemplate<String, Object> businessRedisTemplate,
+            @Qualifier("uiRedisObjectMapper") final ObjectMapper redisObjectMapper
     ) {
         this.businessRedisTemplate = Objects.requireNonNull(businessRedisTemplate,
                 "businessRedisTemplate 은 null 이 될 수 없습니다.");
+        this.redisObjectMapper = Objects.requireNonNull(redisObjectMapper,
+                "redisObjectMapper 는 null 이 될 수 없습니다.");
     }
 
     // -------------------------------------------------------------------------
@@ -84,6 +95,9 @@ public class BusinessDlqRedisService implements BusinessDlqPort {
                 final Object raw = businessRedisTemplate.opsForValue().get(key);
                 if (raw instanceof RedisBusinessDlqEntry entry) {
                     entries.add(entry);
+                } else if (raw instanceof Map<?, ?> map) {
+                    // 적재 측 typeless JSON ↔ 소비 측 typed JSON mode 차이를 흡수한다(형제 경로와 동일 규약).
+                    entries.add(redisObjectMapper.convertValue(map, RedisBusinessDlqEntry.class));
                 } else if (raw != null) {
                     // 저장된 타입이 예상과 다를 경우 — 직렬화 형식 불일치 가능성
                     log.warn("Business DLQ 키 타입 불일치. key={}, actualType={}",
