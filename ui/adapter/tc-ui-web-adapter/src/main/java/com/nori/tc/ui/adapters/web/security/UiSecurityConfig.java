@@ -134,7 +134,9 @@ public class UiSecurityConfig {
                                 "/api/actuator/prometheus",
                                 "/api/actuator/info",
                                 "/api/actuator/metrics", "/api/actuator/metrics/**")
-                        .access(new ActuatorAccessAuthorizationManager(actuatorSecurityProperties.allowedCidrs()))
+                        .access(new ActuatorAccessAuthorizationManager(
+                                actuatorSecurityProperties.allowedCidrs(),
+                                actuatorSecurityProperties.requiredPermCode()))
                         // CORS preflight 요청은 브라우저가 자동 호출하므로 인증 없이 허용합니다.
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         // 그 외 모든 요청: 인증 필수 + DB 기반 URL 인가

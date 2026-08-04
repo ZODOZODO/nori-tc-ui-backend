@@ -23,14 +23,27 @@ import java.util.List;
  * prometheus 메트릭은 OTLP push 경로로 수집되며 본 endpoint 를 scrape 하지 않으므로,
  * 본 통제는 측정 파이프라인에 영향을 주지 않습니다.</p>
  *
- * @param allowedCidrs Actuator 민감 endpoint 접근 허용 CIDR 목록(비어 있으면 사설망 기본 대역)
+ * @param allowedCidrs     Actuator 민감 endpoint 접근 허용 CIDR 목록(비어 있으면 사설망 기본 대역)
+ * @param requiredPermCode Actuator 접근에 요구하는 {@code tc_ui_permission.perm_code}
+ *                         (비어 있으면 {@link #DEFAULT_REQUIRED_PERM_CODE})
  */
 @ConfigurationProperties(prefix = "tc.ui.backend.actuator")
 public record UiActuatorSecurityProperties(
-        List<String> allowedCidrs
+        List<String> allowedCidrs,
+        String requiredPermCode
 ) {
 
     private static final Logger log = LoggerFactory.getLogger(UiActuatorSecurityProperties.class);
+
+    /**
+     * 미설정 시 요구하는 권한 코드입니다.
+     *
+     * <p>이 코드의 {@code tc_ui_permission} 행과 그룹 grant 는 exec 의 권한 패치 SQL 이 공급합니다.
+     * 행이 없으면 아무도 통과하지 못합니다 — 이는 fail-closed 로 의도된 것이며, 이 endpoint 를
+     * scrape 하는 자동화는 없습니다(ServiceMonitor {@code tc-monitor} 는 {@code app: tc} 라벨만
+     * 선택하고 ui-backend 는 그 라벨을 갖지 않는다 — 실측).</p>
+     */
+    private static final String DEFAULT_REQUIRED_PERM_CODE = "ACTUATOR_READ";
 
     /**
      * 미설정 시 적용하는 사설망 표준 대역 + 루프백입니다.
@@ -48,8 +61,11 @@ public record UiActuatorSecurityProperties(
      */
     public UiActuatorSecurityProperties {
         allowedCidrs = normalizeAllowedCidrs(allowedCidrs);
-        log.info("UiActuatorSecurityProperties 검증 완료. allowedCidrsCount={}, values={}",
-                allowedCidrs.size(), allowedCidrs);
+        requiredPermCode = requiredPermCode == null || requiredPermCode.isBlank()
+                ? DEFAULT_REQUIRED_PERM_CODE
+                : requiredPermCode.trim();
+        log.info("UiActuatorSecurityProperties 검증 완료. allowedCidrsCount={}, values={}, requiredPermCode={}",
+                allowedCidrs.size(), allowedCidrs, requiredPermCode);
     }
 
     private static List<String> normalizeAllowedCidrs(final List<String> rawCidrs) {

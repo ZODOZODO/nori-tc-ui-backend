@@ -36,9 +36,10 @@ class ActuatorAccessAuthorizationManagerTest {
     private static final List<String> ALLOWED_CIDRS = List.of("10.0.0.0/8", "127.0.0.1/32");
     private static final String INTERNAL_IP = "10.1.2.3";
     private static final String EXTERNAL_IP = "203.0.113.5";
+    private static final String REQUIRED_PERM_CODE = "ACTUATOR_READ";
 
     private final ActuatorAccessAuthorizationManager manager =
-            new ActuatorAccessAuthorizationManager(ALLOWED_CIDRS);
+            new ActuatorAccessAuthorizationManager(ALLOWED_CIDRS, REQUIRED_PERM_CODE);
 
     @Test
     @DisplayName("내부망 IP + 토큰 인증(UserPrincipal) → 허용(200)")
@@ -91,6 +92,40 @@ class ActuatorAccessAuthorizationManagerTest {
     }
 
     @Test
+    @DisplayName("내부망 IP + 인증됐으나 actuator permCode 미보유 → 거부 (S08 E-1)")
+    void internalIpWithAuthenticatedUserLackingActuatorPermissionIsDenied() {
+        final Supplier<Authentication> operatorWithoutActuatorPerm = userWithPermissions("DLQ_READ");
+
+        final AuthorizationResult decision = manager.authorize(
+                operatorWithoutActuatorPerm,
+                contextFrom(INTERNAL_IP));
+
+        assertFalse(decision.isGranted(),
+                "프록시 뒤에서는 IP 화이트리스트가 항상 통과하므로, permCode 가 유일한 실효 통제다. "
+                        + "actuator 권한이 없는 인증 사용자는 거부되어야 한다");
+    }
+
+    @Test
+    @DisplayName("내부망 IP + actuator permCode 보유 → 허용")
+    void internalIpWithActuatorPermissionIsGranted() {
+        final AuthorizationResult decision = manager.authorize(
+                userWithPermissions(REQUIRED_PERM_CODE),
+                contextFrom(INTERNAL_IP));
+
+        assertTrue(decision.isGranted(), "actuator 권한 보유자는 허용");
+    }
+
+    @Test
+    @DisplayName("외부 IP + actuator permCode 보유 → 거부 (IP 조건 유지)")
+    void externalIpWithActuatorPermissionIsDenied() {
+        final AuthorizationResult decision = manager.authorize(
+                userWithPermissions(REQUIRED_PERM_CODE),
+                contextFrom(EXTERNAL_IP));
+
+        assertFalse(decision.isGranted(), "permCode 도입이 기존 IP 조건을 대체하지 않는다(AND 유지)");
+    }
+
+    @Test
     @DisplayName("내부망 IP + 인증됐으나 principal 이 UserPrincipal 아님 → 거부")
     void internalIpWithNonUserPrincipalIsDenied() {
         final Supplier<Authentication> nonUserPrincipal = () -> new UsernamePasswordAuthenticationToken(
@@ -104,7 +139,11 @@ class ActuatorAccessAuthorizationManagerTest {
     }
 
     private static Supplier<Authentication> authenticatedUser() {
-        final UserPrincipal principal = new UserPrincipal(1L, "admin", Set.of("DLQ_READ"));
+        return userWithPermissions(REQUIRED_PERM_CODE);
+    }
+
+    private static Supplier<Authentication> userWithPermissions(final String... permCodes) {
+        final UserPrincipal principal = new UserPrincipal(1L, "admin", Set.of(permCodes));
         final Authentication authentication = new UsernamePasswordAuthenticationToken(
                 principal, null, AuthorityUtils.createAuthorityList("ROLE_USER"));
         return () -> authentication;
