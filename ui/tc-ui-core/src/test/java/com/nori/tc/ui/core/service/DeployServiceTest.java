@@ -1724,6 +1724,58 @@ class DeployServiceTest {
             throw new UnsupportedOperationException("not used in test");
         }
 
+        /** 포트 계약: 확정 대상 3필드만 현재 행에 병합한다(S08 D-5). */
+        @Override
+        public EqpManagementSnapshot finalizeDeployedVersions(
+                final String eqpId,
+                final long modelVersionKey,
+                final String appliedParamVersion,
+                final Long businessJarKey,
+                final String actor
+        ) {
+            final EqpManagementSnapshot existing = snapshots.get(eqpId);
+            if (existing == null) {
+                throw new UiNotFoundException("설비를 찾을 수 없습니다. eqpId=" + eqpId);
+            }
+
+            final EqpManagementSnapshot updated = new EqpManagementSnapshot(
+                    new UiEqp(
+                            existing.eqp().eqpKey(),
+                            existing.eqp().eqpId(),
+                            existing.eqp().lineKey(),
+                            existing.eqp().commInterface(),
+                            existing.eqp().commMode(),
+                            existing.eqp().isDev(),
+                            existing.eqp().routePartition(),
+                            existing.eqp().eqpIp(),
+                            existing.eqp().eqpPort(),
+                            modelVersionKey,
+                            appliedParamVersion,
+                            existing.eqp().gatewayJarKey(),
+                            businessJarKey,
+                            existing.eqp().enabled(),
+                            existing.eqp().createdAt(),
+                            OffsetDateTime.now(ZoneOffset.UTC),
+                            existing.eqp().createdBy(),
+                            actor
+                    ),
+                    existing.model(),
+                    existing.hsms(),
+                    existing.socket(),
+                    existing.plc(),
+                    existing.logPolicy(),
+                    existing.runtimeState(),
+                    existing.connectionState(),
+                    existing.portStatuses(),
+                    existing.params(),
+                    existing.paramVersionMetas(),
+                    existing.gatewayJar(),
+                    existing.businessJar()
+            );
+            snapshots.put(eqpId, updated);
+            return updated;
+        }
+
         @Override
         public EqpManagementSnapshot update(
                 final String eqpId,

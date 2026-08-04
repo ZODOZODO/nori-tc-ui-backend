@@ -349,6 +349,39 @@ class JpaEqpCrudPortTest {
     }
 
     @Test
+    @DisplayName("S08 D-5: deploy 확정은 잠금 후 재조회한 현재 행에 버전 3필드만 병합합니다")
+    void finalizeDeployedVersionsMergesOnlyVersionFieldsOntoLockedRow() {
+        final Fixture fixture = new Fixture();
+        final String eqpId = "ETC-FIN-MERGE";
+        // 확정 시점의 현재 행 — 호출자가 앞선 트랜잭션에서 본 값이 아니다.
+        final TcEqp currentEqp = eqp(12L, eqpId, ProtocolType.SECS, "PASSIVE", true, 7,
+                "10.10.10.9", 6009, 500L, "SYSTEM", "PARAM_V1");
+        when(fixture.dbSupport.loadSnapshotByEqpId(eqpId)).thenReturn(Optional.of(snapshot(currentEqp)));
+        when(fixture.eqpStore.upsert(any())).thenReturn(currentEqp);
+
+        fixture.port.finalizeDeployedVersions(eqpId, 777L, "PARAM_V2", 4002L, "deployer");
+
+        final org.mockito.InOrder ordered = inOrder(fixture.eqpStore, fixture.dbSupport);
+        ordered.verify(fixture.eqpStore).findByEqpIdForUpdate(eqpId);
+        ordered.verify(fixture.dbSupport).loadSnapshotByEqpId(eqpId);
+
+        final ArgumentCaptor<UpsertTcEqp> captor = ArgumentCaptor.forClass(UpsertTcEqp.class);
+        verify(fixture.eqpStore).upsert(captor.capture());
+        final UpsertTcEqp written = captor.getValue();
+        // 확정 대상 3필드.
+        assertEquals(777L, written.modelVersionKey());
+        assertEquals("PARAM_V2", written.appliedParamVersion());
+        assertEquals(4002L, written.businessJarKey());
+        // 나머지는 잠금 후 재조회한 현재 행 값.
+        assertEquals("10.10.10.9", written.eqpIp());
+        assertEquals(6009, written.eqpPort());
+        assertEquals("PASSIVE", written.commMode());
+        assertEquals(7, written.routePartition());
+        assertEquals("deployer", written.updatedBy());
+        assertEquals("SYSTEM", written.createdBy());
+    }
+
+    @Test
     @DisplayName("EQP 수정으로 파라미터 버전이 바뀌면 PORTCOUNT 초과 포트를 제거하고 겹치는 포트는 보존합니다")
     void updateSyncsPortStatusesDownToPortCount() {
         final Fixture fixture = new Fixture();

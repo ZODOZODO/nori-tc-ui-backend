@@ -35,6 +35,25 @@ public class EqpPersistenceService {
         return eqpCrudPort.update(eqpId, command);
     }
 
+    /**
+     * deploy 성공 후 확정된 버전 3개만 반영합니다 — 나머지 컬럼은 저장 시점의 현재 행을 유지합니다.
+     */
+    public EqpManagementSnapshot finalizeDeployedVersions(
+            final String eqpId,
+            final long modelVersionKey,
+            final String appliedParamVersion,
+            final Long businessJarKey,
+            final String actor
+    ) {
+        return eqpCrudPort.finalizeDeployedVersions(
+                eqpId,
+                modelVersionKey,
+                appliedParamVersion,
+                businessJarKey,
+                actor
+        );
+    }
+
     public void delete(final String eqpId) {
         eqpCrudPort.delete(eqpId);
     }

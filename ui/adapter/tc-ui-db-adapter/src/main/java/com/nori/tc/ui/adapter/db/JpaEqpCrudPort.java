@@ -229,20 +229,90 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             );
             upsertLogPolicy(eqpKey, resolveUpdateLogSettings(command.logSettings(), existing.logPolicy()));
 
-            // 모델/파라미터 버전이 실제로 바뀌면 tc_eqp_port_status 를 PORTCOUNT 에 맞춰 재동기화한다.
-            // 모든 param/model 변경이 이 update() 를 통과하므로(deploy 확정 · 편집), 여기서 한 번 맞추면
-            // 어느 경로로 바꿔도 port_status 가 PORTCOUNT 와 어긋나지 않는다(drift 원천 차단).
-            final boolean paramVersionChanged = !Objects.equals(
+            syncPortStatusesOnVersionChange(
+                    updatedEqp,
                     normalizeOptionalText(command.appliedParamVersion()),
-                    existing.eqp().appliedParamVersion());
-            final boolean modelVersionChanged = command.modelVersionKey() != existing.eqp().modelVersionKey();
-            if (paramVersionChanged || modelVersionChanged) {
-                syncPortStatusesToCount(updatedEqp, normalizeOptionalText(command.appliedParamVersion()));
-            }
+                    command.modelVersionKey(),
+                    existing.eqp().appliedParamVersion(),
+                    existing.eqp().modelVersionKey()
+            );
 
             return requireSnapshot(eqpId);
         } catch (RuntimeException exception) {
             throw toUiException("EQP 수정", exception);
+        }
+    }
+
+    @Override
+    @Transactional
+    public EqpManagementSnapshot finalizeDeployedVersions(
+            final String eqpId,
+            final long modelVersionKey,
+            final String appliedParamVersion,
+            final Long businessJarKey,
+            final String actor
+    ) {
+        if (eqpId == null || eqpId.isBlank()) {
+            throw new UiBadRequestException("eqpId는 비어 있을 수 없습니다.");
+        }
+
+        try {
+            // 잠금을 먼저 잡고 그 안에서 현재 행을 다시 읽는다. 확정 대상 3필드만 바꾸고 나머지는
+            // 이 재조회 값을 유지하므로, 호출자가 앞선 트랜잭션에서 읽은 stale 값이 반영되지 않는다
+            // → 읽기와 쓰기 사이에 커밋된 UI 편집이 소실되지 않는다(S08 D-5).
+            eqpStore.findByEqpIdForUpdate(eqpId);
+            final EqpManagementSnapshot current = requireSnapshot(eqpId);
+            final String normalizedParamVersion = normalizeOptionalText(appliedParamVersion);
+
+            final TcEqp updatedEqp = eqpStore.upsert(new UpsertTcEqp(
+                    current.eqp().eqpId(),
+                    current.eqp().lineKey(),
+                    UiDomainEnumMapper.toDbProtocolType(current.eqp().commInterface()),
+                    current.eqp().commMode(),
+                    current.eqp().isDev(),
+                    current.eqp().routePartition(),
+                    current.eqp().eqpIp(),
+                    current.eqp().eqpPort(),
+                    modelVersionKey,
+                    normalizedParamVersion,
+                    current.eqp().gatewayJarKey(),
+                    businessJarKey,
+                    current.eqp().enabled(),
+                    current.eqp().createdBy(),
+                    normalizeActor(actor)
+            ));
+
+            syncPortStatusesOnVersionChange(
+                    updatedEqp,
+                    normalizedParamVersion,
+                    modelVersionKey,
+                    current.eqp().appliedParamVersion(),
+                    current.eqp().modelVersionKey()
+            );
+
+            return requireSnapshot(eqpId);
+        } catch (RuntimeException exception) {
+            throw toUiException("EQP deploy 확정", exception);
+        }
+    }
+
+    /**
+     * 모델/파라미터 버전이 실제로 바뀌었을 때만 tc_eqp_port_status 를 PORTCOUNT 에 맞춰 재동기화합니다.
+     *
+     * <p>모든 param/model 변경이 이 어댑터를 통과하므로(deploy 확정 · 편집) 여기서 한 번 맞추면
+     * 어느 경로로 바꿔도 port_status 가 PORTCOUNT 와 어긋나지 않습니다(drift 원천 차단).</p>
+     */
+    private void syncPortStatusesOnVersionChange(
+            final TcEqp updatedEqp,
+            final String normalizedParamVersion,
+            final long nextModelVersionKey,
+            final String previousParamVersion,
+            final long previousModelVersionKey
+    ) {
+        final boolean paramVersionChanged = !Objects.equals(normalizedParamVersion, previousParamVersion);
+        final boolean modelVersionChanged = nextModelVersionKey != previousModelVersionKey;
+        if (paramVersionChanged || modelVersionChanged) {
+            syncPortStatusesToCount(updatedEqp, normalizedParamVersion);
         }
     }
 

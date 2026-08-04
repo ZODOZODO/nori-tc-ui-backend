@@ -996,6 +996,17 @@ class EqpDirectScenarioServiceTest {
         }
 
         @Override
+        public EqpManagementSnapshot finalizeDeployedVersions(
+                final String eqpId,
+                final long modelVersionKey,
+                final String appliedParamVersion,
+                final Long businessJarKey,
+                final String actor
+        ) {
+            throw new UnsupportedOperationException("direct scenario 경로에서 사용하지 않습니다.");
+        }
+
+        @Override
         public void restore(final EqpManagementSnapshot snapshot) {
             snapshots.put(snapshot.eqp().eqpId(), snapshot);
         }

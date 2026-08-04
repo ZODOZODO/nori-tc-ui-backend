@@ -4,10 +4,8 @@ import com.nori.tc.ui.core.deploy.DeployDeltaKind;
 import com.nori.tc.ui.core.deploy.DeployDesiredState;
 import com.nori.tc.ui.core.deploy.DeployTargetPlanDraft;
 import com.nori.tc.ui.core.deploy.PersistedDeployTarget;
-import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
-import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import org.springframework.stereotype.Service;
 
 import java.util.Objects;
@@ -30,83 +28,46 @@ final class DeployEqpFinalizationService {
             return;
         }
 
+        // 이 조회는 desiredState 가 비운 필드의 기본값 산출 전용이다. 확정 자체는 포트가 row lock 안에서
+        // 현재 행을 다시 읽어 3필드만 병합하므로, 이 스냅샷이 stale 해도 다른 컬럼을 되쓰지 않는다(S08 D-5).
         final EqpManagementSnapshot snapshot = persistenceService.findSnapshotByEqpId(planDraft.eqpId())
                 .orElseThrow(() -> new UiNotFoundException("설비를 찾을 수 없습니다. eqpId=" + planDraft.eqpId()));
+        final DeployDesiredState desiredState = planDraft.desiredState();
 
-        persistenceService.update(
+        persistenceService.finalizeDeployedVersions(
                 planDraft.eqpId(),
-                buildFinalizationUpdateCommand(snapshot, planDraft.desiredState(), actor)
+                resolveModelVersionKey(desiredState, snapshot),
+                resolveEqpParamVersion(desiredState, snapshot),
+                resolveBusinessJarKey(desiredState, snapshot),
+                normalizeActor(actor)
         );
     }
 
-    private EqpManagementCommand.Update buildFinalizationUpdateCommand(
-            final EqpManagementSnapshot snapshot,
+    private long resolveModelVersionKey(
             final DeployDesiredState desiredState,
-            final String actor
+            final EqpManagementSnapshot snapshot
     ) {
-        final UiProtocolType interfaceType = snapshot.eqp().commInterface();
-        final long resolvedModelVersionKey = desiredState.modelVersionKey() != null && desiredState.modelVersionKey() > 0L
+        return desiredState.modelVersionKey() != null && desiredState.modelVersionKey() > 0L
                 ? desiredState.modelVersionKey()
                 : snapshot.eqp().modelVersionKey();
-        final String resolvedEqpParamVersion = desiredState.eqpParamVersion() != null && !desiredState.eqpParamVersion().isBlank()
+    }
+
+    private String resolveEqpParamVersion(
+            final DeployDesiredState desiredState,
+            final EqpManagementSnapshot snapshot
+    ) {
+        return desiredState.eqpParamVersion() != null && !desiredState.eqpParamVersion().isBlank()
                 ? desiredState.eqpParamVersion().trim()
                 : snapshot.eqp().appliedParamVersion();
-        final Long resolvedBusinessJarRef = desiredState.businessJarRef() != null && desiredState.businessJarRef() > 0L
+    }
+
+    private Long resolveBusinessJarKey(
+            final DeployDesiredState desiredState,
+            final EqpManagementSnapshot snapshot
+    ) {
+        return desiredState.businessJarRef() != null && desiredState.businessJarRef() > 0L
                 ? desiredState.businessJarRef()
                 : snapshot.eqp().businessJarKey();
-
-        return new EqpManagementCommand.Update(
-                normalizeActor(actor),
-                snapshot.eqp().lineKey(),
-                snapshot.eqp().commMode(),
-                snapshot.eqp().isDev(),
-                snapshot.eqp().routePartition(),
-                snapshot.eqp().eqpIp(),
-                snapshot.eqp().eqpPort(),
-                resolvedModelVersionKey,
-                resolvedEqpParamVersion,
-                snapshot.eqp().gatewayJarKey(),
-                resolvedBusinessJarRef,
-                snapshot.logPolicy() == null ? null : new EqpManagementCommand.LogSettings(
-                        snapshot.logPolicy().logLevel(),
-                        snapshot.logPolicy().logRetentionDays(),
-                        snapshot.logPolicy().logPath()
-                ),
-                interfaceType == UiProtocolType.SECS && snapshot.hsms() != null
-                        ? new EqpManagementCommand.HsmsSettings(
-                        snapshot.hsms().deviceId(),
-                        snapshot.hsms().t3Timeout(),
-                        snapshot.hsms().t5Timeout(),
-                        snapshot.hsms().t6Timeout(),
-                        snapshot.hsms().t7Timeout(),
-                        snapshot.hsms().t8Timeout(),
-                        snapshot.hsms().linkTestEnabled(),
-                        snapshot.hsms().linkTestInterval(),
-                        snapshot.hsms().maxMsgBytes()
-                )
-                        : null,
-                interfaceType == UiProtocolType.SOCKET && snapshot.socket() != null
-                        ? new EqpManagementCommand.SocketSettings(
-                        snapshot.socket().socketProtocolType(),
-                        snapshot.socket().charset(),
-                        snapshot.socket().heartbeatEnabled(),
-                        snapshot.socket().heartbeatInterval(),
-                        snapshot.socket().readTimeout(),
-                        snapshot.socket().writeTimeout(),
-                        snapshot.socket().maxFrameSizeBytes(),
-                        snapshot.socket().keepAliveEnabled()
-                )
-                        : null,
-                interfaceType == UiProtocolType.PLC && snapshot.plc() != null
-                        ? new EqpManagementCommand.PlcSettings(
-                        snapshot.plc().plcProtocol(),
-                        snapshot.plc().transport(),
-                        snapshot.plc().unitId(),
-                        snapshot.plc().pollTimeoutMs(),
-                        snapshot.plc().reconnectMaxRetries()
-                )
-                        : null
-        );
     }
 
     private boolean requiresEqpFinalization(final DeployTargetPlanDraft planDraft) {
