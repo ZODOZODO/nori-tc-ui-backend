@@ -9,11 +9,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -154,29 +157,53 @@ public class AsyncResultStoreService implements AsyncResultStorePort {
         Objects.requireNonNull(traceId, "traceId 는 null 이 될 수 없습니다.");
 
         final String key = KEY_PREFIX + traceId;
-        final Optional<RedisUiAsyncResultEntry> existingOpt = readRedisEntry(key);
-        if (existingOpt.isEmpty()) {
-            pendingTimeoutEpochByTraceId.remove(traceId);
-            if (log.isDebugEnabled()) {
-                log.debug("TIMEOUT 전환 생략 - traceId 상태가 이미 없음. traceId={}", traceId);
-            }
-            return;
-        }
+        final boolean applied = Boolean.TRUE.equals(businessRedisTemplate.execute(
+                new SessionCallback<Boolean>() {
+                    @Override
+                    @SuppressWarnings({"unchecked", "rawtypes"})
+                    public Boolean execute(final RedisOperations operations) {
+                        return applyTimeoutIfNotCompleted(operations, key, traceId);
+                    }
+                }));
 
-        final RedisUiAsyncResultEntry existing = existingOpt.get();
-        if (AsyncStatus.COMPLETED.name().equals(existing.getAsyncStatus())) {
-            pendingTimeoutEpochByTraceId.remove(traceId);
-            if (log.isDebugEnabled()) {
-                log.debug("TIMEOUT 전환 생략 - 이미 COMPLETED. traceId={}", traceId);
-            }
-            return;
-        }
-
-        final long ttlSeconds = asyncProperties.getResultTtlSeconds();
-        final RedisUiAsyncResultEntry timeoutEntry = RedisUiAsyncResultEntry.timeout(traceId);
-        writeWithConfiguredTtl(key, timeoutEntry, ttlSeconds);
         pendingTimeoutEpochByTraceId.remove(traceId);
-        log.warn("비동기 결과 TIMEOUT 전환. traceId={}", traceId);
+        if (applied) {
+            log.warn("비동기 결과 TIMEOUT 전환. traceId={}", traceId);
+        } else if (log.isDebugEnabled()) {
+            log.debug("TIMEOUT 전환 생략 - 상태 부재 또는 이미 COMPLETED. traceId={}", traceId);
+        }
+    }
+
+    /**
+     * COMPLETED 가 아닐 때만 TIMEOUT 을 기록합니다 — WATCH/MULTI 로 read-check-write 를 원자화합니다.
+     *
+     * <p>비원자였을 때: 타임아웃 경계에서 스케줄러가 PENDING 을 읽은 직후 gateway PASS 응답이 COMPLETED 를
+     * 쓰면, 스케줄러가 그 위에 TIMEOUT 을 덮어써 <b>성공한 EQP_START 가 프런트에 TIMEOUT 으로 보였다</b>
+     * (S08 D-8). {@code TIMEOUT_BUFFER_MS} 는 만료 시점만 늦출 뿐 read↔write 창을 없애지 못한다.</p>
+     *
+     * <p>WATCH 후 값이 바뀌면 EXEC 가 비어 반환되고 쓰기는 적용되지 않는다 —
+     * 경쟁자가 쓴 COMPLETED 를 보존하는 것이 정확한 결과이므로 재시도하지 않는다.</p>
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private Boolean applyTimeoutIfNotCompleted(
+            final RedisOperations operations,
+            final String key,
+            final String traceId
+    ) {
+        operations.watch(key);
+
+        final Optional<RedisUiAsyncResultEntry> existingOpt = readRedisEntry(operations, key);
+        if (existingOpt.isEmpty()
+                || AsyncStatus.COMPLETED.name().equals(existingOpt.get().getAsyncStatus())) {
+            operations.unwatch();
+            return Boolean.FALSE;
+        }
+
+        operations.multi();
+        writeWithConfiguredTtl(operations, key, RedisUiAsyncResultEntry.timeout(traceId),
+                asyncProperties.getResultTtlSeconds());
+        final List<Object> results = operations.exec();
+        return results != null && !results.isEmpty();
     }
 
     /**
@@ -256,11 +283,24 @@ public class AsyncResultStoreService implements AsyncResultStorePort {
             final RedisUiAsyncResultEntry entry,
             final long ttlSeconds
     ) {
+        writeWithConfiguredTtl(businessRedisTemplate, key, entry, ttlSeconds);
+    }
+
+    /**
+     * 지정한 Redis 연산 컨텍스트에 엔트리를 설정합니다(트랜잭션 세션 내 사용 포함).
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void writeWithConfiguredTtl(
+            final RedisOperations operations,
+            final String key,
+            final RedisUiAsyncResultEntry entry,
+            final long ttlSeconds
+    ) {
         if (ttlSeconds > 0L) {
-            businessRedisTemplate.opsForValue().set(key, entry, Duration.ofSeconds(ttlSeconds));
+            operations.opsForValue().set(key, entry, Duration.ofSeconds(ttlSeconds));
             return;
         }
-        businessRedisTemplate.opsForValue().set(key, entry);
+        operations.opsForValue().set(key, entry);
     }
 
     /**
@@ -270,7 +310,21 @@ public class AsyncResultStoreService implements AsyncResultStorePort {
      * @return 파싱 성공 시 Optional 엔트리
      */
     private Optional<RedisUiAsyncResultEntry> readRedisEntry(final String key) {
-        final Object raw = businessRedisTemplate.opsForValue().get(key);
+        return readRedisEntry(businessRedisTemplate, key);
+    }
+
+    /**
+     * 지정한 Redis 연산 컨텍스트에서 값을 읽습니다.
+     *
+     * <p>WATCH 는 같은 연결에서 수행한 읽기에만 유효하므로, 세션 안에서는 반드시 세션의
+     * {@code RedisOperations} 로 읽어야 합니다.</p>
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private Optional<RedisUiAsyncResultEntry> readRedisEntry(
+            final RedisOperations operations,
+            final String key
+    ) {
+        final Object raw = operations.opsForValue().get(key);
         if (raw == null) {
             return Optional.empty();
         }
@@ -287,7 +341,7 @@ public class AsyncResultStoreService implements AsyncResultStorePort {
 
         log.warn("비동기 결과 타입 불일치, 해당 항목 제거. key={}, actualType={}",
                 key, raw.getClass().getName());
-        businessRedisTemplate.delete(key);
+        operations.delete(key);
         return Optional.empty();
     }
 }
