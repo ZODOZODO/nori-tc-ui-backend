@@ -331,6 +331,24 @@ class JpaEqpCrudPortTest {
     }
 
     @Test
+    @DisplayName("S08 D-1: EQP 수정은 스냅샷을 읽기 전에 tc_eqp 행을 배타 잠금으로 선점합니다(lost update 차단)")
+    void updateAcquiresRowLockBeforeReadingSnapshot() {
+        final Fixture fixture = new Fixture();
+        final String eqpId = "ETC-UPD-LOCK";
+        when(fixture.dbSupport.loadSnapshotByEqpId(eqpId))
+                .thenReturn(Optional.of(snapshot(existingSecsEqp(eqpId, "v1", 101L))));
+        when(fixture.eqpStore.upsert(any())).thenReturn(updatedSecsEqp(eqpId, "v1", 101L));
+
+        fixture.port.update(eqpId, updateCommand("v1", 101L));
+
+        // 잠금 → 읽기 → 쓰기 순서가 깨지면 두 편집이 서로의 변경분을 stale read 로 덮어쓴다.
+        final org.mockito.InOrder ordered = inOrder(fixture.eqpStore, fixture.dbSupport);
+        ordered.verify(fixture.eqpStore).findByEqpIdForUpdate(eqpId);
+        ordered.verify(fixture.dbSupport).loadSnapshotByEqpId(eqpId);
+        ordered.verify(fixture.eqpStore).upsert(any());
+    }
+
+    @Test
     @DisplayName("EQP 수정으로 파라미터 버전이 바뀌면 PORTCOUNT 초과 포트를 제거하고 겹치는 포트는 보존합니다")
     void updateSyncsPortStatusesDownToPortCount() {
         final Fixture fixture = new Fixture();

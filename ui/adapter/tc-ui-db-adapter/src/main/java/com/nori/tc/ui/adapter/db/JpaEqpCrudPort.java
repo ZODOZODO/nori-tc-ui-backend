@@ -183,6 +183,11 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         }
 
         try {
+            // tc_eqp read-modify-write 를 row lock 으로 직렬화한다. 기본 READ_COMMITTED + 무잠금 SELECT 는
+            // 두 편집이 모두 읽기에 성공해 나중 commit 이 자기 stale read 로 상대 변경분을 덮어쓴다(lost update).
+            // 같은 테이블의 JpaEqpParamCommandPort#resolveEqpForUpdate 와 동일한 잠금 컨벤션이다.
+            // 반환값을 쓰지 않는 이유: 목적이 잠금 선점이고, 부재 판정은 아래 requireSnapshot 이 그대로 담당한다.
+            eqpStore.findByEqpIdForUpdate(eqpId);
             final EqpManagementSnapshot existing = requireSnapshot(eqpId);
             validateLineRegistered(command.lineKey());
             validateSelectedJarRefs(command.gatewayJarRef(), command.businessJarRef());
