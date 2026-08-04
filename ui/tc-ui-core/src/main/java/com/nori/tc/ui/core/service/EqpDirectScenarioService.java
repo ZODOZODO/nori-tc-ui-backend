@@ -8,6 +8,7 @@ import com.nori.tc.ui.core.deploy.DeployTargetPlanDraft;
 import com.nori.tc.ui.core.eqp.EqpCommandResult;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
+import com.nori.tc.ui.core.eqp.EqpRepairAction;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
@@ -43,6 +44,7 @@ public class EqpDirectScenarioService {
     private final EqpDirectScenarioRunner runner;
     private final DemoJobCleanupPort demoJobCleanupPort;
     private final EqpPlcPollGroupPort pollGroupPort;
+    private final EqpRepairTaskService repairTaskService;
     private final ObjectMapper objectMapper;
     private final ModelParamPayloadSupport modelParamPayloadSupport;
 
@@ -54,6 +56,7 @@ public class EqpDirectScenarioService {
             final EqpDirectScenarioRunner runner,
             final DemoJobCleanupPort demoJobCleanupPort,
             final EqpPlcPollGroupPort pollGroupPort,
+            final EqpRepairTaskService repairTaskService,
             final ModelDetailQueryPort modelDetailQueryPort,
             final ObjectMapper objectMapper
     ) {
@@ -64,6 +67,7 @@ public class EqpDirectScenarioService {
         this.runner = Objects.requireNonNull(runner, "runner is null");
         this.demoJobCleanupPort = Objects.requireNonNull(demoJobCleanupPort, "demoJobCleanupPort is null");
         this.pollGroupPort = Objects.requireNonNull(pollGroupPort, "pollGroupPort is null");
+        this.repairTaskService = Objects.requireNonNull(repairTaskService, "repairTaskService is null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is null");
         this.modelParamPayloadSupport = new ModelParamPayloadSupport(
                 Objects.requireNonNull(modelDetailQueryPort, "modelDetailQueryPort is null"),
@@ -325,14 +329,44 @@ public class EqpDirectScenarioService {
             runner.run(context);
             // gateway PASS(accept) 직후에만 enabled_poll_groups 변이.
             final long eqpKey = existingSnapshot.eqp().eqpKey();
+            persistPollGroupMutation(eventType, eqpId, eqpKey, group);
+            return EqpCommandResult.ok();
+        } catch (Exception exception) {
+            return toCommandResult(exception);
+        }
+    }
+
+    /**
+     * gateway accept 이후의 {@code enabled_poll_groups} 반영입니다.
+     *
+     * <p>이 시점에 실패하면 gateway 는 이미 폴링을 시작/중단했고 DB 만 어긋난다. 기존 보상 경로는
+     * 여기를 덮지 못한다 — rollback 은 {@code runner.run} 내부 실패만 처리하고 이 변이는 run 종료 후이며,
+     * {@code compensateLocalFailure} 는 EQP_PLC_GROUP_START 를 명시 no-op 으로 둔다. 방치하면 EQP 재기동 시
+     * DB 기준으로 폴링이 재개되지 않아 수집이 조용히 멈추므로, 레포의 기존 divergence 기록 수단인
+     * repair task 로 남겨 운영자가 재정렬할 수 있게 한다(S08 D-7).</p>
+     */
+    private void persistPollGroupMutation(
+            final UiCommandEventType eventType,
+            final String eqpId,
+            final long eqpKey,
+            final String group
+    ) {
+        try {
             if (eventType == UiCommandEventType.EQP_PLC_GROUP_START) {
                 pollGroupPort.addPollGroup(eqpKey, group);
             } else {
                 pollGroupPort.removePollGroup(eqpKey, group);
             }
-            return EqpCommandResult.ok();
-        } catch (Exception exception) {
-            return toCommandResult(exception);
+        } catch (RuntimeException exception) {
+            repairTaskService.record(
+                    eqpId,
+                    eventType.name(),
+                    EqpRepairAction.RUNTIME_UPDATE,
+                    "UI_POLL_GROUP_PERSIST_FAILED",
+                    "gateway 반영 후 enabled_poll_groups 갱신이 실패했습니다. group=" + group
+                            + ", cause=" + exception.getClass().getSimpleName() + ": " + exception.getMessage()
+            );
+            throw exception;
         }
     }
 

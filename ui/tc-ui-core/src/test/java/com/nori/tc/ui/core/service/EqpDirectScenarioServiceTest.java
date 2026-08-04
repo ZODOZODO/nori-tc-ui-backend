@@ -8,6 +8,7 @@ import com.nori.tc.ui.core.eqp.EqpCommandResult;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.eqp.EqpRepairTask;
+import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.model.UiCommandMessage;
 import com.nori.tc.ui.core.model.UiCommandReply;
 import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
@@ -336,6 +337,29 @@ class EqpDirectScenarioServiceTest {
         assertTrue(pollGroupPort.calls.isEmpty());
     }
 
+    /**
+     * S08 D-7 — gateway 는 이미 폴링을 시작했는데 enabled_poll_groups 반영이 실패하면
+     * gateway(폴링 중) ↔ DB(빈 집합) 가 어긋난 채 에러만 반환됐다. EQP 재기동 시 DB 기준으로
+     * 폴링이 재개되지 않아 수집이 조용히 멈춘다.
+     *
+     * <p>기존 보상 경로는 이 지점을 덮지 못한다 — rollback 은 {@code runner.run} 내부 실패만 처리하고
+     * 이 변이는 run 종료 후이며, compensateLocalFailure 는 EQP_PLC_GROUP_START 를 명시 no-op 으로 둔다.</p>
+     */
+    @Test
+    void groupStartRecordsRepairTaskWhenPollGroupPersistenceFails() {
+        eqpCrudPort.put(snapshot("PLC_001", 7L, "10.10.10.1", 502, "EQP_PARAM_V1", 3001L, 4001L));
+        pollGroupPort.mutationFailure = new UiConflictException("낙관적 잠금 재시도 초과");
+
+        final EqpCommandResult result = service.executeGroupStart("PLC_001", "EQP_STATUS_REPORT", "tester");
+
+        assertFalse(result.success());
+        // gateway 는 accept 했으므로 divergence 가 남는다 → 운영자 조치 가능한 repair task 로 기록돼야 한다.
+        assertEquals(1, repairTaskPort.findAll().size());
+        final var task = repairTaskPort.findAll().getFirst();
+        assertEquals("PLC_001", task.eqpId());
+        assertEquals("EQP_PLC_GROUP_START", task.commandType());
+    }
+
     @Test
     void groupEndRemovesPollGroupAfterGatewayAccept() {
         eqpCrudPort.put(snapshot("PLC_001", 7L, "10.10.10.1", 502, "EQP_PARAM_V1", 3001L, 4001L));
@@ -448,6 +472,7 @@ class EqpDirectScenarioServiceTest {
                 runner,
                 new NoOpDemoJobCleanupPort(),
                 pollGroupPort,
+                repairTaskService,
                 modelDetailQueryPort,
                 objectMapper
         );
@@ -770,10 +795,15 @@ class EqpDirectScenarioServiceTest {
     private static final class RecordingPollGroupPort implements EqpPlcPollGroupPort {
 
         private final List<String> calls = new ArrayList<>();
+        /** S08 D-7 — gateway accept 이후 DB 반영만 실패시키는 주입 지점. */
+        private RuntimeException mutationFailure;
 
         @Override
         public void addPollGroup(final long eqpKey, final String groupMessageName) {
             calls.add("add:" + eqpKey + ":" + groupMessageName);
+            if (mutationFailure != null) {
+                throw mutationFailure;
+            }
         }
 
         @Override
