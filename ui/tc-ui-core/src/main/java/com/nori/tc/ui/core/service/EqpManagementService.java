@@ -27,6 +27,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * EQP 관리 생성/수정/삭제와 옵션/상세 조회를 총괄하는 서비스입니다.
@@ -134,7 +135,10 @@ public class EqpManagementService {
             final EqpManagementCommand.Create command,
             final long timeoutMs
     ) {
-        return CompletableFuture.supplyAsync(() -> eqpDirectScenarioService.executeCreate(command), eqpManagementExecutor);
+        return withRequestTimeout(
+                CompletableFuture.supplyAsync(() -> eqpDirectScenarioService.executeCreate(command), eqpManagementExecutor),
+                timeoutMs
+        );
     }
 
     /**
@@ -150,7 +154,11 @@ public class EqpManagementService {
             final EqpManagementCommand.Update command,
             final long timeoutMs
     ) {
-        return CompletableFuture.supplyAsync(() -> eqpDirectScenarioService.executeUpdate(eqpId, command), eqpManagementExecutor);
+        return withRequestTimeout(
+                CompletableFuture.supplyAsync(
+                        () -> eqpDirectScenarioService.executeUpdate(eqpId, command), eqpManagementExecutor),
+                timeoutMs
+        );
     }
 
     /**
@@ -164,7 +172,30 @@ public class EqpManagementService {
             final String eqpId,
             final long timeoutMs
     ) {
-        return CompletableFuture.supplyAsync(() -> eqpDirectScenarioService.executeDelete(eqpId), eqpManagementExecutor);
+        return withRequestTimeout(
+                CompletableFuture.supplyAsync(() -> eqpDirectScenarioService.executeDelete(eqpId), eqpManagementExecutor),
+                timeoutMs
+        );
+    }
+
+    /**
+     * 호출자가 지정한 요청 timeout 을 future 에 실제로 적용합니다.
+     *
+     * <p>종전에는 {@code timeoutMs} 파라미터가 create/update/delete 3곳 모두에서 무시돼
+     * 컨테이너 기본 async timeout 으로 503 이 나갔다 — 사용자에게는 실패로 보이는데 백그라운드 작업은
+     * 계속 진행돼 응답과 실제 결과가 어긋났다(S08 D-9).</p>
+     *
+     * <p>한계: 진행 중인 gateway 왕복 자체는 취소되지 않는다({@code orTimeout} 은 future 만 완료시킨다).
+     * 이 수정의 범위는 <b>응답 시점을 설정값으로 결정론화</b>하는 것이다.</p>
+     */
+    private static CompletableFuture<EqpCommandResult> withRequestTimeout(
+            final CompletableFuture<EqpCommandResult> future,
+            final long timeoutMs
+    ) {
+        if (timeoutMs <= 0L) {
+            throw new IllegalArgumentException("timeoutMs 는 양수여야 합니다. timeoutMs=" + timeoutMs);
+        }
+        return future.orTimeout(timeoutMs, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -329,7 +360,17 @@ public class EqpManagementService {
                     return;
                 }
                 asyncResultStorePort.markCompleted(traceId, toAsyncReply(traceId, eqpId, interfaceType, eventType, result));
-            }, eqpManagementExecutor);
+            }, eqpManagementExecutor).whenComplete((ignored, throwable) -> {
+                if (throwable == null) {
+                    return;
+                }
+                // 람다 본문 예외를 받는 경로가 없어 로그 한 줄 없이 소실됐다. traceId 가 PENDING 에 남으면
+                // 스케줄러가 뒤늦게 TIMEOUT 으로 승격시켜 성공한 명령이 "타임아웃" 으로 보고된다(S08 D-10).
+                // 실패를 즉시 TIMEOUT 으로 확정하고 원인을 남겨 관측 가능하게 한다.
+                log.error("EQP 비동기 시나리오 본문이 실패했습니다. traceId={}, eqpId={}, eventType={}",
+                        traceId, eqpId, eventType, throwable);
+                markTimeoutBestEffort(traceId);
+            });
             return EqpAsyncAcceptResult.accepted(traceId);
         } catch (RuntimeException exception) {
             asyncResultStorePort.markTimeout(traceId);
@@ -338,6 +379,17 @@ public class EqpManagementService {
                     "PUBLISH_FAILED",
                     exception.getMessage() == null ? "비동기 작업 등록 중 오류가 발생했습니다." : exception.getMessage()
             );
+        }
+    }
+
+    /**
+     * 실패 확정 기록입니다 — 이 기록마저 실패하면(같은 Redis 장애) 더 할 수 있는 일이 없으므로 로그만 남깁니다.
+     */
+    private void markTimeoutBestEffort(final String traceId) {
+        try {
+            asyncResultStorePort.markTimeout(traceId);
+        } catch (RuntimeException markFailure) {
+            log.error("EQP 비동기 실패의 TIMEOUT 확정까지 실패했습니다. traceId={}", traceId, markFailure);
         }
     }
 

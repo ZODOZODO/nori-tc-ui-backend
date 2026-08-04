@@ -469,7 +469,10 @@ public class EqpController {
             final String action,
             final String eqpId
     ) {
-        final DeferredResult<ResponseEntity<ApiResponse<Void>>> deferredResult = new DeferredResult<>();
+        // 명시 timeout 이 없으면 컨테이너 기본 async timeout(spring.mvc.async.request-timeout 미설정)에
+        // 위임돼 응답 시점이 설정과 무관해진다(S08 D-9). future 쪽 orTimeout 과 같은 값으로 맞춘다.
+        final DeferredResult<ResponseEntity<ApiResponse<Void>>> deferredResult =
+                new DeferredResult<>(dualRequestProperties.getDualRequestTimeoutMs());
 
         future.whenComplete((result, throwable) -> {
             if (deferredResult.isSetOrExpired()) {

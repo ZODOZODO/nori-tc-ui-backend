@@ -1,5 +1,7 @@
 package com.nori.tc.ui.core.service;
 
+import com.nori.tc.ui.core.eqp.EqpCommandResult;
+import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.StartOutcome;
 import com.nori.tc.ui.core.model.AsyncResultEntry;
 import com.nori.tc.ui.core.model.UiCommandReply;
@@ -11,12 +13,24 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -32,6 +46,64 @@ class EqpManagementServiceTest {
             asyncResultStorePort,
             mock(Executor.class)
     );
+
+    /**
+     * S08 D-9 — 컨트롤러가 넘기는 dualRequestTimeoutMs 가 create/update/delete 3곳에서 완전히 무시됐다.
+     * 그러면 사용자에게는 컨테이너 기본 async timeout 으로 503 이 나가는데 백그라운드 작업은 계속 진행돼
+     * 응답과 실제 결과가 어긋난다(사용자는 실패로 알고 재시도 → 동시 편집 유발).
+     */
+    @Test
+    @DisplayName("S08 D-9: update 는 timeoutMs 를 넘기면 TimeoutException 으로 완료합니다")
+    void updateAppliesTimeoutFromCaller() {
+        final EqpDirectScenarioService blockingDirectService = mock(EqpDirectScenarioService.class);
+        when(blockingDirectService.executeUpdate(eq("EQP-01"), any())).thenAnswer(invocation -> {
+            Thread.sleep(2_000L);
+            return EqpCommandResult.ok();
+        });
+        final EqpManagementService timeoutService = new EqpManagementService(
+                mock(EqpManageQueryPort.class),
+                mock(EqpOptionsQueryPort.class),
+                blockingDirectService,
+                asyncResultStorePort,
+                Executors.newSingleThreadExecutor()
+        );
+
+        final CompletableFuture<EqpCommandResult> future =
+                timeoutService.update("EQP-01", mock(EqpManagementCommand.Update.class), 100L);
+
+        final ExecutionException failure = assertThrows(ExecutionException.class,
+                () -> future.get(3, TimeUnit.SECONDS));
+        assertInstanceOf(TimeoutException.class, failure.getCause());
+    }
+
+    /**
+     * S08 D-10 — {@code runAsync} 람다 본문 예외를 받는 exceptionally/whenComplete 가 없어
+     * 로그 한 줄 없이 소실됐다. Redis 장애로 markCompleted 가 던지면 traceId 는 PENDING 에 남고
+     * 스케줄러가 뒤늦게 TIMEOUT 으로 승격시켜 성공한 명령이 "타임아웃" 으로 보고된다.
+     */
+    @Test
+    @DisplayName("S08 D-10: 비동기 본문에서 markCompleted 가 실패하면 TIMEOUT 으로 확정합니다")
+    void asyncBodyFailureIsMarkedTimeoutInsteadOfBeingSwallowed() throws Exception {
+        final AsyncResultStorePort failingStore = mock(AsyncResultStorePort.class);
+        doThrow(new IllegalStateException("Redis 장애 주입"))
+                .when(failingStore).markCompleted(any(), any());
+        final EqpDirectScenarioService directService = mock(EqpDirectScenarioService.class);
+        when(directService.executeStart(eq("EQP-01"), eq("SOCKET"), any(), any()))
+                .thenReturn(EqpCommandResult.ok());
+        final EqpManagementService failingService = new EqpManagementService(
+                mock(EqpManageQueryPort.class),
+                mock(EqpOptionsQueryPort.class),
+                directService,
+                failingStore,
+                Executors.newSingleThreadExecutor()
+        );
+
+        final var accepted = failingService.startAsync("EQP-01", "SOCKET", null, 1_000L);
+
+        // 람다 본문 실패가 삼켜지면 PENDING 이 남아 스케줄러가 뒤늦게 TIMEOUT 으로 승격시킨다.
+        // 실패 시점에 즉시 TIMEOUT 으로 확정해야 관측 가능하다.
+        verify(failingStore, timeout(3_000L)).markTimeout(accepted.traceId());
+    }
 
     @Test
     @DisplayName("COMPLETED + reply PASS 면 awaitAsyncResult 는 PASS 를 반환합니다")
