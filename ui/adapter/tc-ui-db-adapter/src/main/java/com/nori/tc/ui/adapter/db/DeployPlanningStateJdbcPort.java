@@ -172,7 +172,11 @@ public class DeployPlanningStateJdbcPort implements DeployPlanningStatePort {
                 snapshot.hsms() == null ? null : snapshot.hsms().deviceId(),
                 snapshot.eqp().eqpIp(),
                 snapshot.eqp().eqpPort(),
-                snapshot.model() == null ? null : snapshot.model().modelKey(),
+                // 8번째 슬롯 modelKey 의 의미는 modelVersionKey(모델 버전 ID)로 통일한다.
+                // 소비 측 gateway 가 info.modelKey() 를 그대로 modelVersionKey 로 쓴다
+                // (PlcEquipmentSpecReloader / PlcSpecBootstrap "의미 변경 금지" / PlcPollGroupRegistry).
+                // 나머지 2벌(DeployServiceSnapshotSupport / DeployServiceCommandSupport)도 이미 버전 ID 다.
+                snapshot.eqp().modelVersionKey(),
                 snapshot.eqp().gatewayJarKey(),
                 snapshot.eqp().businessJarKey(),
                 snapshot.eqp().commMode(),

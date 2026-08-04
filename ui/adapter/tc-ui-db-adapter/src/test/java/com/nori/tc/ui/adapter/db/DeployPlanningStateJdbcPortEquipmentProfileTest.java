@@ -136,21 +136,21 @@ class DeployPlanningStateJdbcPortEquipmentProfileTest {
     }
 
     /**
-     * characterization — 현재 이 경로의 modelKey 슬롯은 <b>모델 정체성</b>({@code model().modelKey()})이다.
+     * S08 B-3 / 결정 D2 — modelKey 슬롯의 의미는 modelVersionKey(모델 버전 ID)로 통일한다.
      *
-     * <p>박제만 한다. 다른 2벌(DeployServiceSnapshotSupport / DeployServiceCommandSupport)과 소비 측
-     * gateway 는 같은 슬롯을 modelVersionKey 로 취급하므로 이 값은 이상 지점이며, 순서 30(S08 B-3 / 결정 D2)이
-     * 슬롯 의미를 modelVersionKey 로 통일한다.</p>
+     * <p>소비 측 gateway 가 {@code info.modelKey()} 를 그대로 modelVersionKey 로 쓰고
+     * ({@code PlcEquipmentSpecReloader} / {@code PlcSpecBootstrap} "의미 변경 금지" / {@code PlcPollGroupRegistry}),
+     * 나머지 2벌도 이미 버전 ID 다. 이 경로만 모델 정체성(500)을 실었다.</p>
      */
     @Test
-    @DisplayName("characterization: JDBC planner 경로의 modelKey 슬롯은 현재 모델 정체성입니다(D2 대상)")
-    void equipmentProfileModelKeySlotCurrentlyCarriesModelIdentity() {
+    @DisplayName("S08 B-3/D2: JDBC planner 경로의 modelKey 슬롯은 모델 버전 ID 입니다")
+    void equipmentProfileModelKeySlotCarriesModelVersionKey() {
         when(dbSupport.loadSnapshotByEqpId(EQP_ID)).thenReturn(Optional.of(snapshot()));
 
         final UiEquipmentProfileSnapshot profile =
                 port.findCurrentStateByEqpId(EQP_ID).orElseThrow().equipmentProfile();
 
-        assertEquals(500L, profile.modelKey());
+        assertEquals(900L, profile.modelKey());
     }
 
     @Test
