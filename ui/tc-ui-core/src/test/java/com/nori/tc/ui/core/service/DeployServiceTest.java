@@ -644,6 +644,51 @@ class DeployServiceTest {
     }
 
     /**
+     * S08 D-3 — createDeploy 는 deploy 행 생성 / target pre-state 스냅샷 / READY 승격이
+     * 각각 독립 트랜잭션이다(core @Transactional 0건). 뒤 단계가 실패하면 앞 단계 커밋이 남는데
+     * 보상이 없어 deploy 가 PLANNING 에 영구 고착된다 — startDeploy 는 READY 만 받으므로 실행도,
+     * cancel 이후 재시도도 불가한 좀비가 된다.
+     *
+     * <p>주입 지점은 READY 승격(마지막 단계)이다. 이 하네스의 기본 시나리오에는 rollbackEnabled step 이
+     * 없어 pre-state 스냅샷 단계가 no-op 이라, 같은 결함을 결정적으로 재현하는 지점을 골랐다.</p>
+     */
+    @Test
+    void createDeployMarksTerminalWhenReadyPromotionFails() {
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
+        final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort() {
+            @Override
+            public synchronized void updateDeployStatus(
+                    final long deployKey,
+                    final DeployStatus deployStatus,
+                    final boolean pauseRequested,
+                    final String lastErrorCode,
+                    final String lastErrorMessage
+            ) {
+                if (deployStatus == DeployStatus.READY) {
+                    throw new IllegalStateException("READY 승격 실패 주입");
+                }
+                super.updateDeployStatus(deployKey, deployStatus, pauseRequested, lastErrorCode, lastErrorMessage);
+            }
+        };
+
+        deployService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService(tempDir.resolve("missing-scenarios")),
+                storePort,
+                new InMemoryEqpCrudPort(),
+                message -> { },
+                UiBusinessEventPublishPort.noop(),
+                traceRegistry
+        );
+
+        assertThrows(IllegalStateException.class, () -> deployService.createDeploy(sendMessageCommand(), "tester"));
+
+        final DeploySummarySnapshot summary = storePort.findDeploySummary(1L).orElseThrow();
+        assertEquals(DeployStatus.FAILED, summary.deployStatus());
+        assertNotEquals(DeployStatus.PLANNING, summary.deployStatus());
+    }
+
+    /**
      * S08 D-4 — 취소는 target 전환과 헤더 기록이 한 단위여야 한다.
      *
      * <p>두 쓰기가 분리돼 있으면 헤더 기록 실패 시 target 전부 CANCELED / 헤더 RUNNING 으로 고착된다.

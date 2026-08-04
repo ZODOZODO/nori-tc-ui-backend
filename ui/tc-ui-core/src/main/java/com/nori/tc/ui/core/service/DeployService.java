@@ -126,6 +126,21 @@ public class DeployService {
         final List<PersistedDeployTarget> executableTargets = persistedDeploy.targets().stream()
                 .filter(target -> !target.planDraft().noChange())
                 .toList();
+        try {
+            return finishDeployCreation(persistedDeploy, executableTargets);
+        } catch (RuntimeException exception) {
+            // deploy 행 생성은 이미 커밋됐고 core 에는 트랜잭션이 없다(§4.0) — 되돌릴 수단이 없다.
+            // PLANNING 으로 방치하면 startDeploy(READY 만 허용)도 cancel 이후 재시도도 불가한 좀비가
+            // 영구히 남으므로, 생성 실패를 terminal 상태로 확정해 운영자가 삭제·재생성할 수 있게 한다.
+            markDeployCreationFailed(persistedDeploy.deployKey(), exception);
+            throw exception;
+        }
+    }
+
+    private DeployCreateResult finishDeployCreation(
+            final PersistedDeploy persistedDeploy,
+            final List<PersistedDeployTarget> executableTargets
+    ) {
         executableTargets.forEach(commandAssembler::captureTargetPreState);
         if (executableTargets.isEmpty()) {
             deployStorePort.updateDeployStatus(
@@ -171,6 +186,27 @@ public class DeployService {
                         DeployResultSeverity.INFO
                 )
         );
+    }
+
+    /**
+     * 생성 도중 실패한 deploy 를 terminal(FAILED)로 확정합니다.
+     *
+     * <p>보상 자체가 실패해도 원인 예외를 가리지 않도록 로그만 남깁니다 — 호출자가 원인을 다시 던집니다.</p>
+     */
+    private void markDeployCreationFailed(final long deployKey, final RuntimeException cause) {
+        try {
+            deployStorePort.updateDeployStatus(
+                    deployKey,
+                    DeployStatus.FAILED,
+                    false,
+                    "DEPLOY_CREATE_FAILED",
+                    "Deploy 생성이 완료되지 않았습니다. " + cause.getClass().getSimpleName() + ": " + cause.getMessage()
+            );
+        } catch (RuntimeException compensationFailure) {
+            log.error("Deploy 생성 실패 보상까지 실패했습니다. {}",
+                    RuntimeLogSummary.kv("deployKey", deployKey),
+                    compensationFailure);
+        }
     }
 
     /**
