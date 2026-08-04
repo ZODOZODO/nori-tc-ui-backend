@@ -146,6 +146,7 @@ public class DeployJdbcStorePort implements DeployStorePort {
                                last_error_message = COALESCE(:lastErrorMessage, last_error_message),
                                updated_at = CURRENT_TIMESTAMP
                          WHERE deploy_key = :deployKey
+                           AND deploy_status <> 'CANCELED'
                         """,
                 parameters
         );

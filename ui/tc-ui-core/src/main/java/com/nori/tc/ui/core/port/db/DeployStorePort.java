@@ -32,6 +32,13 @@ public interface DeployStorePort {
 
     PersistedDeploy createDeploy(DeployPlanCommand command, DeployPlanningResult planningResult, String actor);
 
+    /**
+     * deploy 헤더 상태를 기록합니다.
+     *
+     * <p>계약: {@code CANCELED} 는 terminal 이므로 이미 CANCELED 인 deploy 는 갱신되지 않습니다.
+     * 호출자의 상태 확인(읽기)과 이 기록(쓰기)은 서로 다른 트랜잭션이라, 그 사이에 취소가 커밋되면
+     * 가드 없이는 취소된 deploy 가 COMPLETED 로 부활합니다(S08 D-2).</p>
+     */
     void updateDeployStatus(
             long deployKey,
             DeployStatus deployStatus,
