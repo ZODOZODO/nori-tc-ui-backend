@@ -44,7 +44,9 @@ class GatewayDlqRedisServiceQuarantineTest {
     @BeforeEach
     void setUp() {
         when(gatewayRedisTemplate.opsForValue()).thenReturn(valueOps);
-        service = new GatewayDlqRedisService(gatewayRedisTemplate);
+        service = new GatewayDlqRedisService(
+                gatewayRedisTemplate,
+                tools.jackson.databind.json.JsonMapper.builder().findAndAddModules().build());
     }
 
     @Test

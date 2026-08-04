@@ -1,5 +1,6 @@
 package com.nori.tc.ui.adapters.redis.dlq;
 
+import tools.jackson.databind.ObjectMapper;
 import com.nori.tc.db.domain.redis.dlq.RedisDlqEntry;
 import com.nori.tc.db.domain.redis.quarantine.RedisQuarantineEntry;
 import com.nori.tc.ui.core.port.redis.GatewayDlqPort;
@@ -16,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -31,9 +33,15 @@ import java.util.Objects;
  * </ul>
  *
  * <p>역직렬화:</p>
- * <p>항목은 {@link java.io.Serializable} 기반 JDK 직렬화로 저장되어 있습니다.
+ * <p>항목은 JSON 으로 저장됩니다(JDK 직렬화 아님 — 워크스페이스 전체 {@code JdkSerializationRedisSerializer} 0건).
  * {@link RedisDlqEntry}, {@link RedisQuarantineEntry}는 {@code tc-db-domain}에 위치하여
  * Gateway 어댑터(쓰기)와 UI 어댑터(읽기)가 동일 클래스를 공유합니다.</p>
+ *
+ * <p><b>직렬화 mode 불일치</b>: 적재 측 gateway 는 common {@code TcRedisCrudRepository} →
+ * {@code GenericJacksonJsonRedisSerializer}(plain {@code JsonMapper}) 로 <b>typeless</b> JSON 을 쓰고
+ * ({@code @class} 힌트 없음), 소비 측 {@code gatewayRedisTemplate} 은 {@code RedisSerializer.json()} 으로
+ * <b>typed</b> 로 읽는다. 그래서 값이 {@code Map} 으로 들어오며 {@code Map} fallback 이 필수다
+ * (순서 318 — 순서 51 의 business DLQ 와 동일 근본 원인).</p>
  */
 @Service
 public class GatewayDlqRedisService implements GatewayDlqPort {
@@ -53,12 +61,16 @@ public class GatewayDlqRedisService implements GatewayDlqPort {
     private static final int SCAN_COUNT_HINT = 100;
 
     private final RedisTemplate<String, Object> gatewayRedisTemplate;
+    private final ObjectMapper redisObjectMapper;
 
     public GatewayDlqRedisService(
-            @Qualifier("gatewayRedisTemplate") final RedisTemplate<String, Object> gatewayRedisTemplate
+            @Qualifier("gatewayRedisTemplate") final RedisTemplate<String, Object> gatewayRedisTemplate,
+            @Qualifier("uiRedisObjectMapper") final ObjectMapper redisObjectMapper
     ) {
         this.gatewayRedisTemplate = Objects.requireNonNull(gatewayRedisTemplate,
                 "gatewayRedisTemplate 은 null 이 될 수 없습니다.");
+        this.redisObjectMapper = Objects.requireNonNull(redisObjectMapper,
+                "redisObjectMapper 는 null 이 될 수 없습니다.");
     }
 
     // -------------------------------------------------------------------------
@@ -90,6 +102,9 @@ public class GatewayDlqRedisService implements GatewayDlqPort {
                 final Object raw = gatewayRedisTemplate.opsForValue().get(key);
                 if (raw instanceof RedisDlqEntry entry) {
                     entries.add(entry);
+                } else if (raw instanceof Map<?, ?> map) {
+                    // 적재 측 typeless JSON ↔ 소비 측 typed JSON mode 차이를 흡수한다(형제 경로와 동일 규약).
+                    entries.add(redisObjectMapper.convertValue(map, RedisDlqEntry.class));
                 } else if (raw != null) {
                     // 저장된 타입이 예상과 다를 경우 — 직렬화 형식 불일치 가능성
                     log.warn("Gateway DLQ 키 타입 불일치. key={}, actualType={}",
@@ -158,6 +173,9 @@ public class GatewayDlqRedisService implements GatewayDlqPort {
                 final Object raw = gatewayRedisTemplate.opsForValue().get(key);
                 if (raw instanceof RedisQuarantineEntry entry) {
                     entries.add(entry);
+                } else if (raw instanceof Map<?, ?> map) {
+                    // 적재 측 typeless JSON ↔ 소비 측 typed JSON mode 차이를 흡수한다(형제 경로와 동일 규약).
+                    entries.add(redisObjectMapper.convertValue(map, RedisQuarantineEntry.class));
                 } else if (raw != null) {
                     log.warn("Gateway Quarantine 키 타입 불일치. key={}, actualType={}",
                             key, raw.getClass().getName());
