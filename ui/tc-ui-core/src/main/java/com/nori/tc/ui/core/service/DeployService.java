@@ -425,19 +425,14 @@ public class DeployService {
         final OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         final List<String> activeTraceIds = deployStorePort.findActiveTraceIds(deployKey);
 
-        deployStorePort.markTargetsCanceled(
+        // target 전환과 헤더 기록은 포트 한 번으로 원자 반영한다(S08 D-4 — 분리 시 부분 실패가 RUNNING 고착).
+        deployStorePort.markDeployCanceled(
                 deployKey,
                 now,
                 "DEPLOY_CANCELED",
                 "사용자 취소 요청으로 작업이 중단되었습니다."
         );
-        deployStorePort.updateDeployStatus(
-                deployKey,
-                DeployStatus.CANCELED,
-                false,
-                "DEPLOY_CANCELED",
-                "사용자 취소 요청으로 작업이 중단되었습니다."
-        );
+        // trace 취소는 DB 커밋 이후의 외부(Redis) 정리다 — DB 원자성 경계 밖으로 둔다.
         activeTraceIds.forEach(deployTraceRecorder::cancel);
 
         log.info("Deploy 취소 완료. {}",

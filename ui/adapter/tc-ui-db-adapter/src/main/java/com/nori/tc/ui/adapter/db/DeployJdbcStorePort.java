@@ -760,7 +760,18 @@ public class DeployJdbcStorePort implements DeployStorePort {
 
     @Override
     @Transactional
-    public void markTargetsCanceled(
+    public void markDeployCanceled(
+            final long deployKey,
+            final OffsetDateTime canceledAt,
+            final String reasonCode,
+            final String reasonDetail
+    ) {
+        // 두 UPDATE 는 반드시 같은 트랜잭션이어야 한다 — 분리하면 헤더가 RUNNING 에 영구 고착된다(S08 D-4).
+        cancelTargets(deployKey, canceledAt, reasonCode, reasonDetail);
+        updateDeployStatus(deployKey, DeployStatus.CANCELED, false, reasonCode, reasonDetail);
+    }
+
+    private void cancelTargets(
             final long deployKey,
             final OffsetDateTime finishedAt,
             final String lastErrorCode,

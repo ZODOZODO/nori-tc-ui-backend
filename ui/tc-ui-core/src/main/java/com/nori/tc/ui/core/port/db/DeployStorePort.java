@@ -142,11 +142,18 @@ public interface DeployStorePort {
 
     java.util.List<String> findActiveTraceIds(long deployKey);
 
-    void markTargetsCanceled(
+    /**
+     * deploy 취소를 반영합니다 — 미종료 target 의 CANCELED 전환과 헤더 CANCELED 기록이 한 단위입니다.
+     *
+     * <p>계약: 부분 반영을 남기지 않습니다. 두 쓰기를 분리하면 뒤쪽 실패 시 target 은 전부 CANCELED /
+     * 헤더는 RUNNING 으로 남고, pending·running=0 이라 어떤 실행 스레드도 상태를 다시 계산하지 않아
+     * RUNNING 에 영구 고착된다(S08 D-4).</p>
+     */
+    void markDeployCanceled(
             long deployKey,
-            OffsetDateTime finishedAt,
-            String lastErrorCode,
-            String lastErrorMessage
+            OffsetDateTime canceledAt,
+            String reasonCode,
+            String reasonDetail
     );
 
     void markTargetReadyForResume(

@@ -70,6 +70,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -640,6 +641,58 @@ class DeployServiceTest {
                 .getFirst();
         assertEquals(DeployTargetStatus.CANCELED, target.targetStatus());
         assertEquals(DeployStepStatus.CANCELED, target.currentStepStatus());
+    }
+
+    /**
+     * S08 D-4 — 취소는 target 전환과 헤더 기록이 한 단위여야 한다.
+     *
+     * <p>두 쓰기가 분리돼 있으면 헤더 기록 실패 시 target 전부 CANCELED / 헤더 RUNNING 으로 고착된다.
+     * pending·running=0 이라 어떤 실행 스레드도 refreshDeployStatus 를 다시 부르지 않아 자가 복구가 없다.</p>
+     *
+     * <p>포트 원자성의 실제 보증(단일 트랜잭션)은 어댑터 쪽
+     * {@code DeployJdbcStorePortCancelAtomicityTest} 가 실 SQL 로 검증한다. 이 테스트는
+     * core 가 부분 반영이 가능한 호출 형태를 쓰지 않는지를 고정한다.</p>
+     */
+    @Test
+    void cancelDeployLeavesNoPartialStateWhenHeaderWriteFails() throws Exception {
+        final DeployTraceRegistry traceRegistry = new DeployTraceRegistry(new InMemoryDeployTraceRedisPort());
+        final InMemoryDeployStorePort storePort = new InMemoryDeployStorePort() {
+            @Override
+            public synchronized void updateDeployStatus(
+                    final long deployKey,
+                    final DeployStatus deployStatus,
+                    final boolean pauseRequested,
+                    final String lastErrorCode,
+                    final String lastErrorMessage
+            ) {
+                if (deployStatus == DeployStatus.CANCELED) {
+                    throw new IllegalStateException("헤더 CANCELED 기록 실패 주입");
+                }
+                super.updateDeployStatus(deployKey, deployStatus, pauseRequested, lastErrorCode, lastErrorMessage);
+            }
+        };
+        final List<UiCommandMessage> publishedMessages = new ArrayList<>();
+
+        deployService = newDeployService(
+                deployProperties(tempDir.resolve("missing-scenarios")),
+                planningService(tempDir.resolve("missing-scenarios")),
+                storePort,
+                new InMemoryEqpCrudPort(),
+                message -> publishedMessages.add(message),
+                UiBusinessEventPublishPort.noop(),
+                traceRegistry
+        );
+
+        final DeployCreateResult result = deployService.createDeploy(sendMessageCommand(), "tester");
+        executeReadyDeployAsync(storePort, result.deployKey(), "tester");
+        awaitPublishedMessage(publishedMessages);
+
+        assertThrows(IllegalStateException.class, () -> deployService.cancelDeploy(result.deployKey(), "tester"));
+
+        final DeployTargetSnapshot target = deployService.getDeployTargets(result.deployKey(), 0, 20, null, null)
+                .targets()
+                .getFirst();
+        assertNotEquals(DeployTargetStatus.CANCELED, target.targetStatus());
     }
 
     @Test
@@ -1695,7 +1748,8 @@ class DeployServiceTest {
         }
     }
 
-    private static final class InMemoryDeployStorePort implements DeployStorePort {
+    // 취소 부분 실패(S08 D-4) 주입을 위해 상속 가능하게 둔다.
+    private static class InMemoryDeployStorePort implements DeployStorePort {
 
         private long deploySequence = 0L;
         private long targetSequence = 0L;
@@ -2085,8 +2139,24 @@ class DeployServiceTest {
                     .toList();
         }
 
+        /**
+         * 어댑터의 단일 트랜잭션 계약을 모사한다 — 부분 반영을 남기지 않는다.
+         *
+         * <p>헤더 기록을 먼저 수행해 그 단계가 실패하면 target 전환이 시작되지 않도록 한다.
+         * 실 원자성(rollback)은 {@code DeployJdbcStorePortCancelAtomicityTest} 가 실 SQL 로 검증한다.</p>
+         */
         @Override
-        public synchronized void markTargetsCanceled(
+        public synchronized void markDeployCanceled(
+                final long deployKey,
+                final OffsetDateTime canceledAt,
+                final String reasonCode,
+                final String reasonDetail
+        ) {
+            updateDeployStatus(deployKey, DeployStatus.CANCELED, false, reasonCode, reasonDetail);
+            cancelTargets(deployKey, canceledAt, reasonCode, reasonDetail);
+        }
+
+        private void cancelTargets(
                 final long deployKey,
                 final OffsetDateTime finishedAt,
                 final String lastErrorCode,
