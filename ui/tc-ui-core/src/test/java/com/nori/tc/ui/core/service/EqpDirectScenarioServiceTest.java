@@ -21,6 +21,7 @@ import com.nori.tc.ui.core.port.db.EqpQueryPort;
 import com.nori.tc.ui.core.port.db.EqpRepairTaskPort;
 import com.nori.tc.ui.core.port.db.ModelCrudPort;
 import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
+import com.nori.tc.ui.core.port.redis.DeployExecutionCoordinationPort;
 import com.nori.tc.ui.core.port.redis.DeployTraceRedisPort;
 import com.nori.tc.ui.core.properties.UiDeployProperties;
 import com.nori.tc.ui.core.registry.DeployTraceRedisLookupResult;
@@ -394,7 +395,51 @@ class EqpDirectScenarioServiceTest {
         assertEquals(List.of("clear:7"), pollGroupPort.calls);
     }
 
+    /**
+     * S08 D-6 — direct 편집은 publish-first 라 읽기와 최종 DB 쓰기 사이에 Kafka 왕복 전체가 끼어
+     * RMW 창이 수십 초다. deploy 실행 경로는 같은 eqpId lease 로 이 창을 직렬화하는데 direct 경로에는
+     * lease 가 없어, 두 운영자의 동시 편집이 gateway 재구성과 DB 커밋 순서를 어긋나게 만들 수 있었다.
+     *
+     * <p>lease 를 이미 다른 owner 가 쥔 상황을 주입한다 — 배제가 없으면 gateway 로 publish 가 나간다.</p>
+     */
+    @Test
+    void updateIsRejectedWhileAnotherOperationHoldsEquipmentLease() {
+        service = newService(leaseAlwaysHeldByOthers());
+        eqpCrudPort.put(snapshot("PHOTO_001", 1L, "10.10.10.1", 6000, "EQP_PARAM_V1", 3001L, 4001L));
+
+        final EqpCommandResult result = service.executeUpdate(
+                "PHOTO_001",
+                updateCommand("10.10.10.2", 6000, "EQP_PARAM_V1", 3001L, 4001L));
+
+        assertFalse(result.success());
+        assertEquals(409, result.statusCode());
+        assertTrue(gatewayPublisher.messages.isEmpty());
+    }
+
+    private static DeployExecutionCoordinationPort leaseAlwaysHeldByOthers() {
+        return new DeployExecutionCoordinationPort() {
+            @Override
+            public boolean tryAcquireTargetLease(final String eqpId, final String ownerToken, final long ttlMs) {
+                return false;
+            }
+
+            @Override
+            public void releaseTargetLease(final String eqpId, final String ownerToken) {
+                throw new AssertionError("lease 를 얻지 못했으면 해제도 호출되지 않아야 합니다.");
+            }
+
+            @Override
+            public boolean registerTargetExecution(final String executionKey, final long ttlMs) {
+                return true;
+            }
+        };
+    }
+
     private EqpDirectScenarioService newService() {
+        return newService(DeployExecutionCoordinationPort.noop());
+    }
+
+    private EqpDirectScenarioService newService(final DeployExecutionCoordinationPort coordinationPort) {
         final UiDeployProperties deployProperties = new UiDeployProperties(
                 "/home/donggeon/workspace_nori/nori-tc-ui-backend/ui/tc-ui-core/src/main/resources/deploy-scenarios",
                 100,
@@ -473,6 +518,8 @@ class EqpDirectScenarioServiceTest {
                 new NoOpDemoJobCleanupPort(),
                 pollGroupPort,
                 repairTaskService,
+                coordinationPort,
+                deployProperties,
                 modelDetailQueryPort,
                 objectMapper
         );

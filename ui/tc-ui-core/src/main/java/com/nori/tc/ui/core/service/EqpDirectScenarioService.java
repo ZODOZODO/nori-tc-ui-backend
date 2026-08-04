@@ -16,6 +16,8 @@ import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.port.db.DemoJobCleanupPort;
 import com.nori.tc.ui.core.port.db.EqpPlcPollGroupPort;
 import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
+import com.nori.tc.ui.core.port.redis.DeployExecutionCoordinationPort;
+import com.nori.tc.ui.core.properties.UiDeployProperties;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,6 +25,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 /**
  * direct EQP event를 공통 scenario planner/runner로 실행하는 facade입니다.
@@ -45,6 +48,8 @@ public class EqpDirectScenarioService {
     private final DemoJobCleanupPort demoJobCleanupPort;
     private final EqpPlcPollGroupPort pollGroupPort;
     private final EqpRepairTaskService repairTaskService;
+    private final DeployExecutionCoordinationPort coordinationPort;
+    private final UiDeployProperties deployProperties;
     private final ObjectMapper objectMapper;
     private final ModelParamPayloadSupport modelParamPayloadSupport;
 
@@ -57,6 +62,8 @@ public class EqpDirectScenarioService {
             final DemoJobCleanupPort demoJobCleanupPort,
             final EqpPlcPollGroupPort pollGroupPort,
             final EqpRepairTaskService repairTaskService,
+            final DeployExecutionCoordinationPort coordinationPort,
+            final UiDeployProperties deployProperties,
             final ModelDetailQueryPort modelDetailQueryPort,
             final ObjectMapper objectMapper
     ) {
@@ -68,6 +75,8 @@ public class EqpDirectScenarioService {
         this.demoJobCleanupPort = Objects.requireNonNull(demoJobCleanupPort, "demoJobCleanupPort is null");
         this.pollGroupPort = Objects.requireNonNull(pollGroupPort, "pollGroupPort is null");
         this.repairTaskService = Objects.requireNonNull(repairTaskService, "repairTaskService is null");
+        this.coordinationPort = Objects.requireNonNull(coordinationPort, "coordinationPort is null");
+        this.deployProperties = Objects.requireNonNull(deployProperties, "deployProperties is null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is null");
         this.modelParamPayloadSupport = new ModelParamPayloadSupport(
                 Objects.requireNonNull(modelDetailQueryPort, "modelDetailQueryPort is null"),
@@ -110,6 +119,47 @@ public class EqpDirectScenarioService {
     ) {
         try {
             validator.validateEqpId(eqpId);
+            // publish-first 설계상 읽기와 최종 DB 쓰기 사이에 Kafka 왕복 전체가 끼어 RMW 창이 수십 초다.
+            // deploy 실행 경로는 같은 eqpId lease 로 이 창을 직렬화하는데 direct 편집 경로에는 없었다
+            // → 두 운영자의 동시 편집이 gateway 재구성과 DB 커밋 순서를 어긋나게 만들 수 있었다(S08 D-6).
+            // 같은 lease 키 공간을 쓰므로 deploy 실행 중 설비의 direct 편집도 함께 배제된다.
+            return withEquipmentLease(eqpId, () -> doExecuteUpdate(eqpId, command));
+        } catch (Exception exception) {
+            return toCommandResult(exception);
+        }
+    }
+
+    /**
+     * eqpId lease 를 잡고 direct 변이를 실행합니다.
+     *
+     * <p>deploy 실행 경로와 달리 busy-wait 하지 않고 즉시 거부한다 — 동기 UI 요청이므로 대기보다
+     * 명확한 409 가 낫고, 새 busy-wait 은 요청 스레드를 점유한다.</p>
+     *
+     * <p>TTL 은 {@code targetLockExtraTtlMs}(기본 30s)를 쓴다. lease 는 항상 finally 에서 해제하므로
+     * TTL 은 프로세스 크래시 복구 상한만 정한다.</p>
+     */
+    private EqpCommandResult withEquipmentLease(
+            final String eqpId,
+            final Supplier<EqpCommandResult> action
+    ) {
+        final long leaseTtlMs = Math.max(1L, deployProperties.targetLockExtraTtlMs());
+        final String ownerToken = newExecutionId();
+        if (!coordinationPort.tryAcquireTargetLease(eqpId, ownerToken, leaseTtlMs)) {
+            throw new UiConflictException(
+                    "같은 설비의 다른 작업이 진행 중입니다. 잠시 후 다시 시도해 주세요. eqpId=" + eqpId);
+        }
+        try {
+            return action.get();
+        } finally {
+            coordinationPort.releaseTargetLease(eqpId, ownerToken);
+        }
+    }
+
+    private EqpCommandResult doExecuteUpdate(
+            final String eqpId,
+            final EqpManagementCommand.Update command
+    ) {
+        try {
             final EqpManagementSnapshot existingSnapshot = requireExistingSnapshot(eqpId);
             validator.validateUpdateCommand(command, existingSnapshot);
             // routePartition 변경은 Gateway listener bind / outbound 연결의 라우팅 책임을 옮기는 행위이므로
