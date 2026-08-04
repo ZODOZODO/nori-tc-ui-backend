@@ -4,6 +4,7 @@ import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.exception.UiErrorCode;
+import com.nori.tc.ui.core.exception.UiForbiddenException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -92,6 +93,24 @@ public class UiApiExceptionHandler {
                 resolveMethod(request), resolveRequestUri(request), exception.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiResponse.error(exception.errorCode(), exception.getMessage()));
+    }
+
+    /**
+     * 대상별 인가 거부를 403으로 변환합니다.
+     *
+     * @param exception 변환 대상 예외
+     * @param request 현재 HTTP 요청
+     * @return 403 응답
+     */
+    @ExceptionHandler(UiForbiddenException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUiForbidden(
+            final UiForbiddenException exception,
+            final HttpServletRequest request
+    ) {
+        log.warn("인가 거부. method={}, uri={}, message={}",
+                resolveMethod(request), resolveRequestUri(request), exception.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiResponse.error(UiErrorCode.FORBIDDEN, exception.getMessage()));
     }
 
     /**

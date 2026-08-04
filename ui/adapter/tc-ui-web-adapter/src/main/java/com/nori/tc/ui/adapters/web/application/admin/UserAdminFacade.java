@@ -7,6 +7,7 @@ import com.nori.tc.ui.adapters.web.dto.response.UserGroupMembershipResponse;
 import com.nori.tc.ui.adapters.web.dto.response.UserInfoResponse;
 import com.nori.tc.ui.adapters.web.dto.response.UserListItemResponse;
 import com.nori.tc.ui.adapters.web.security.UiPasswordPolicyService;
+import com.nori.tc.ui.adapters.web.security.UiPrivilegeEscalationGuard;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
 import com.nori.tc.ui.core.port.db.GroupCrudPort;
@@ -39,19 +40,22 @@ public class UserAdminFacade {
     private final GroupCrudPort groupCrudPort;
     private final UiPasswordPolicyService passwordPolicyService;
     private final UserAdminAssembler assembler;
+    private final UiPrivilegeEscalationGuard escalationGuard;
 
     public UserAdminFacade(
             final UserCrudPort userCrudPort,
             final UserGroupMappingPort userGroupMappingPort,
             final GroupCrudPort groupCrudPort,
             final UiPasswordPolicyService passwordPolicyService,
-            final UserAdminAssembler assembler
+            final UserAdminAssembler assembler,
+            final UiPrivilegeEscalationGuard escalationGuard
     ) {
         this.userCrudPort = Objects.requireNonNull(userCrudPort, "userCrudPort is null");
         this.userGroupMappingPort = Objects.requireNonNull(userGroupMappingPort, "userGroupMappingPort is null");
         this.groupCrudPort = Objects.requireNonNull(groupCrudPort, "groupCrudPort is null");
         this.passwordPolicyService = Objects.requireNonNull(passwordPolicyService, "passwordPolicyService is null");
         this.assembler = Objects.requireNonNull(assembler, "assembler is null");
+        this.escalationGuard = Objects.requireNonNull(escalationGuard, "escalationGuard is null");
     }
 
     public PagedResponse<UserListItemResponse> list(final UiPageRequest pageRequest) {
@@ -107,6 +111,8 @@ public class UserAdminFacade {
     }
 
     public UserGroupMappingResponse addGroupMapping(final long userPk, final long groupId) {
+        // 편입은 그룹의 permCode 전부를 대상 사용자에게 주는 것과 같다 — 부여와 같은 규칙을 적용한다(S08 E-2).
+        escalationGuard.requireAssignableGroup(groupId);
         final UiUserGroupMember saved = userGroupMappingPort.upsert(
                 assembler.toUserGroupMemberCommand(userPk, groupId, DEFAULT_GRANTED_BY)
         );
@@ -139,6 +145,8 @@ public class UserAdminFacade {
         if (optionalExisting.isEmpty()) {
             return false;
         }
+        // 재설정은 대상 계정 탈취와 같다 — 대상보다 좁은 권한으로 admin 계정을 뺏을 수 없게 한다(S08 E-2).
+        escalationGuard.requireResettablePassword(userPk);
 
         final String passwordHash = passwordPolicyService.encodeChangedPassword(userPk, request.newPassword());
         userCrudPort.upsert(assembler.toPasswordResetCommand(request, optionalExisting.get(), passwordHash));

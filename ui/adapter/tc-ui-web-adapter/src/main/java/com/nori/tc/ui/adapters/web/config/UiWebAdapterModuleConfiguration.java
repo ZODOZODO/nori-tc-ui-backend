@@ -31,6 +31,7 @@ import com.nori.tc.ui.adapters.web.controller.support.UiAuthCookieFactory;
 import com.nori.tc.ui.adapters.web.security.BcryptPasswordVerifier;
 import com.nori.tc.ui.adapters.web.security.UiApiPermissionCache;
 import com.nori.tc.ui.adapters.web.security.UiAuthenticationEntryPoint;
+import com.nori.tc.ui.adapters.web.security.UiPrivilegeEscalationGuard;
 import com.nori.tc.ui.adapters.web.security.UiSecurityConfig;
 import com.nori.tc.ui.adapters.web.security.UiTokenAuthenticationFilter;
 import org.springframework.context.annotation.Configuration;
@@ -75,6 +76,7 @@ import org.springframework.context.annotation.Import;
         BcryptPasswordVerifier.class,
         UiApiPermissionCache.class,
         UiAuthenticationEntryPoint.class,
+        UiPrivilegeEscalationGuard.class,
         UiSecurityConfig.class,
         UiTokenAuthenticationFilter.class
 })

@@ -1,5 +1,6 @@
 package com.nori.tc.ui.adapters.web.application.admin;
 
+import com.nori.tc.ui.adapters.web.security.UiPrivilegeEscalationGuard;
 import com.nori.tc.ui.core.port.db.AuditLogPort;
 import com.nori.tc.ui.core.port.db.GroupCrudPort;
 import com.nori.tc.ui.core.port.db.GroupPermissionMappingPort;
@@ -31,13 +32,15 @@ import static org.mockito.Mockito.mock;
 class GroupAdminFacadeAuditTest {
 
     private final RecordingAuditLogPort auditLog = new RecordingAuditLogPort();
+    private final UiPrivilegeEscalationGuard escalationGuard = mock(UiPrivilegeEscalationGuard.class);
     private final GroupAdminFacade facade = new GroupAdminFacade(
             mock(GroupCrudPort.class),
             mock(GroupPermissionMappingPort.class),
             mock(UserGroupMappingPort.class),
             mock(UserCrudPort.class),
             mock(GroupAdminAssembler.class),
-            auditLog);
+            auditLog,
+            escalationGuard);
 
     @AfterEach
     void clearSecurityContext() {
@@ -79,10 +82,14 @@ class GroupAdminFacadeAuditTest {
         assertEquals("group:5/perm:7", event.target());
     }
 
+    /**
+     * 권한 부여는 S08 E-2 가드가 인증을 요구하므로, actor fallback 은 가드 대상이 아닌 회수 경로로 검증한다.
+     * (회수는 권한을 늘리지 않아 승격 경로가 아니다.)
+     */
     @Test
     @DisplayName("인증 컨텍스트가 없으면 actor 는 SYSTEM 으로 기록된다")
     void unauthenticatedActorFallsBackToSystem() {
-        facade.addPermissionMapping(2L, 3L);
+        facade.removePermissionMapping(2L, 3L);
 
         assertEquals(1, auditLog.events.size());
         assertEquals("SYSTEM", auditLog.events.get(0).actor());

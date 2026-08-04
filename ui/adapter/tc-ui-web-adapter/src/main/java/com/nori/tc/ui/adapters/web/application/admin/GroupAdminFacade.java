@@ -4,6 +4,7 @@ import com.nori.tc.ui.adapters.web.dto.request.GroupUpsertRequest;
 import com.nori.tc.ui.adapters.web.dto.response.GroupInfoResponse;
 import com.nori.tc.ui.adapters.web.dto.response.GroupMemberResponse;
 import com.nori.tc.ui.adapters.web.dto.response.GroupPermissionMappingResponse;
+import com.nori.tc.ui.adapters.web.security.UiPrivilegeEscalationGuard;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
 import com.nori.tc.ui.core.port.db.AuditLogPort;
@@ -41,6 +42,7 @@ public class GroupAdminFacade {
     private final UserCrudPort userCrudPort;
     private final GroupAdminAssembler assembler;
     private final AuditLogPort auditLogPort;
+    private final UiPrivilegeEscalationGuard escalationGuard;
 
     public GroupAdminFacade(
             final GroupCrudPort groupCrudPort,
@@ -48,7 +50,8 @@ public class GroupAdminFacade {
             final UserGroupMappingPort userGroupMappingPort,
             final UserCrudPort userCrudPort,
             final GroupAdminAssembler assembler,
-            final AuditLogPort auditLogPort
+            final AuditLogPort auditLogPort,
+            final UiPrivilegeEscalationGuard escalationGuard
     ) {
         this.groupCrudPort = Objects.requireNonNull(groupCrudPort, "groupCrudPort is null");
         this.groupPermissionMappingPort = Objects.requireNonNull(groupPermissionMappingPort, "groupPermissionMappingPort is null");
@@ -56,6 +59,7 @@ public class GroupAdminFacade {
         this.userCrudPort = Objects.requireNonNull(userCrudPort, "userCrudPort is null");
         this.assembler = Objects.requireNonNull(assembler, "assembler is null");
         this.auditLogPort = Objects.requireNonNull(auditLogPort, "auditLogPort is null");
+        this.escalationGuard = Objects.requireNonNull(escalationGuard, "escalationGuard is null");
     }
 
     public PagedResponse<GroupInfoResponse> list(final UiPageRequest pageRequest) {
@@ -95,6 +99,9 @@ public class GroupAdminFacade {
     }
 
     public GroupPermissionMappingResponse addPermissionMapping(final long groupId, final long permId) {
+        // GROUP_WRITE 하나가 /api/group 아래 전 엔드포인트를 덮으므로 권한 부여 API 도 함께 열린다.
+        // 서버측 가드 없이는 설정 실수 1회로 즉시 ADMIN 승격이 가능하다(S08 E-2).
+        escalationGuard.requireGrantablePermission(permId);
         final UiUserGroupPermission saved = groupPermissionMappingPort.upsert(
                 assembler.toPermissionMappingCommand(groupId, permId, DEFAULT_GRANTED_BY)
         );
