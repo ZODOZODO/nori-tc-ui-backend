@@ -32,6 +32,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class HttpSimulatorOrchestratorClientTest {
 
+    /** simulator 의 {@code InternalTokenAuthFilter.TOKEN_HEADER} 와 같은 값이어야 한다(별 레포라 상수 참조 불가). */
+    private static final String INTERNAL_TOKEN_HEADER = "X-Tc-Internal-Token";
+    private static final String INTERNAL_TOKEN = "ui-backend-to-simulator-test-token";
+
     private HttpServer server;
     private HttpSimulatorOrchestratorClient client;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -42,6 +46,7 @@ class HttpSimulatorOrchestratorClientTest {
         server.start();
         final UiSimulatorProperties properties = new UiSimulatorProperties();
         properties.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+        properties.setInternalToken(INTERNAL_TOKEN);
         client = new HttpSimulatorOrchestratorClient(HttpClient.newHttpClient(), mapper, properties);
     }
 
@@ -54,8 +59,10 @@ class HttpSimulatorOrchestratorClientTest {
     void createRunPostsToRunPathWithModeScenarioAndTargets() throws Exception {
         final AtomicReference<String> capturedMethod = new AtomicReference<>();
         final AtomicReference<String> capturedBody = new AtomicReference<>();
+        final AtomicReference<String> capturedToken = new AtomicReference<>();
         server.createContext("/api/demo-runs", exchange -> {
             capturedMethod.set(exchange.getRequestMethod());
+            capturedToken.set(exchange.getRequestHeaders().getFirst(INTERNAL_TOKEN_HEADER));
             capturedBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             final byte[] body = mapper.writeValueAsBytes(
                     new SimulatorRunResponse("run-abc", "ALL", "RUNNING", List.of(), "2026-07-06T00:00:00Z", "modbus-tcp-normal-flow"));
@@ -75,6 +82,10 @@ class HttpSimulatorOrchestratorClientTest {
 
         // wire 검증 — Run 경로(POST /api/demo-runs) + 본문 mode/scenarioId/targets.
         assertEquals("POST", capturedMethod.get(), "Run 경로는 POST");
+        // simulator 감사 S11 E-1: simulator 제어 표면이 fail-closed 로 요구하는 공유 시크릿 헤더를 실제로 싣는지.
+        // 누락되면 운영에서 전 Run 조작 API 가 401 로 죽는다(무음 실패 방지 게이트).
+        assertEquals(INTERNAL_TOKEN, capturedToken.get(),
+                "simulator 내부 제어 토큰 헤더(" + INTERNAL_TOKEN_HEADER + ")를 실어야 한다.");
         final SimulatorCreateRunRequest sent = mapper.readValue(capturedBody.get(), SimulatorCreateRunRequest.class);
         assertEquals("ALL", sent.mode(), "wire mode");
         assertEquals("modbus-tcp-normal-flow", sent.scenarioId(), "wire scenarioId");

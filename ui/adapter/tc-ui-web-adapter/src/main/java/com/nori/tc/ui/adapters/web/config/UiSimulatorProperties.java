@@ -9,6 +9,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class UiSimulatorProperties {
 
     private String baseUrl = "http://127.0.0.1:18090";
+    // simulator 제어 표면 공유 시크릿(simulator 감사 S11 E-1 — simulator 측이 fail-closed 로 검증한다).
+    // 기본값 없음: 미설정으로 호출하면 simulator 가 401 로 거부한다(조용히 통과하는 경로를 만들지 않는다).
+    private String internalToken = "";
     private long connectTimeoutMs = 3000L;
     private long readTimeoutMs = 5000L;
     private long reaperIntervalMs = 5000L;
@@ -22,6 +25,14 @@ public class UiSimulatorProperties {
 
     public void setBaseUrl(final String baseUrl) {
         this.baseUrl = baseUrl;
+    }
+
+    public String getInternalToken() {
+        return internalToken;
+    }
+
+    public void setInternalToken(final String internalToken) {
+        this.internalToken = internalToken;
     }
 
     public long getConnectTimeoutMs() {

@@ -23,6 +23,12 @@ import java.util.Objects;
  */
 public class HttpSimulatorOrchestratorClient implements SimulatorOrchestratorClient {
 
+    /**
+     * simulator 의 {@code InternalTokenAuthFilter} 가 읽는 헤더 이름. simulator 는 별 레포라 그 상수를 참조할 수
+     * 없으므로(단방향 의존 규율) 값만 동일하게 유지한다 — 바꾸려면 양 레포를 같은 배포 묶음에서 바꿔야 한다.
+     */
+    private static final String SIMULATOR_INTERNAL_TOKEN_HEADER = "X-Tc-Internal-Token";
+
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final UiSimulatorProperties properties;
@@ -107,7 +113,10 @@ public class HttpSimulatorOrchestratorClient implements SimulatorOrchestratorCli
             final HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(properties.getBaseUrl() + path))
                     .timeout(Duration.ofMillis(properties.getReadTimeoutMs()))
-                    .header("Content-Type", "application/json");
+                    .header("Content-Type", "application/json")
+                    // simulator 제어 표면은 공유 시크릿 헤더를 요구한다(simulator 감사 S11 E-1). 미설정이면
+                    // 헤더를 싣지 않고 simulator 가 401 로 거부한다 — 조용히 통과하는 경로를 만들지 않는다.
+                    .header(SIMULATOR_INTERNAL_TOKEN_HEADER, properties.getInternalToken());
             if ("GET".equals(method)) {
                 builder.GET();
             } else if (body == null) {
