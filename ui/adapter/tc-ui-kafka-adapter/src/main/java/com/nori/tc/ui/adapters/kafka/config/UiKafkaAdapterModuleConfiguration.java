@@ -14,7 +14,8 @@ import org.springframework.context.annotation.Import;
         UiKafkaConfiguration.class,
         UiBusinessEventKafkaPublisher.class,
         UiGatewayEventKafkaPublisher.class,
-        UiCommandKafkaSubscriber.class
+        UiCommandKafkaSubscriber.class,
+        UiPublishTimeoutInvariantValidator.class
 })
 public class UiKafkaAdapterModuleConfiguration {
 }

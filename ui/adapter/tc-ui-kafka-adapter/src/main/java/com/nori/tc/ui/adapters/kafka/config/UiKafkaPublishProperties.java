@@ -22,9 +22,13 @@ public class UiKafkaPublishProperties {
     /**
      * Kafka 발행 동기 대기 타임아웃(초)입니다.
      *
-     * <p>기본값은 3초이며, 0 이하 값은 허용하지 않습니다.</p>
+     * <p>기본값은 producer {@code delivery.timeout.ms} 수렴값(30000ms)에 맞춘 30초이며, 0 이하 값은
+     * 허용하지 않습니다. 이 값이 delivery timeout 보다 짧으면 대기가 끝난 뒤에도 send 가 계속 진행돼
+     * 성공/실패가 불확정이 되고 재시도가 같은 UI 이벤트를 중복 발행한다({@code Future.get} 의 timeout 은
+     * send 를 취소하지 않는다). 그 관계는 기동 시점에 강제된다 —
+     * {@link UiPublishTimeoutInvariantValidator} 참조.</p>
      */
-    private long publishTimeoutSeconds = 3L;
+    private long publishTimeoutSeconds = 30L;
 
     /**
      * UI 메시지 발행 사전 가드레일 바이트 크기입니다.
