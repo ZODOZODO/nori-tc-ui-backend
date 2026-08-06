@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -189,6 +190,31 @@ class DeployServiceCommandSupportPlcProfileTest {
         return new EqpManagementSnapshot(
                 eqp, null, null, null, plc, null, runtimeState, null,
                 List.of(), List.of(), List.of(), null, null
+        );
+    }
+
+    /**
+     * 순서 339 — direct 프로파일 빌더 두 변형의 {@code stepUiMessage} 널 계약을 고정한다.
+     *
+     * <p>종전에는 같은 메서드 안에서 한쪽은 무가드 역참조, 다른 쪽은 널 체크로 계약이 모순이었다. 운영 호출처가
+     * 넘기는 값은 {@code buildDirectStepUiMessage} 가 만든 {@code ObjectNode} 라 절대 null 이 아니므로, 널 가드를
+     * 지우고 계약을 명시로 바꿨다. 이 테스트는 그 계약이 조용히 되돌아가지 않게 한다.
+     */
+    @Test
+    void directEquipmentProfileBuildersRejectNullStepUiMessage() {
+        final DeployServiceCommandSupport support = newSupport(mock(ModelDetailQueryPort.class));
+
+        assertThrows(
+                NullPointerException.class,
+                () -> support.buildDirectEquipmentProfile(
+                        UiCommandEventType.EQP_CREATE, "EQP-01", "SOCKET", 1L, null),
+                "eqpKey 변형은 stepUiMessage 널을 계약 위반으로 거부해야 한다."
+        );
+        assertThrows(
+                NullPointerException.class,
+                () -> support.buildDirectEquipmentProfile(
+                        UiCommandEventType.EQP_CREATE, plcSnapshot("STARTED"), null),
+                "executionSnapshot 변형은 stepUiMessage 널을 계약 위반으로 거부해야 한다."
         );
     }
 

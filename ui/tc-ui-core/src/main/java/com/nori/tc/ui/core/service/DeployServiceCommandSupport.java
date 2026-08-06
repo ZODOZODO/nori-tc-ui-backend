@@ -632,6 +632,9 @@ final class DeployServiceCommandSupport {
             final Long eqpKey,
             final JsonNode stepUiMessage
     ) {
+        // stepUiMessage 는 buildDirectStepUiMessage 가 만든 ObjectNode 로만 들어온다(널 불가). 종전에는 이 메서드가
+        // 한 줄에서는 무가드로 역참조하고 다음 줄에서는 널 체크하는 모순 상태였다(순서 339).
+        Objects.requireNonNull(stepUiMessage, "stepUiMessage는 null일 수 없습니다.");
         if (messageEventType != UiCommandEventType.EQP_CREATE
                 && messageEventType != UiCommandEventType.EQP_UPDATE
                 && messageEventType != UiCommandEventType.EQP_MODEL_UPDATE) {
@@ -641,7 +644,7 @@ final class DeployServiceCommandSupport {
         if (gatewayProfile == null || !gatewayProfile.isObject()) {
             return Optional.<UiEquipmentProfileSnapshot>empty().orElse(null);
         }
-        final JsonNode modelInfo = stepUiMessage == null ? null : stepUiMessage.path("modelInfo");
+        final JsonNode modelInfo = stepUiMessage.path("modelInfo");
         final Long resolvedModelVersionKey = longValue(modelInfo, "modelVersionKey");
         final String plcProtocol = textValue(gatewayProfile, "plcProtocol");
         final UiEquipmentProfileSnapshot.PlcSettingsSnapshot plcSettings = plcProtocol == null
@@ -691,6 +694,9 @@ final class DeployServiceCommandSupport {
             final EqpManagementSnapshot executionSnapshot,
             final JsonNode stepUiMessage
     ) {
+        // 위 오버로드와 같은 계약이다 — 종전에는 앞부분에서 널 가드 3개를 두고 뒷부분(gatewayJar/businessJar 추출)
+        // 에서는 무가드로 역참조해, 실제로 null 이 들어오면 그 지점에서 NPE 가 났다(순서 339).
+        Objects.requireNonNull(stepUiMessage, "stepUiMessage는 null일 수 없습니다.");
         if (messageEventType != UiCommandEventType.EQP_CREATE
                 && messageEventType != UiCommandEventType.EQP_UPDATE
                 && messageEventType != UiCommandEventType.EQP_MODEL_UPDATE) {
@@ -703,9 +709,9 @@ final class DeployServiceCommandSupport {
         final OffsetDateTime updatedAt = executionSnapshot.eqp().updatedAt() == null
                 ? OffsetDateTime.now(ZoneOffset.UTC)
                 : executionSnapshot.eqp().updatedAt().withOffsetSameInstant(ZoneOffset.UTC);
-        final JsonNode gatewayProfile = stepUiMessage == null ? null : stepUiMessage.get("gatewayProfile");
-        final JsonNode eqpParamsNode = stepUiMessage == null ? null : stepUiMessage.path("eqpParams");
-        final JsonNode modelInfo = stepUiMessage == null ? null : stepUiMessage.path("modelInfo");
+        final JsonNode gatewayProfile = stepUiMessage.get("gatewayProfile");
+        final JsonNode eqpParamsNode = stepUiMessage.path("eqpParams");
+        final JsonNode modelInfo = stepUiMessage.path("modelInfo");
         final Long resolvedModelVersionKey = longValue(modelInfo, "modelVersionKey") != null
                 ? longValue(modelInfo, "modelVersionKey")
                 : executionSnapshot.eqp().modelVersionKey();
