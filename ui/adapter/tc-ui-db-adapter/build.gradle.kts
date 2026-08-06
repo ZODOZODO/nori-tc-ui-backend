@@ -16,6 +16,8 @@
 plugins {
     `java-library`
     alias(libs.plugins.spring.dependency.management)
+    // 캠페인 Phase 4(T02): TestcontainersDockerGuardArchTest 용 archunit-junit5 제공.
+    id("com.nori.tc.archunit-conventions")
 }
 
 group = "com.nori.tc"
