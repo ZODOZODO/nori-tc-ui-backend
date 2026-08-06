@@ -121,6 +121,51 @@ class DeployScenarioCatalogServiceTest {
         );
     }
 
+    /**
+     * 순서 338 — step 의 {@code run:} 을 값 없이 쓴 운영자 YAML 이 필드 경로를 담은 검증 오류로 거부되는지 본다.
+     *
+     * <p>키 자체를 빼면 {@code RawStep.run} 의 기본 인스턴스가 남아 이미 {@code step.run.action} 오류가 났지만,
+     * {@code run:} 을 빈 값으로 쓰면 Jackson 이 그 기본 인스턴스를 null 로 덮어 무가드 역참조가 helpful NPE
+     * ("Cannot read field \"action\" because \"rawStep.run\" is null")로 새어 나갔다 — 측정된 수정 전 메시지다.
+     * 카탈로그 디렉터리는 운영자가 채우는 외부 입력이므로 경계에서 필드 경로와 함께 거부해야 한다.
+     */
+    @Test
+    void startupLoadRejectsStepWithEmptyRunBlockWithFieldPath() throws Exception {
+        Files.writeString(tempDir.resolve("empty-run.yaml"), """
+                version: 1
+                scenario:
+                  code: EQP_UPDATE_EMPTY_RUN
+                  name: EQP Update With Empty Run
+                  summary: run 값이 빈 경우
+                appliesTo:
+                  eventTypes:
+                    - EQP_UPDATE
+                steps:
+                  - order: 10
+                    code: STEP_1
+                    name: Empty Run
+                    targetApp: BUSINESS
+                    description: run 키는 있고 값이 비어 있다.
+                    run:
+                """);
+
+        final DeployScenarioCatalogService service = new DeployScenarioCatalogService(
+                deployProperties(tempDir),
+                new InMemoryCatalogMetaPort(),
+                objectMapper
+        );
+
+        final IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                service::initializeCatalog
+        );
+
+        assertTrue(
+                exception.getMessage().contains("step.run 값이 비어 있습니다"),
+                "필드 경로를 담은 검증 오류여야 한다. 실제: " + exception.getMessage()
+        );
+    }
+
     private String validScenarioYaml() {
         return """
                 version: 1

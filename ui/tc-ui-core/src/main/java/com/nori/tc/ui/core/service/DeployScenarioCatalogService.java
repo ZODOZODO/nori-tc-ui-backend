@@ -391,9 +391,14 @@ public class DeployScenarioCatalogService {
         if (rawStep == null) {
             throw new IllegalArgumentException(sourceName + ": step 문서가 비어 있습니다.");
         }
+        // YAML 이 `run:` 을 값 없이 쓰면 Jackson 이 RawStep.run 의 기본 인스턴스를 null 로 덮는다. 아래 run 필드
+        // 역참조가 helpful NPE 로 새어 나가면 어느 필드가 문제인지 운영자가 알 수 없다(카탈로그는 외부 입력).
+        if (rawStep.run == null) {
+            throw new IllegalArgumentException(sourceName + ": step.run 값이 비어 있습니다.");
+        }
 
         final DeployScenarioCondition when = toCondition(sourceName, rawStep.when);
-        final RawRetry retry = rawStep.run == null ? null : rawStep.run.retry;
+        final RawRetry retry = rawStep.run.retry;
         final DeployScenarioRetryPolicy retryPolicy = retry == null
                 ? DeployScenarioRetryPolicy.noRetry()
                 : new DeployScenarioRetryPolicy(retry.maxAttempts, retry.backoffMs);
