@@ -29,6 +29,14 @@ pipeline-ok:
 # publish 전에 gradlew test 로 회귀 차단. Testcontainers 통합 테스트(JdbcAuditLogPortTest 등)는
 # @Testcontainers(disabledWithoutDocker=true) 라 러너에 Docker 없으면 자동 skip(DinD 미구성) — 단위 테스트만 실효.
 # common 은 build-logic includeBuild 를 위해 sibling clone(publish 잡과 동일).
+#
+# 2026-08-07: `test` -> `build`. 잡 이름은 `needs: ["test"]` 참조 때문에 유지한다.
+#   이유 = Phase 4 가 건 커버리지 ratchet 은 `check.dependsOn(jacocoTestCoverageVerification)` 이라
+#   `gradlew test` 의 태스크 그래프에 들어가지 않는다(`--dry-run` 실측). 즉 CI 에서 ratchet 이
+#   한 번도 돌지 않아 재발 방지 게이트가 개발자 로컬 실행에만 의존하고 있었다.
+#   Docker 부재 영향 실측(2026-08-07, DOCKER_HOST 를 닫아 러너 조건 모사): `./gradlew build
+#   --rerun-tasks` BUILD SUCCESSFUL — Testcontainers auto-skip 으로도 커버리지가 baseline 아래로
+#   내려가지 않는다. 즉 이 전환이 파이프라인을 깨지 않는다.
 test:
   stage: check
   tags:
@@ -37,7 +45,7 @@ test:
   script:
     - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.noricloud.org/norisystem/nori-tc/nori-tc-common.git ../nori-tc-common
     - chmod +x ./gradlew
-    - ./gradlew test --no-daemon
+    - ./gradlew build --no-daemon
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web"'
     - if: '$CI_COMMIT_BRANCH == "main"'
