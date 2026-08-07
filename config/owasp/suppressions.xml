@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  OWASP dependency-check 억제 목록 (nori-tc-ui-backend).
+
+  적용 경로: common build-logic 의 SecurityScanConventionsPlugin 이 레포 루트
+  config/owasp/suppressions.xml 을 자동 인식한다(SecurityScanConventionsPlugin.kt:46-49).
+
+  규율
+  - 억제는 "고칠 수 없고 도달하지 않는" 항목에만 쓴다. 버전 상향으로 닫을 수 있으면 상향이 우선이다.
+  - 모든 항목에 until 을 붙인다. 만료되면 게이트가 다시 RED 가 되어 재평가가 강제된다
+    (U06 확정 주기 = 분기 1회).
+  - 각 항목에 CPE / 도달 불가 근거 / 제거 조건을 남긴다.
+-->
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+
+    <!--
+      CVE-2026-66299 — Apache Tomcat examples 웹앱의 WebSocket chat 자원 소진 (CWE-400, CVSSv3 7.5 HIGH)
+      등록: 2026-08-07 (리팩토링 캠페인 순서 335). 재평가: 2026-11-06 (U06 분기 1회) — until 로 자동 만료.
+
+      nori-tc-exec `config/owasp/suppressions.xml` 과 동일 근거·동일 만료일이다. exec 은 순서 328 에서
+      먼저 닫았고 이 레포와 nori-tc-simulator 는 순서 335 로 남아 게이트가 RED 였다
+      (실측: `Found 6 vulnerabilities` / `BUILD FAILED in 1m 14s` / EXIT=1).
+
+      왜 상향이 아니라 억제인가 — 상향할 대상이 없다.
+        NVD 영향 범위: "from (including) 11.0.1; up to (excluding) 11.0.25" → fix = 11.0.25.
+        그런데 NVD 설명 자신이 "upgrade to version 11.0.25, 10.1.58 or 9.0.121 (when released)" 라고
+        적는다. Maven Central maven-metadata.xml 실측 = <latest>11.0.24</latest> / <release>11.0.24</release>
+        (2026-08-06 확인). 즉 fix 버전이 아직 발행되지 않았다.
+        미발행 버전으로 올리면 스캔은 통과하지만 그것은 해결이 아니라 아티팩트 미해소로 스캔 대상에서
+        빠지는 거짓 통과다(exec 순서 328 이 `Could not find ...:11.0.25` 빌드 실패로 실증했다).
+
+      왜 도달하지 않는가 — 취약 코드가 이 배포 형태에 존재하지 않는다.
+        NVD 설명: "Uncontrolled Resource Consumption vulnerability in Apache Tomcat's WebSocket chat
+        example ... Users who have followed the security guidance to remove the examples web application
+        are not affected by this issue."
+        취약 대상은 Tomcat 배포판의 webapps/examples 웹앱이고, 우리가 쓰는 것은 embedded jar 이다.
+        tomcat-embed-core-11.0.24.jar 실측 = 1611 파일 / 최상위 경로 META-INF·jakarta·org 뿐,
+        examples·chat·ChatAnnotation 매치 0건. 즉 examples 웹앱이 애초에 패키징되지 않는다.
+        (dependency-check 는 CPE 를 "apache:tomcat 11.0.24" 로 매칭하므로 배포판/embedded 를 구분하지 못한다.)
+
+      제거 조건 (아래 중 하나라도 충족되면 이 블록을 지운다)
+        1. org.apache.tomcat.embed:tomcat-embed-* 11.0.25 이상이 발행되면 → gradle.properties:13 의
+           tomcat.version 을 올리고 이 억제를 제거한다.
+        2. Spring Boot BOM 이 tomcat >= 11.0.25 를 관리하게 되면 → gradle.properties 의 override 줄과
+           이 억제를 함께 제거한다.
+        3. 배포 형태가 embedded 가 아닌 Tomcat 배포판으로 바뀌면 → 도달 불가 근거가 깨지므로 즉시 재판정한다.
+    -->
+    <suppress until="2026-11-06Z">
+        <notes><![CDATA[
+            Tomcat examples 웹앱(webapps/examples) 한정 취약점. embedded jar 에는 해당 웹앱이 포함되지
+            않는다(jar 내 examples 매치 0건 실측). fix 11.0.25 는 미발행(Maven Central latest=11.0.24).
+            상세 근거와 제거 조건은 이 파일 상단 주석 참조.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-(core|websocket|el)@.*$</packageUrl>
+        <cve>CVE-2026-66299</cve>
+    </suppress>
+
+</suppressions>
