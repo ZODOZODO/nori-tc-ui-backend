@@ -12,7 +12,6 @@ import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.model.UiCommandMessage;
 import com.nori.tc.ui.core.model.UiCommandReply;
 import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
-import com.nori.tc.ui.core.port.db.DemoJobCleanupPort;
 import com.nori.tc.ui.core.port.db.DeployScenarioCatalogMetaPort;
 import com.nori.tc.ui.core.port.db.DeployStorePort;
 import com.nori.tc.ui.core.port.db.EqpCrudPort;
@@ -515,7 +514,6 @@ class EqpDirectScenarioServiceTest {
                 new EqpDirectScenarioPlanner(planningService, objectMapper),
                 localMutationCoordinator,
                 runner,
-                new NoOpDemoJobCleanupPort(),
                 pollGroupPort,
                 repairTaskService,
                 coordinationPort,
@@ -940,19 +938,6 @@ class EqpDirectScenarioServiceTest {
         @Override
         public List<EqpRepairTask> findAll() {
             return List.copyOf(tasks);
-        }
-    }
-
-    private static final class NoOpDemoJobCleanupPort implements DemoJobCleanupPort {
-
-        @Override
-        public List<String> findActiveDemoJobIds(final long eqpKey) {
-            return List.of();
-        }
-
-        @Override
-        public int deleteAllByEqpKey(final long eqpKey) {
-            return 0;
         }
     }
 

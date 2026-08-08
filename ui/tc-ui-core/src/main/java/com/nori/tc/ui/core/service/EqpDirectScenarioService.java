@@ -13,7 +13,6 @@ import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.core.model.UiCommandEventType;
-import com.nori.tc.ui.core.port.db.DemoJobCleanupPort;
 import com.nori.tc.ui.core.port.db.EqpPlcPollGroupPort;
 import com.nori.tc.ui.core.port.db.ModelDetailQueryPort;
 import com.nori.tc.ui.core.port.redis.DeployExecutionCoordinationPort;
@@ -23,7 +22,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -45,7 +43,6 @@ public class EqpDirectScenarioService {
     private final EqpDirectScenarioPlanner planner;
     private final EqpDirectScenarioLocalMutationCoordinator localMutationCoordinator;
     private final EqpDirectScenarioRunner runner;
-    private final DemoJobCleanupPort demoJobCleanupPort;
     private final EqpPlcPollGroupPort pollGroupPort;
     private final EqpRepairTaskService repairTaskService;
     private final DeployExecutionCoordinationPort coordinationPort;
@@ -59,7 +56,6 @@ public class EqpDirectScenarioService {
             final EqpDirectScenarioPlanner planner,
             final EqpDirectScenarioLocalMutationCoordinator localMutationCoordinator,
             final EqpDirectScenarioRunner runner,
-            final DemoJobCleanupPort demoJobCleanupPort,
             final EqpPlcPollGroupPort pollGroupPort,
             final EqpRepairTaskService repairTaskService,
             final DeployExecutionCoordinationPort coordinationPort,
@@ -72,7 +68,6 @@ public class EqpDirectScenarioService {
         this.planner = Objects.requireNonNull(planner, "planner is null");
         this.localMutationCoordinator = Objects.requireNonNull(localMutationCoordinator, "localMutationCoordinator is null");
         this.runner = Objects.requireNonNull(runner, "runner is null");
-        this.demoJobCleanupPort = Objects.requireNonNull(demoJobCleanupPort, "demoJobCleanupPort is null");
         this.pollGroupPort = Objects.requireNonNull(pollGroupPort, "pollGroupPort is null");
         this.repairTaskService = Objects.requireNonNull(repairTaskService, "repairTaskService is null");
         this.coordinationPort = Objects.requireNonNull(coordinationPort, "coordinationPort is null");
@@ -242,9 +237,6 @@ public class EqpDirectScenarioService {
         try {
             validator.validateEqpId(eqpId);
             final EqpManagementSnapshot existingSnapshot = requireExistingSnapshot(eqpId);
-            // 활성 demo job이 있으면 tc_demo_job FK 위반으로 finalize 단계에서 실패하므로,
-            // Gateway/Business 정리에 들어가기 전에 미리 거부합니다.
-            rejectIfActiveDemoJobExists(existingSnapshot);
             final String interfaceType = existingSnapshot.eqp().commInterface().name();
             final JsonNode uiMessage = deleteUiMessage();
             // PASSIVE 설비는 EQP_END lifecycle을 지원하지 않으므로 END_EQP_IF_RUNNING 단계가 빠진 전용 시나리오를 사용합니다.
@@ -279,15 +271,6 @@ public class EqpDirectScenarioService {
             return "EQP_DELETE_SAFE_PASSIVE";
         }
         return "EQP_DELETE_SAFE";
-    }
-
-    private void rejectIfActiveDemoJobExists(final EqpManagementSnapshot snapshot) {
-        final List<String> activeJobIds = demoJobCleanupPort.findActiveDemoJobIds(snapshot.eqp().eqpKey());
-        if (!activeJobIds.isEmpty()) {
-            throw new UiConflictException(
-                    "해당 설비에서 실행 중인 demo job이 있어 삭제할 수 없습니다. demoJobIds=" + activeJobIds
-            );
-        }
     }
 
     public EqpCommandResult executeStart(

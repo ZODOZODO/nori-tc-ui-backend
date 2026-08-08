@@ -42,7 +42,6 @@ import com.nori.tc.ui.domain.common.eqp.UiControlState;
 import com.nori.tc.ui.domain.common.eqp.UiEqpState;
 import com.nori.tc.ui.domain.eqp.UiEqpRuntimeState;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
-import com.nori.tc.ui.core.port.db.DemoJobCleanupPort;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import com.nori.tc.ui.domain.eqp.UiEqpPortStatus;
 import org.junit.jupiter.api.DisplayName;
@@ -1112,7 +1111,6 @@ class JpaEqpCrudPortTest {
         private final TcJarBusinessStore jarBusinessStore = mock(TcJarBusinessStore.class);
         private final TcLineStore lineStore = mock(TcLineStore.class);
         private final TcWorkStore workStore = mock(TcWorkStore.class);
-        private final DemoJobCleanupPort demoJobCleanupPort = mock(DemoJobCleanupPort.class);
         private final JpaEqpCrudPort port = new JpaEqpCrudPort(
                 dbSupport,
                 eqpStore,
@@ -1128,8 +1126,7 @@ class JpaEqpCrudPortTest {
                 jarGatewayStore,
                 jarBusinessStore,
                 lineStore,
-                workStore,
-                demoJobCleanupPort
+                workStore
         );
 
         // 기본 stub: 사전 등록된 라인을 반환한다. 미등록 거부 시나리오는 테스트에서 Optional.empty()로 재정의한다.

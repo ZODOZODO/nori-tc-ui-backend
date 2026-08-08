@@ -39,7 +39,6 @@ import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
-import com.nori.tc.ui.core.port.db.DemoJobCleanupPort;
 import com.nori.tc.ui.core.port.db.EqpCrudPort;
 import com.nori.tc.ui.domain.common.eqp.UiLogLevel;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
@@ -81,7 +80,6 @@ public class JpaEqpCrudPort implements EqpCrudPort {
     private final TcJarBusinessStore jarBusinessStore;
     private final TcLineStore lineStore;
     private final TcWorkStore workStore;
-    private final DemoJobCleanupPort demoJobCleanupPort;
 
     public JpaEqpCrudPort(
             final EqpManagementDbSupport dbSupport,
@@ -98,8 +96,7 @@ public class JpaEqpCrudPort implements EqpCrudPort {
             final TcJarGatewayStore jarGatewayStore,
             final TcJarBusinessStore jarBusinessStore,
             final TcLineStore lineStore,
-            final TcWorkStore workStore,
-            final DemoJobCleanupPort demoJobCleanupPort
+            final TcWorkStore workStore
     ) {
         this.dbSupport = Objects.requireNonNull(dbSupport, "dbSupport is null");
         this.eqpStore = Objects.requireNonNull(eqpStore, "eqpStore is null");
@@ -116,7 +113,6 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         this.jarBusinessStore = Objects.requireNonNull(jarBusinessStore, "jarBusinessStore is null");
         this.lineStore = Objects.requireNonNull(lineStore, "lineStore is null");
         this.workStore = Objects.requireNonNull(workStore, "workStore is null");
-        this.demoJobCleanupPort = Objects.requireNonNull(demoJobCleanupPort, "demoJobCleanupPort is null");
     }
 
     @Override
@@ -365,19 +361,6 @@ public class JpaEqpCrudPort implements EqpCrudPort {
         try {
             final EqpManagementSnapshot snapshot = requireSnapshot(eqpId);
             final long eqpKey = snapshot.eqp().eqpKey();
-
-            // tc_demo_job은 nori-tc-demo-tester가 관리하는 별도 테이블이지만 tc_eqp(eqp_key) FK를 가집니다.
-            // 활성 demo job이 남아 있으면 FK 위반으로 tc_eqp 삭제가 실패하므로 사전에 차단합니다.
-            // (트랜잭션 내부에서 다시 한 번 검증해 사전 검증 이후 새로 추가된 활성 job 경합도 막습니다.)
-            final List<String> activeDemoJobIds = demoJobCleanupPort.findActiveDemoJobIds(eqpKey);
-            if (!activeDemoJobIds.isEmpty()) {
-                throw new UiConflictException(
-                        "해당 설비에서 실행 중인 demo job이 있어 삭제할 수 없습니다. demoJobIds=" + activeDemoJobIds
-                );
-            }
-            // 종료 상태(COMPLETED/FAILED/CANCELED) demo job을 정리합니다.
-            // (tc_demo_job_session, tc_demo_job_event는 ON DELETE CASCADE로 함께 정리됩니다.)
-            demoJobCleanupPort.deleteAllByEqpKey(eqpKey);
 
             // tc_work는 ON DELETE NO ACTION이므로 명시적으로 정리합니다.
             workStore.deleteAllByEqpKey(eqpKey);
