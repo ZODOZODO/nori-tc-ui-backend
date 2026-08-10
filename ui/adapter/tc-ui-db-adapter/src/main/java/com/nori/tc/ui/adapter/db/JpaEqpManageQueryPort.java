@@ -5,6 +5,8 @@ import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.port.db.EqpManageQueryPort;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -26,5 +28,13 @@ public class JpaEqpManageQueryPort implements EqpManageQueryPort {
             throw new UiBadRequestException("eqpId는 비어 있을 수 없습니다.");
         }
         return dbSupport.loadSnapshotByEqpId(eqpId);
+    }
+
+    @Override
+    public Map<String, EqpManagementSnapshot> findManageSnapshotsByEqpIds(final List<String> eqpIds) {
+        if (eqpIds == null || eqpIds.isEmpty()) {
+            return Map.of();
+        }
+        return dbSupport.loadSnapshotsByEqpIds(eqpIds);
     }
 }

@@ -83,6 +83,11 @@ public class EqpManagementService {
      * <p>그룹 화면처럼 다건을 동시에 보여줘야 하는 화면에서 N-fan-out HTTP 호출 대신 사용합니다.
      * 입력 순서를 보존한 LinkedHashMap을 반환하며, 존재하지 않는 eqpId는 결과 맵에서 빠집니다.</p>
      *
+     * <p>설비마다 단건 조회를 부르지 않고 포트의 배치 조회를 한 번만 씁니다. 예전에는 설비 수만큼
+     * 단건 조회를 돌렸고, 그 하나하나가 다시 서브 store 를 10 여 회씩 호출해 설비 150 대 기준
+     * 한 요청이 1,500 회 넘는 DB 왕복을 냈습니다. 그 부하가 같은 순간의 다른 요청(EQP_CREATE 등)까지
+     * 자기 timeout 밖으로 밀어냈습니다(2026-08-10 실측 12.2s).</p>
+     *
      * @param eqpIds 대상 설비 ID 목록 (null 또는 빈 값은 무시)
      * @return 입력 순서 그대로 보존된 eqpId → snapshot 맵
      */
@@ -90,26 +95,26 @@ public class EqpManagementService {
         if (eqpIds == null || eqpIds.isEmpty()) {
             return Map.of();
         }
+
+        final List<String> normalizedEqpIds = eqpIds.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(eqpId -> !eqpId.isEmpty())
+                .distinct()
+                .toList();
+        if (normalizedEqpIds.isEmpty()) {
+            return Map.of();
+        }
+
+        final Map<String, EqpManagementSnapshot> loaded =
+                eqpManageQueryPort.findManageSnapshotsByEqpIds(normalizedEqpIds);
+
+        // 요청 순서를 응답 순서로 그대로 보존합니다 — 배치 조회는 store 스캔 순서를 따르기 때문입니다.
         final LinkedHashMap<String, EqpManagementSnapshot> result = new LinkedHashMap<>();
-        for (final String rawEqpId : eqpIds) {
-            if (rawEqpId == null) {
-                continue;
-            }
-            final String eqpId = rawEqpId.trim();
-            if (eqpId.isEmpty() || result.containsKey(eqpId)) {
-                continue;
-            }
-            // 한 EQP의 스냅샷 로딩 실패가 batch 전체를 죽이지 않도록 격리합니다.
-            // 실패한 항목은 missingEqpIds로 노출해 사용자에게 명시적으로 표시합니다.
-            try {
-                eqpManageQueryPort.findManageSnapshotByEqpId(eqpId)
-                        .ifPresent(snapshot -> result.put(eqpId, snapshot));
-            } catch (RuntimeException exception) {
-                log.warn(
-                        "EQP manage snapshot 조회 실패. 해당 항목은 응답에서 제외합니다. eqpId={}",
-                        eqpId,
-                        exception
-                );
+        for (final String eqpId : normalizedEqpIds) {
+            final EqpManagementSnapshot snapshot = loaded.get(eqpId);
+            if (snapshot != null) {
+                result.put(eqpId, snapshot);
             }
         }
         return result;

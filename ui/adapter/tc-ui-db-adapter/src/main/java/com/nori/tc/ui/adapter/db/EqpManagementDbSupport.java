@@ -23,10 +23,13 @@ import com.nori.tc.db.domain.eqp.TcEqpLog;
 import com.nori.tc.db.domain.eqp.TcEqpParam;
 import com.nori.tc.db.domain.eqp.TcEqpParamVersion;
 import com.nori.tc.db.domain.eqp.TcEqpPlc;
+import com.nori.tc.db.domain.eqp.TcEqpPortStatus;
 import com.nori.tc.db.domain.eqp.TcEqpSocket;
 import com.nori.tc.db.domain.eqp.TcEqpSocketProtocolType;
 import com.nori.tc.db.domain.eqp.TcEqpState;
 import com.nori.tc.db.domain.eqp.TcEqpStateHist;
+import com.nori.tc.db.domain.jar.TcJarBusiness;
+import com.nori.tc.db.domain.jar.TcJarGateway;
 import com.nori.tc.db.domain.model.TcModel;
 import com.nori.tc.ui.adapter.db.mapper.UiEqpDbMapper;
 import com.nori.tc.ui.adapter.db.mapper.UiModelDbMapper;
@@ -162,12 +165,17 @@ class EqpManagementDbSupport {
     /**
      * eqpId 목록 기준 배치 스냅샷 조립 — 단건 {@link #loadSnapshotByEqpId(String)} 의 N+1 을 제거합니다.
      *
-     * <p>deploy planner(plan 경로) 전용. {@code toEquipmentProfile} 이 실제 사용하는 테이블만 배치 로드하고,
-     * 단건과 <b>동일한 매퍼/정렬</b>을 재사용해 결과 동등성을 보장합니다. planner 가 읽지 않는
-     * connectionState / paramVersionMetas / gatewayJar / businessJar 는 배치에서 생략(null/빈 값)합니다.</p>
+     * <p>단건과 <b>동일한 매퍼/정렬</b>을 재사용해 스냅샷 13 필드 전부를 동일하게 채웁니다.
+     * 설비 수와 무관하게 질의 횟수가 고정이므로, 설비가 늘어도 왕복이 늘지 않습니다.</p>
      *
-     * <p>hsms/socket/plc/log/state/portStatus/param 은 store 의 {@code findAllByEqpKeyIn} 배치를,
-     * eqp/model 은 전체 스캔({@code loadAllEqps}/{@code loadAllModels} 와 동일)을 재사용합니다.</p>
+     * <p>hsms/socket/plc/log/state/portStatus/param/paramVersion 은 store 의 {@code findAllByEqpKeyIn}
+     * 배치를, eqp/model/jar 는 전체 스캔을, connectionState 는
+     * {@code findLatestConnStateByEqpKeyIn} 을 사용합니다.</p>
+     *
+     * <p>connectionState 는 단건이 최근 100 행만 훑는 것과 달리 DB 에서 설비별 최신 CONN 1 행을
+     * 직접 고르므로, 이력이 100 행을 넘는 설비에서는 배치 쪽이 정확합니다. CONN 이력의
+     * {@code to_state} 는 기록 시점에 항상 채워지므로(gateway {@code GatewayEquipmentStatePersistenceService}
+     * 의 CONN append 3 곳 모두 리터럴 지정) 단건의 null 건너뛰기와 결과가 갈리지 않습니다.</p>
      *
      * @param eqpIds 조회 대상 설비 ID 목록
      * @return eqpId → 스냅샷 (미존재 설비는 부재)
@@ -200,12 +208,13 @@ class EqpManagementDbSupport {
         final Map<Long, TcEqpLog> logByKey = indexByEqpKey(eqpLogStore.findAllByEqpKeyIn(eqpKeys), TcEqpLog::eqpKey);
         final Map<Long, TcEqpState> stateByKey = indexByEqpKey(eqpStateStore.findAllByEqpKeyIn(eqpKeys), TcEqpState::eqpKey);
 
-        // portStatus: encounter order 보존(단건 loadAllPortStatuses 와 동일 무정렬 매핑).
-        final Map<Long, List<UiEqpPortStatus>> portStatusesByKey = new LinkedHashMap<>();
-        for (final var row : eqpPortStatusStore.findAllByEqpKeyIn(eqpKeys)) {
-            final UiEqpPortStatus ui = UiEqpDbMapper.toDomain(row);
-            if (ui != null) {
-                portStatusesByKey.computeIfAbsent(ui.eqpKey(), key -> new ArrayList<>()).add(ui);
+        // portStatus: key 별 group 후 단건 loadAllPortStatuses 와 동일 정렬/매핑 적용.
+        // 배치 store 는 정렬을 보장하지 않지만 단건은 portId ASC 로 읽으므로, 정렬하지 않으면
+        // 같은 설비의 포트 순서가 두 API 사이에서 달라진다(2026-08-10 라이브 비교에서 1,2,3,4 vs 2,3,4,1).
+        final Map<Long, List<TcEqpPortStatus>> rawPortStatusesByKey = new LinkedHashMap<>();
+        for (final TcEqpPortStatus row : eqpPortStatusStore.findAllByEqpKeyIn(eqpKeys)) {
+            if (row != null) {
+                rawPortStatusesByKey.computeIfAbsent(row.eqpKey(), key -> new ArrayList<>()).add(row);
             }
         }
 
@@ -214,6 +223,34 @@ class EqpManagementDbSupport {
         for (final TcEqpParam raw : eqpParamStore.findAllByEqpKeyIn(eqpKeys)) {
             if (raw != null) {
                 rawParamsByKey.computeIfAbsent(raw.eqpKey(), key -> new ArrayList<>()).add(raw);
+            }
+        }
+
+        // paramVersion: key 별 group 후 단건 loadAllParamVersionMetas 와 동일 정렬/매핑 적용.
+        final Map<Long, List<TcEqpParamVersion>> rawParamVersionsByKey = new LinkedHashMap<>();
+        for (final TcEqpParamVersion raw : eqpParamVersionStore.findAllByEqpKeyIn(eqpKeys)) {
+            if (raw != null) {
+                rawParamVersionsByKey.computeIfAbsent(raw.eqpKey(), key -> new ArrayList<>()).add(raw);
+            }
+        }
+
+        final Map<Long, String> connectionStateByKey = new HashMap<>();
+        for (final TcEqpStateHist hist : eqpStateHistStore.findLatestConnStateByEqpKeyIn(eqpKeys)) {
+            if (hist != null && hist.toState() != null) {
+                connectionStateByKey.putIfAbsent(hist.eqpKey(), hist.toState());
+            }
+        }
+
+        final Map<Long, TcJarGateway> gatewayJarByKey = new HashMap<>();
+        for (final TcJarGateway jar : scanAllPages(jarGatewayStore::findAll)) {
+            if (jar != null) {
+                gatewayJarByKey.putIfAbsent(jar.gatewayJarKey(), jar);
+            }
+        }
+        final Map<Long, TcJarBusiness> businessJarByKey = new HashMap<>();
+        for (final TcJarBusiness jar : scanAllPages(jarBusinessStore::findAll)) {
+            if (jar != null) {
+                businessJarByKey.putIfAbsent(jar.businessJarKey(), jar);
             }
         }
 
@@ -228,14 +265,16 @@ class EqpManagementDbSupport {
                     UiEqpDbMapper.toDomain(plcByKey.get(eqpKey)),
                     UiEqpDbMapper.toDomain(logByKey.get(eqpKey)),
                     UiEqpDbMapper.toDomain(stateByKey.get(eqpKey)),
-                    // connectionState: toEquipmentProfile 미사용 → 배치 생략(단건과 planner 결과 동등).
-                    null,
-                    portStatusesByKey.getOrDefault(eqpKey, List.of()),
+                    connectionStateByKey.get(eqpKey),
+                    sortAndMapPortStatuses(rawPortStatusesByKey.getOrDefault(eqpKey, List.of())),
                     sortAndMapParams(rawParamsByKey.getOrDefault(eqpKey, List.of())),
-                    // paramVersionMetas / gatewayJar / businessJar: toEquipmentProfile 미사용 → 배치 생략.
-                    List.of(),
-                    null,
-                    null
+                    sortAndMapParamVersions(rawParamVersionsByKey.getOrDefault(eqpKey, List.of())),
+                    eqp.gatewayJarKey() == null
+                            ? null
+                            : UiEqpDbMapper.toDomain(gatewayJarByKey.get(eqp.gatewayJarKey())),
+                    eqp.businessJarKey() == null
+                            ? null
+                            : UiEqpDbMapper.toDomain(businessJarByKey.get(eqp.businessJarKey()))
             ));
         }
         return result;
@@ -256,6 +295,22 @@ class EqpManagementDbSupport {
                 .sorted(Comparator
                         .comparing(TcEqpParam::paramVersion, Comparator.nullsLast(Comparator.reverseOrder()))
                         .thenComparing(TcEqpParam::paramName, Comparator.nullsLast(String::compareToIgnoreCase)))
+                .map(UiEqpDbMapper::toDomain)
+                .toList();
+    }
+
+    /** 단건은 portId ASC 로 읽으므로(JPA {@code cb.asc(portId)}) 문자열 자연 순서로 맞춥니다. */
+    private static List<UiEqpPortStatus> sortAndMapPortStatuses(final List<TcEqpPortStatus> rawPortStatuses) {
+        return rawPortStatuses.stream()
+                .sorted(Comparator.comparing(TcEqpPortStatus::portId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(UiEqpDbMapper::toDomain)
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    private static List<UiEqpParamVersion> sortAndMapParamVersions(final List<TcEqpParamVersion> rawParamVersions) {
+        return rawParamVersions.stream()
+                .sorted(Comparator.comparing(TcEqpParamVersion::paramVersion, Comparator.nullsLast(Comparator.reverseOrder())))
                 .map(UiEqpDbMapper::toDomain)
                 .toList();
     }
