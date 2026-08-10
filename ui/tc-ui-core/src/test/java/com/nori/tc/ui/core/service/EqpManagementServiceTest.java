@@ -2,16 +2,24 @@ package com.nori.tc.ui.core.service;
 
 import com.nori.tc.ui.core.eqp.EqpCommandResult;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
+import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.eqp.StartOutcome;
+import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.core.model.AsyncResultEntry;
 import com.nori.tc.ui.core.model.UiCommandReply;
 import com.nori.tc.ui.core.port.db.EqpManageQueryPort;
 import com.nori.tc.ui.core.port.db.EqpOptionsQueryPort;
 import com.nori.tc.ui.core.port.redis.AsyncResultStorePort;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
+import com.nori.tc.ui.domain.eqp.UiEqp;
 import com.nori.tc.ui.domain.task.UiTaskStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -29,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -157,5 +166,100 @@ class EqpManagementServiceTest {
         final StartOutcome outcome = service.awaitAsyncResult("trace-4", 0L);
 
         assertEquals(StartOutcome.State.TIMEOUT, outcome.state());
+    }
+
+    /**
+     * PLC 폴링 그룹 명령은 요청 본문이 없어 interfaceType 을 운반하지 않는다 — 서비스가 스냅샷에서
+     * 직접 해결해야 한다.
+     *
+     * <p>해결하지 않고 null 을 넘기면 {@code UiCommandReply} 의 필수값 검증이 비동기 본문에서 터지고,
+     * {@code whenComplete} 가 이를 TIMEOUT 으로 확정한다. 그러면 gateway 가 정상 수락하고
+     * {@code enabled_poll_groups} 변이까지 끝난 명령이 UI 에는 타임아웃 실패로 보고된다.
+     * PASS/FAIL 양쪽 경로가 모두 같은 지점을 지나므로 <b>모든 결과가</b> TIMEOUT 이 된다.</p>
+     */
+    @Test
+    @DisplayName("PLC 폴링 그룹 시작은 스냅샷의 interfaceType 을 실어 PASS 로 확정합니다")
+    void startPollingGroupResolvesInterfaceTypeFromSnapshot() {
+        final EqpManageQueryPort queryPort = mock(EqpManageQueryPort.class);
+        when(queryPort.findManageSnapshotByEqpId("EQP-PLC-01")).thenReturn(Optional.of(plcSnapshot()));
+        final EqpDirectScenarioService directService = mock(EqpDirectScenarioService.class);
+        when(directService.executeGroupStart("EQP-PLC-01", "EQP_STATUS_REPORT", "SYSTEM"))
+                .thenReturn(EqpCommandResult.ok());
+        final EqpManagementService groupService = new EqpManagementService(
+                queryPort,
+                mock(EqpOptionsQueryPort.class),
+                directService,
+                asyncResultStorePort,
+                Executors.newSingleThreadExecutor()
+        );
+
+        final var accepted = groupService.startPollingGroupAsync("EQP-PLC-01", "EQP_STATUS_REPORT", 5_000L);
+
+        final ArgumentCaptor<UiCommandReply> replyCaptor = ArgumentCaptor.forClass(UiCommandReply.class);
+        verify(asyncResultStorePort, timeout(3_000L)).markCompleted(eq(accepted.traceId()), replyCaptor.capture());
+        assertEquals(UiTaskStatus.PASS, replyCaptor.getValue().status());
+        assertEquals("PLC", replyCaptor.getValue().interfaceType());
+        assertEquals("EQP_PLC_GROUP_START_REP", replyCaptor.getValue().eventType());
+        verify(asyncResultStorePort, never()).markTimeout(any());
+    }
+
+    /**
+     * 실패 결과도 FAIL 로 환원돼야 합니다 — 실패를 타임아웃으로 보고하면 운영자가 원인을 알 수 없습니다.
+     */
+    @Test
+    @DisplayName("PLC 폴링 그룹 중단이 실패하면 TIMEOUT 이 아니라 FAIL 로 확정합니다")
+    void endPollingGroupReportsFailureAsFail() {
+        final EqpManageQueryPort queryPort = mock(EqpManageQueryPort.class);
+        when(queryPort.findManageSnapshotByEqpId("EQP-PLC-01")).thenReturn(Optional.of(plcSnapshot()));
+        final EqpDirectScenarioService directService = mock(EqpDirectScenarioService.class);
+        when(directService.executeGroupEnd("EQP-PLC-01", "EQP_STATUS_REPORT", "SYSTEM"))
+                .thenReturn(EqpCommandResult.error(409, "EQP_NOT_CONNECTED", "gateway 미연결"));
+        final EqpManagementService groupService = new EqpManagementService(
+                queryPort,
+                mock(EqpOptionsQueryPort.class),
+                directService,
+                asyncResultStorePort,
+                Executors.newSingleThreadExecutor()
+        );
+
+        final var accepted = groupService.endPollingGroupAsync("EQP-PLC-01", "EQP_STATUS_REPORT", 5_000L);
+
+        final ArgumentCaptor<UiCommandReply> replyCaptor = ArgumentCaptor.forClass(UiCommandReply.class);
+        verify(asyncResultStorePort, timeout(3_000L)).markCompleted(eq(accepted.traceId()), replyCaptor.capture());
+        assertEquals(UiTaskStatus.FAIL, replyCaptor.getValue().status());
+        assertEquals("EQP_NOT_CONNECTED", replyCaptor.getValue().errorCode());
+        verify(asyncResultStorePort, never()).markTimeout(any());
+    }
+
+    /**
+     * 없는 설비는 202 후 타임아웃이 아니라 즉시 미존재로 끊어야 합니다.
+     */
+    @Test
+    @DisplayName("존재하지 않는 설비의 폴링 그룹 명령은 UiNotFoundException 입니다")
+    void pollingGroupRejectsUnknownEqp() {
+        final EqpManageQueryPort queryPort = mock(EqpManageQueryPort.class);
+        when(queryPort.findManageSnapshotByEqpId("EQP-NONE")).thenReturn(Optional.empty());
+        final EqpManagementService groupService = new EqpManagementService(
+                queryPort,
+                mock(EqpOptionsQueryPort.class),
+                mock(EqpDirectScenarioService.class),
+                asyncResultStorePort,
+                mock(Executor.class)
+        );
+
+        assertThrows(UiNotFoundException.class,
+                () -> groupService.startPollingGroupAsync("EQP-NONE", "EQP_STATUS_REPORT", 1_000L));
+    }
+
+    private static EqpManagementSnapshot plcSnapshot() {
+        final OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        final UiEqp eqp = new UiEqp(
+                7L, "EQP-PLC-01", 1L, UiProtocolType.PLC, "ACTIVE", false, 0,
+                "10.30.0.1", 502, 1L, null, null, null, true, now, now, "SYSTEM", "SYSTEM"
+        );
+        return new EqpManagementSnapshot(
+                eqp, null, null, null, null, null, null, null,
+                List.of(), List.of(), List.of(), null, null
+        );
     }
 }

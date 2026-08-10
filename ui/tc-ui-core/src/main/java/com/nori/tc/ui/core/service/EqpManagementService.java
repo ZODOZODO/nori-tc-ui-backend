@@ -266,7 +266,7 @@ public class EqpManagementService {
     ) {
         return submitAsyncScenario(
                 eqpId,
-                null,
+                requireInterfaceType(eqpId),
                 UiCommandEventType.EQP_PLC_GROUP_START,
                 timeoutMs,
                 () -> eqpDirectScenarioService.executeGroupStart(eqpId, groupMessageName, "SYSTEM")
@@ -283,11 +283,33 @@ public class EqpManagementService {
     ) {
         return submitAsyncScenario(
                 eqpId,
-                null,
+                requireInterfaceType(eqpId),
                 UiCommandEventType.EQP_PLC_GROUP_END,
                 timeoutMs,
                 () -> eqpDirectScenarioService.executeGroupEnd(eqpId, groupMessageName, "SYSTEM")
         );
+    }
+
+    /**
+     * 폴링 그룹 명령의 interfaceType 을 설비 스냅샷에서 해결합니다.
+     *
+     * <p>start/end 엔드포인트는 요청 본문이 없어(경로 변수만) interfaceType 을 운반하지 않는다.
+     * 해결하지 않고 null 을 넘기면 {@link UiCommandReply} 의 필수값 검증이 비동기 본문에서 터지고,
+     * {@code whenComplete} 가 이를 TIMEOUT 으로 확정한다 — gateway 가 수락하고 {@code enabled_poll_groups}
+     * 변이까지 끝난 명령이 UI 에는 타임아웃 실패로 보고된다. PASS/FAIL 양쪽이 같은 지점을 지나므로
+     * 결과와 무관하게 항상 TIMEOUT 이 된다.</p>
+     *
+     * <p>값의 출처는 {@code EqpDirectScenarioService} 가 gateway plan 을 세울 때 쓰는 것과 같은
+     * 스냅샷 필드다 — 두 경로가 같은 행을 읽어야 reply 와 실제 명령이 어긋나지 않는다.</p>
+     *
+     * @param eqpId 대상 설비 ID
+     * @return 설비의 통신 인터페이스 이름
+     */
+    private String requireInterfaceType(final String eqpId) {
+        return eqpManageQueryPort.findManageSnapshotByEqpId(eqpId)
+                .map(snapshot -> snapshot.eqp().commInterface().name())
+                .orElseThrow(() -> new com.nori.tc.ui.core.exception.UiNotFoundException(
+                        "설비를 찾을 수 없습니다. eqpId=" + eqpId));
     }
 
     /**
