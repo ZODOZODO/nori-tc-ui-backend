@@ -18,7 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * {@link UiApiExceptionHandler} 의 i18n 메시지 해석을 검증합니다.
  *
  * <p>요청 {@code Accept-Language} 가 ko / en 일 때 동일 예외에 대한 응답 메시지가
- * {@code messages_ko/en.properties} 기준으로 달라지는지 확인합니다.</p>
+ * {@code messages.properties}(base=ko) / {@code messages_en.properties} 기준으로 달라지는지 확인합니다.</p>
  */
 class UiApiExceptionHandlerI18nTest {
 
