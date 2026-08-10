@@ -17,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -25,6 +26,7 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
+import java.io.IOException;
 import java.util.Objects;
 
 /**
@@ -284,7 +286,10 @@ public class UiApiExceptionHandler extends ResponseEntityExceptionHandler {
             final WebRequest request
     ) {
         final HttpServletRequest servletRequest = servletRequestOf(request);
-        if (statusCode.is5xxServerError()) {
+        if (isClientDisconnect(exception)) {
+            log.warn("응답 전송 중 클라이언트가 연결을 끊었습니다. method={}, uri={}, reason={}",
+                    resolveMethod(servletRequest), resolveRequestUri(servletRequest), exception.getMessage());
+        } else if (statusCode.is5xxServerError()) {
             log.error("표준 MVC 예외(서버). method={}, uri={}, status={}",
                     resolveMethod(servletRequest), resolveRequestUri(servletRequest), statusCode.value(), exception);
         } else {
@@ -357,6 +362,32 @@ public class UiApiExceptionHandler extends ResponseEntityExceptionHandler {
      * @param request 현재 요청
      * @return 서블릿 요청. 서블릿 환경이 아니면 null
      */
+    /**
+     * 응답을 쓰는 도중 클라이언트가 연결을 끊은 경우인지 판별합니다.
+     *
+     * <p>브라우저가 탭을 닫거나 요청을 취소하면 응답 write 가 {@link IOException} 으로 실패하고,
+     * Spring 이 이를 {@link HttpMessageNotWritableException}(500) 으로 감싼다. 서버는 잘못한 것이
+     * 없는데 ERROR 로 남으면 실제 장애와 구분되지 않고 "런타임 ERROR 0" 게이트를 오염시킨다.</p>
+     *
+     * <p>원인 사슬에 {@link IOException} 이 없는 {@link HttpMessageNotWritableException} 은 서버 자신의
+     * 직렬화 실패이므로 이 판정에서 제외한다 — 그것은 진짜 결함이라 ERROR 로 남아야 한다.</p>
+     *
+     * @param exception 처리 중인 예외
+     * @return 클라이언트가 연결을 끊어 발생한 쓰기 실패이면 {@code true}
+     */
+    private static boolean isClientDisconnect(final Throwable exception) {
+        if (!(exception instanceof HttpMessageNotWritableException)) {
+            return false;
+        }
+
+        for (Throwable cause = exception.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof IOException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static HttpServletRequest servletRequestOf(final WebRequest request) {
         return request instanceof ServletWebRequest servletWebRequest ? servletWebRequest.getRequest() : null;
     }
