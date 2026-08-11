@@ -21,6 +21,9 @@ final class UiControllerTestMessageSource {
         final ResourceBundleMessageSource source = new ResourceBundleMessageSource();
         source.setBasename("messages");
         source.setDefaultEncoding("UTF-8");
+        // 운영(spring.messages.fallback-to-system-locale=false)과 동일 조건. 켜두면 ko 전용 번들이 없어
+        // JVM 기본 locale 번들(messages_en)로 폴백한다 — 기본 locale 이 en 인 CI 러너에서만 한국어 단언이 깨진다.
+        source.setFallbackToSystemLocale(false);
         source.setUseCodeAsDefaultMessage(true);
         return source;
     }

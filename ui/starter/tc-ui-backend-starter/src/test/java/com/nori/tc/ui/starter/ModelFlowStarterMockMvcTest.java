@@ -81,6 +81,8 @@ class ModelFlowStarterMockMvcTest {
         final ResourceBundleMessageSource source = new ResourceBundleMessageSource();
         source.setBasename("messages");
         source.setDefaultEncoding("UTF-8");
+        // 운영(spring.messages.fallback-to-system-locale=false)과 동일 조건 — JVM 기본 locale 번들로 새지 않게 한다.
+        source.setFallbackToSystemLocale(false);
         source.setUseCodeAsDefaultMessage(true);
         return source;
     }
