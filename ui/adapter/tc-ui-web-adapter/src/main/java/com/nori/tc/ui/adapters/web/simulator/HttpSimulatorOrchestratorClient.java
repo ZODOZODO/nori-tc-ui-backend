@@ -45,7 +45,11 @@ public class HttpSimulatorOrchestratorClient implements SimulatorOrchestratorCli
 
     @Override
     public SimulatorRunResponse createRun(final SimulatorCreateRunRequest request) {
-        return sendJson("POST", "/api/demo-runs", request, SimulatorRunResponse.class);
+        // 유일하게 공통 readTimeoutMs 를 쓰지 않는 호출 — 대상 수에 비례해 워커 inject 를 반복한다.
+        // 타임아웃이 터지면 orchestrator 쪽 run 은 이미 생성돼 lease 를 문 채 고아가 된다(UiSimulatorProperties 참조).
+        final HttpResponse<String> response =
+                exchange("POST", "/api/demo-runs", request, properties.getCreateRunTimeoutMs());
+        return objectMapper.readValue(response.body(), SimulatorRunResponse.class);
     }
 
     @Override
@@ -109,10 +113,19 @@ public class HttpSimulatorOrchestratorClient implements SimulatorOrchestratorCli
     }
 
     private HttpResponse<String> exchange(final String method, final String path, final Object body) {
+        return exchange(method, path, body, properties.getReadTimeoutMs());
+    }
+
+    private HttpResponse<String> exchange(
+            final String method,
+            final String path,
+            final Object body,
+            final long timeoutMs
+    ) {
         try {
             final HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(properties.getBaseUrl() + path))
-                    .timeout(Duration.ofMillis(properties.getReadTimeoutMs()))
+                    .timeout(Duration.ofMillis(timeoutMs))
                     .header("Content-Type", "application/json")
                     // simulator 제어 표면은 공유 시크릿 헤더를 요구한다(simulator 감사 S11 E-1). 미설정이면
                     // 헤더를 싣지 않고 simulator 가 401 로 거부한다 — 조용히 통과하는 경로를 만들지 않는다.

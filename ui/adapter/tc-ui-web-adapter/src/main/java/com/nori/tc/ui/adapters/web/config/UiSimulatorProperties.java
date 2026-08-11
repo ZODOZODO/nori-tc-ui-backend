@@ -14,6 +14,10 @@ public class UiSimulatorProperties {
     private String internalToken = "";
     private long connectTimeoutMs = 3000L;
     private long readTimeoutMs = 5000L;
+    // createRun 전용 타임아웃 — 조회/stop 과 달리 대상 수에 비례해 워커 inject 를 반복하므로 readTimeoutMs 로는 짧다.
+    // 이 타임아웃이 터지면 orchestrator 는 run 을 이미 만든 뒤라 lease 를 문 채 고아가 되고(추적 전 예외라 reaper 도
+    // 회수 못 한다) 사람이 stop 하기 전엔 안 풀린다. 그래서 다른 호출보다 넉넉히 둔다.
+    private long createRunTimeoutMs = 60_000L;
     private long reaperIntervalMs = 5000L;
     // 연결-후-MES 배리어가 백그라운드(요청 밖)에서 설비 연결을 확인할 때의 타임아웃. 대량 설비(수십~수백)는
     // 동시 연결에 dualRequestTimeoutMs(10s)보다 오래 걸리며, 백그라운드라 외부 HTTP 프록시 압박이 없어 넉넉히 둔다.
@@ -49,6 +53,14 @@ public class UiSimulatorProperties {
 
     public void setReadTimeoutMs(final long readTimeoutMs) {
         this.readTimeoutMs = readTimeoutMs;
+    }
+
+    public long getCreateRunTimeoutMs() {
+        return createRunTimeoutMs;
+    }
+
+    public void setCreateRunTimeoutMs(final long createRunTimeoutMs) {
+        this.createRunTimeoutMs = createRunTimeoutMs;
     }
 
     public long getReaperIntervalMs() {
