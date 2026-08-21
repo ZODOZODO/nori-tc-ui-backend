@@ -114,22 +114,14 @@ public class UiRedisConfiguration {
         return factory;
     }
 
-    /**
-     * Gateway RedisTemplate 빈입니다.
+    /*
+     * gatewayRedisTemplate(typed) 빈은 2026-08-21 에 제거했다.
      *
-     * @param factory gateway 연결 팩토리
-     * @param valueSerializer JSON 직렬화기
-     * @return gateway RedisTemplate
+     * 유일한 소비자였던 GatewayDlqRedisService 가 typeless dlqRedisTemplate 으로 옮겨가 주입처가
+     * 0 이 됐고, gateway 가 Redis 에 쓰는 값은 전부 typeless 라 이 이름으로 새로 주입하면 같은 결함이
+     * 재발한다(@class 없는 값에서 SerializationException). 즉 남겨두면 트랩이다.
+     * gateway 논리 연결 자체는 gatewayLettuceConnectionFactory alias 로 그대로 유지된다.
      */
-    @Bean(name = "gatewayRedisTemplate")
-    public RedisTemplate<String, Object> gatewayRedisTemplate(
-            @Qualifier("gatewayLettuceConnectionFactory") final LettuceConnectionFactory factory,
-            @Qualifier("uiRedisValueSerializer") final RedisSerializer<Object> valueSerializer
-    ) {
-        final RedisTemplate<String, Object> template = buildTemplate(factory, valueSerializer);
-        log.info("gatewayRedisTemplate 초기화 완료. serializer=RedisSerializer.json()");
-        return template;
-    }
 
     /**
      * Business RedisTemplate 빈입니다.
@@ -207,6 +199,51 @@ public class UiRedisConfiguration {
         template.afterPropertiesSet();
 
         log.info("commLogRedisTemplate 초기화 완료. serializer=GenericJacksonJsonRedisSerializer(typeless)");
+        return template;
+    }
+
+    /**
+     * DLQ / Quarantine 조회 전용 RedisTemplate 빈입니다.
+     *
+     * <p>적재 측(Gateway {@code RedisDlqPublisher} / {@code RedisQuarantineStore},
+     * Business {@code RedisBusinessDlqPublisher})은 common {@code TcRedisCrudRepository} 를 통해
+     * <b>typeless</b> JSON({@code @class} 힌트 없음)으로 쓴다. 따라서 조회 측도 같은 mode 여야 한다 —
+     * {@code commLogRedisTemplate} 과 동일한 이유·동일한 구성이다.</p>
+     *
+     * <p><b>이 빈이 신설된 이유(2026-08-21)</b>: 두 DLQ 서비스는 typed
+     * {@code gatewayRedisTemplate} / {@code businessRedisTemplate}({@link RedisSerializer#json()})을
+     * 주입받고 있었다. typed 직렬화기는 {@code @class} 가 없는 값을 만나면 {@code Map} 을 돌려주지 않고
+     * {@code opsForValue().get()} 안에서 {@code SerializationException("missing type id property '@class'")}
+     * 을 던진다. 그래서 서비스의 {@code Map} fallback 분기는 <b>도달 불가</b>였고, 운영에서
+     * {@code GET /api/dlq/business} 가 항목이 있어도 조용히 빈 목록을 돌려줬다(WARN 만 남았다).
+     * 같은 mode 를 쓰는 {@code CommLogRedisQueryAdapter} 는 정상 동작해 왔다.</p>
+     *
+     * <p>Gateway / Business 논리 연결은 {@code uiBackendLettuceConnectionFactory} 하나의 alias 이므로
+     * (같은 host/port/db) 이 템플릿 하나가 두 접두사를 모두 읽는다.</p>
+     *
+     * @param factory UI Backend 공용 Redis 연결 팩토리
+     * @param uiRedisObjectMapper Redis 직렬화용 ObjectMapper
+     * @return DLQ / Quarantine 조회 전용 RedisTemplate
+     */
+    @Bean(name = "dlqRedisTemplate")
+    public RedisTemplate<String, Object> dlqRedisTemplate(
+            @Qualifier("uiBackendLettuceConnectionFactory") final LettuceConnectionFactory factory,
+            @Qualifier("uiRedisObjectMapper") final ObjectMapper uiRedisObjectMapper
+    ) {
+        final RedisTemplate<String, Object> template = new RedisTemplate<>();
+        template.setConnectionFactory(factory);
+
+        final StringRedisSerializer stringSerializer = new StringRedisSerializer();
+        template.setKeySerializer(stringSerializer);
+        template.setHashKeySerializer(stringSerializer);
+
+        final GenericJacksonJsonRedisSerializer dlqSerializer =
+                new GenericJacksonJsonRedisSerializer(uiRedisObjectMapper);
+        template.setValueSerializer(dlqSerializer);
+        template.setHashValueSerializer(dlqSerializer);
+        template.afterPropertiesSet();
+
+        log.info("dlqRedisTemplate 초기화 완료. serializer=GenericJacksonJsonRedisSerializer(typeless)");
         return template;
     }
 

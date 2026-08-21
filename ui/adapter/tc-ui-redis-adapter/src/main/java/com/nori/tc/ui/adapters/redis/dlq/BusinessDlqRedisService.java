@@ -33,12 +33,17 @@ import java.util.Objects;
  *
  * <p>역직렬화:</p>
  * <p>적재 측(nori-tc-business {@code RedisBusinessDlqPublisher})은 common
- * {@code TcDbRedisAutoConfiguration} 의 <b>typeless</b> JSON 직렬화기로 값을 쓰고,
- * 이 어댑터의 {@code businessRedisTemplate} 은 {@code RedisSerializer.json()}(<b>typed</b>)로 읽는다.
- * 두 mode 가 다르므로 typed 역직렬화는 도메인 타입 대신 {@code Map} 을 돌려준다 —
- * 형제 경로({@code AsyncResultStoreService} / {@code DualResponseRedisAdapter} /
- * {@code RedisEqpRepairTaskStore})와 동일하게 {@code Map} fallback 으로 변환한다.
+ * {@code TcDbRedisAutoConfiguration} 의 <b>typeless</b> JSON 직렬화기로 값을 쓴다. 그래서 조회 측도
+ * 같은 mode 인 {@code dlqRedisTemplate}(typeless {@code GenericJacksonJsonRedisSerializer})을 주입받고,
+ * 역직렬화 결과 {@code Map} 을 {@code convertValue} 로 도메인 타입에 매핑한다 — 같은 이유로 같은 구성을
+ * 쓰는 {@code CommLogRedisQueryAdapter} 와 동일한 규약이다.
  * {@link RedisBusinessDlqEntry} 는 {@code tc-db-domain}(common)에 위치해 양측이 같은 계약을 공유한다.</p>
+ *
+ * <p><b>typed 템플릿을 쓰면 안 되는 이유</b>: {@code RedisSerializer.json()} 은 {@code @class} 가 없는
+ * 값에 대해 {@code Map} 을 돌려주지 않고 {@code opsForValue().get()} 안에서
+ * {@code SerializationException("missing type id property '@class'")} 을 던진다. 그 상태에서는 아래
+ * {@code Map} 분기가 도달 불가여서, 항목이 있어도 전건이 catch 로 빠져 빈 목록이 반환됐다
+ * (2026-08-21 운영 로그 실측 — 상세는 {@code UiRedisConfiguration#dlqRedisTemplate}).</p>
  */
 @Service
 public class BusinessDlqRedisService implements BusinessDlqPort {
@@ -53,15 +58,15 @@ public class BusinessDlqRedisService implements BusinessDlqPort {
      */
     private static final int SCAN_COUNT_HINT = 100;
 
-    private final RedisTemplate<String, Object> businessRedisTemplate;
+    private final RedisTemplate<String, Object> dlqRedisTemplate;
     private final ObjectMapper redisObjectMapper;
 
     public BusinessDlqRedisService(
-            @Qualifier("businessRedisTemplate") final RedisTemplate<String, Object> businessRedisTemplate,
+            @Qualifier("dlqRedisTemplate") final RedisTemplate<String, Object> dlqRedisTemplate,
             @Qualifier("uiRedisObjectMapper") final ObjectMapper redisObjectMapper
     ) {
-        this.businessRedisTemplate = Objects.requireNonNull(businessRedisTemplate,
-                "businessRedisTemplate 은 null 이 될 수 없습니다.");
+        this.dlqRedisTemplate = Objects.requireNonNull(dlqRedisTemplate,
+                "dlqRedisTemplate 은 null 이 될 수 없습니다.");
         this.redisObjectMapper = Objects.requireNonNull(redisObjectMapper,
                 "redisObjectMapper 는 null 이 될 수 없습니다.");
     }
@@ -92,11 +97,11 @@ public class BusinessDlqRedisService implements BusinessDlqPort {
         final List<RedisBusinessDlqEntry> entries = new ArrayList<>(keys.size());
         for (final String key : keys) {
             try {
-                final Object raw = businessRedisTemplate.opsForValue().get(key);
+                final Object raw = dlqRedisTemplate.opsForValue().get(key);
                 if (raw instanceof RedisBusinessDlqEntry entry) {
                     entries.add(entry);
                 } else if (raw instanceof Map<?, ?> map) {
-                    // 적재 측 typeless JSON ↔ 소비 측 typed JSON mode 차이를 흡수한다(형제 경로와 동일 규약).
+                    // typeless 직렬화기는 도메인 타입 대신 LinkedHashMap 을 돌려준다 — 정상 경로다.
                     entries.add(redisObjectMapper.convertValue(map, RedisBusinessDlqEntry.class));
                 } else if (raw != null) {
                     // 저장된 타입이 예상과 다를 경우 — 직렬화 형식 불일치 가능성
@@ -124,7 +129,7 @@ public class BusinessDlqRedisService implements BusinessDlqPort {
         Objects.requireNonNull(dlqId, "dlqId 는 null 이 될 수 없습니다.");
 
         final String key = DLQ_KEY_PREFIX + dlqId;
-        final Boolean deleted = businessRedisTemplate.delete(key);
+        final Boolean deleted = dlqRedisTemplate.delete(key);
         final boolean result = Boolean.TRUE.equals(deleted);
 
         if (result) {
@@ -148,7 +153,7 @@ public class BusinessDlqRedisService implements BusinessDlqPort {
      */
     private List<String> scanKeys(final String pattern) {
         try {
-            return businessRedisTemplate.execute((RedisCallback<List<String>>) connection -> {
+            return dlqRedisTemplate.execute((RedisCallback<List<String>>) connection -> {
                 final List<String> result = new ArrayList<>();
                 final ScanOptions options = ScanOptions.scanOptions()
                         .match(pattern)

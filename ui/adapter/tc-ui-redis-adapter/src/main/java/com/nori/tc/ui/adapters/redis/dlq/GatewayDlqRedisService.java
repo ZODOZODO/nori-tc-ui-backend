@@ -37,11 +37,18 @@ import java.util.Objects;
  * {@link RedisDlqEntry}, {@link RedisQuarantineEntry}는 {@code tc-db-domain}에 위치하여
  * Gateway 어댑터(쓰기)와 UI 어댑터(읽기)가 동일 클래스를 공유합니다.</p>
  *
- * <p><b>직렬화 mode 불일치</b>: 적재 측 gateway 는 common {@code TcRedisCrudRepository} →
- * {@code GenericJacksonJsonRedisSerializer}(plain {@code JsonMapper}) 로 <b>typeless</b> JSON 을 쓰고
- * ({@code @class} 힌트 없음), 소비 측 {@code gatewayRedisTemplate} 은 {@code RedisSerializer.json()} 으로
- * <b>typed</b> 로 읽는다. 그래서 값이 {@code Map} 으로 들어오며 {@code Map} fallback 이 필수다
- * (순서 318 — 순서 51 의 business DLQ 와 동일 근본 원인).</p>
+ * <p><b>직렬화 mode</b>: 적재 측 gateway 는 common {@code TcRedisCrudRepository} →
+ * {@code GenericJacksonJsonRedisSerializer}(plain {@code JsonMapper}) 로 <b>typeless</b> JSON 을 쓴다
+ * ({@code @class} 힌트 없음). 그래서 소비 측도 같은 mode 인 {@code dlqRedisTemplate} 을 주입받고,
+ * 역직렬화 결과 {@code Map} 을 {@code convertValue} 로 매핑한다.</p>
+ *
+ * <p><b>typed 템플릿을 쓰면 안 되는 이유</b>: 이 서비스는 typed {@code gatewayRedisTemplate}
+ * ({@code RedisSerializer.json()})을 주입받고 있었다. typed 직렬화기는 {@code @class} 가 없는 값에
+ * {@code Map} 을 돌려주지 않고 {@code opsForValue().get()} 안에서
+ * {@code SerializationException("missing type id property '@class'")} 을 던지므로, 아래 {@code Map}
+ * 분기가 도달 불가였다. 형제 경로인 business DLQ 에서 이 결함이 운영 로그로 실측됐고
+ * (2026-08-21), gateway DLQ / Quarantine 은 당시 항목이 0 건이어서 드러나지 않았을 뿐 동일 결함이었다.
+ * 상세는 {@code UiRedisConfiguration#dlqRedisTemplate}.</p>
  */
 @Service
 public class GatewayDlqRedisService implements GatewayDlqPort {
@@ -60,15 +67,15 @@ public class GatewayDlqRedisService implements GatewayDlqPort {
      */
     private static final int SCAN_COUNT_HINT = 100;
 
-    private final RedisTemplate<String, Object> gatewayRedisTemplate;
+    private final RedisTemplate<String, Object> dlqRedisTemplate;
     private final ObjectMapper redisObjectMapper;
 
     public GatewayDlqRedisService(
-            @Qualifier("gatewayRedisTemplate") final RedisTemplate<String, Object> gatewayRedisTemplate,
+            @Qualifier("dlqRedisTemplate") final RedisTemplate<String, Object> dlqRedisTemplate,
             @Qualifier("uiRedisObjectMapper") final ObjectMapper redisObjectMapper
     ) {
-        this.gatewayRedisTemplate = Objects.requireNonNull(gatewayRedisTemplate,
-                "gatewayRedisTemplate 은 null 이 될 수 없습니다.");
+        this.dlqRedisTemplate = Objects.requireNonNull(dlqRedisTemplate,
+                "dlqRedisTemplate 은 null 이 될 수 없습니다.");
         this.redisObjectMapper = Objects.requireNonNull(redisObjectMapper,
                 "redisObjectMapper 는 null 이 될 수 없습니다.");
     }
@@ -99,11 +106,11 @@ public class GatewayDlqRedisService implements GatewayDlqPort {
         final List<RedisDlqEntry> entries = new ArrayList<>(keys.size());
         for (final String key : keys) {
             try {
-                final Object raw = gatewayRedisTemplate.opsForValue().get(key);
+                final Object raw = dlqRedisTemplate.opsForValue().get(key);
                 if (raw instanceof RedisDlqEntry entry) {
                     entries.add(entry);
                 } else if (raw instanceof Map<?, ?> map) {
-                    // 적재 측 typeless JSON ↔ 소비 측 typed JSON mode 차이를 흡수한다(형제 경로와 동일 규약).
+                    // typeless 직렬화기는 도메인 타입 대신 LinkedHashMap 을 돌려준다 — 정상 경로다.
                     entries.add(redisObjectMapper.convertValue(map, RedisDlqEntry.class));
                 } else if (raw != null) {
                     // 저장된 타입이 예상과 다를 경우 — 직렬화 형식 불일치 가능성
@@ -131,7 +138,7 @@ public class GatewayDlqRedisService implements GatewayDlqPort {
         Objects.requireNonNull(dlqId, "dlqId 는 null 이 될 수 없습니다.");
 
         final String key = DLQ_KEY_PREFIX + dlqId;
-        final Boolean deleted = gatewayRedisTemplate.delete(key);
+        final Boolean deleted = dlqRedisTemplate.delete(key);
         final boolean result = Boolean.TRUE.equals(deleted);
 
         if (result) {
@@ -170,11 +177,11 @@ public class GatewayDlqRedisService implements GatewayDlqPort {
         final List<RedisQuarantineEntry> entries = new ArrayList<>(keys.size());
         for (final String key : keys) {
             try {
-                final Object raw = gatewayRedisTemplate.opsForValue().get(key);
+                final Object raw = dlqRedisTemplate.opsForValue().get(key);
                 if (raw instanceof RedisQuarantineEntry entry) {
                     entries.add(entry);
                 } else if (raw instanceof Map<?, ?> map) {
-                    // 적재 측 typeless JSON ↔ 소비 측 typed JSON mode 차이를 흡수한다(형제 경로와 동일 규약).
+                    // typeless 직렬화기는 도메인 타입 대신 LinkedHashMap 을 돌려준다 — 정상 경로다.
                     entries.add(redisObjectMapper.convertValue(map, RedisQuarantineEntry.class));
                 } else if (raw != null) {
                     log.warn("Gateway Quarantine 키 타입 불일치. key={}, actualType={}",
@@ -205,7 +212,7 @@ public class GatewayDlqRedisService implements GatewayDlqPort {
      */
     private List<String> scanKeys(final String pattern) {
         try {
-            return gatewayRedisTemplate.execute((RedisCallback<List<String>>) connection -> {
+            return dlqRedisTemplate.execute((RedisCallback<List<String>>) connection -> {
                 final List<String> result = new ArrayList<>();
                 final ScanOptions options = ScanOptions.scanOptions()
                         .match(pattern)

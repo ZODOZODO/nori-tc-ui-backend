@@ -25,11 +25,14 @@ import static org.mockito.Mockito.when;
  *
  * <p>적재 측 gateway({@code RedisDlqPublisher} / {@code RedisQuarantineStore})는 common
  * {@code TcRedisCrudRepository} → {@code GenericJacksonJsonRedisSerializer}(plain {@code JsonMapper})로
- * <b>typeless</b> JSON 을 쓰고, 소비 측 {@code gatewayRedisTemplate} 은 {@code RedisSerializer.json()} 으로
- * <b>typed</b> 로 읽는다. 그래서 값이 {@code LinkedHashMap} 으로 들어와 {@code instanceof} 가 false 가 되고,
- * {@code GET /api/dlq/gateway} · {@code /api/dlq/quarantine} 이 항목이 있어도 빈 목록을 반환했다.</p>
+ * <b>typeless</b> JSON 을 쓴다. 그래서 값은 도메인 타입이 아니라 {@code LinkedHashMap} 으로 들어오고,
+ * {@code convertValue} 변환이 없으면 {@code GET /api/dlq/gateway} · {@code /api/dlq/quarantine} 이
+ * 항목이 있어도 빈 목록을 반환한다. 이 테스트는 그 변환 계약만 고정한다.</p>
  *
- * <p>순서 51(business DLQ)과 동일 근본 원인 · 동일 처방(Map fallback)이다.</p>
+ * <p><b>이 테스트가 덮지 못하는 것</b>: 서비스가 어떤 직렬화기의 템플릿을 주입받는지는 여기서
+ * {@code valueOps.get} 을 Map 반환으로 stub 하므로 검증되지 않는다. 실제 운영 결함은 typed 템플릿이
+ * 주입돼 그 호출이 <b>예외를 던진</b> 것이었다 — 그 경로는
+ * {@link DlqRedisTemplateSerializationModeTest} 가 운영 직렬화기를 통과시켜 덮는다.</p>
  */
 class GatewayDlqRedisServiceSerializationModeTest {
 

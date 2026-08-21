@@ -10,11 +10,12 @@
  * 주요 구성
  * Redis 설정:
  *   - UiRedisProperties         : @ConfigurationProperties 바인딩 (spring.data.redis.*)
- *   - UiRedisConfiguration      : @Bean("gatewayRedisTemplate"), @Bean("businessRedisTemplate")
+ *   - UiRedisConfiguration      : @Bean("businessRedisTemplate") typed,
+ *                                 @Bean("dlqRedisTemplate") / @Bean("commLogRedisTemplate") typeless
  * Service:
  *   - GatewayDlqRedisService    : tc:gateway:dlq:* 읽기/삭제,
- *                                 tc:gateway:quarantine:* 읽기 (gatewayRedisTemplate)
- *   - BusinessDlqRedisService   : tc:business:core:dlq:* 읽기/삭제 (businessRedisTemplate)
+ *                                 tc:gateway:quarantine:* 읽기 (dlqRedisTemplate)
+ *   - BusinessDlqRedisService   : tc:business:core:dlq:* 읽기/삭제 (dlqRedisTemplate)
  *   - UiSessionCacheService     : tc:ui:backend:session:{token} TTL=300s (businessRedisTemplate)
  *   - AsyncResultStoreService   : tc:ui:backend:async:{traceId} TTL=600s (businessRedisTemplate)
  */
@@ -59,7 +60,7 @@ dependencies {
     /*
      * Spring Data Redis: RedisTemplate, LettuceConnectionFactory, RedisSerializer 등
      * - spring.data.redis.* 표준 설정을 읽되, RedisConnectionFactory 빈은 직접 구성합니다.
-     * - gatewayRedisTemplate, businessRedisTemplate은 논리 역할별 템플릿 이름입니다.
+     * - businessRedisTemplate(typed) / dlqRedisTemplate·commLogRedisTemplate(typeless, 적재 측 mode 일치).
      */
     implementation(libs.spring.boot.starter.data.redis)
     implementation(libs.jackson.databind)

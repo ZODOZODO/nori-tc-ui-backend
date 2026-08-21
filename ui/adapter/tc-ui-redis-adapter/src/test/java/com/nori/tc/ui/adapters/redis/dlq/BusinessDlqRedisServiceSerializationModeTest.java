@@ -20,13 +20,17 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * S08 D-18 / S07 MISSED-BIZ-D-6 회귀 방어 — 적재 측(business, common typeless JSON)과
- * 소비 측({@code RedisSerializer.json()}, typed) 의 직렬화 mode 차이로 값이 {@code LinkedHashMap} 으로
- * 들어오면 {@code instanceof} 가 false 가 되어 {@code GET /api/dlq/business} 가 항목이 있어도
- * 빈 목록을 반환하던 결함을 검증한다.
+ * S08 D-18 / S07 MISSED-BIZ-D-6 회귀 방어 — 적재 측(business, common typeless JSON)이 쓴 값은 도메인
+ * 타입이 아니라 {@code LinkedHashMap} 으로 들어오므로, {@code convertValue} 변환이 없으면
+ * {@code GET /api/dlq/business} 가 항목이 있어도 빈 목록을 반환한다. 이 테스트는 그 변환 계약만 고정한다.
  *
  * <p>본 모듈은 Testcontainers / embedded Redis 없이 mock 기반 컨벤션을 따른다
  * ({@code GatewayDlqRedisServiceQuarantineTest} 와 동일).</p>
+ *
+ * <p><b>이 테스트가 덮지 못하는 것</b>: {@code valueOps.get} 을 Map 반환으로 stub 하므로 서비스가 어떤
+ * 직렬화기의 템플릿을 주입받는지는 검증되지 않는다. 2026-08-21 운영 결함은 typed 템플릿이 주입돼 그
+ * 호출이 <b>예외를 던진</b> 것이었고, 그래서 이 테스트가 통과하는 동안에도 화면은 비어 있었다.
+ * 그 경로는 {@link DlqRedisTemplateSerializationModeTest} 가 운영 직렬화기를 통과시켜 덮는다.</p>
  */
 class BusinessDlqRedisServiceSerializationModeTest {
 
