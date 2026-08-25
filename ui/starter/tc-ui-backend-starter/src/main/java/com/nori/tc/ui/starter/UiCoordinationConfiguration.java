@@ -97,6 +97,7 @@ public class UiCoordinationConfiguration {
      * @return session
      */
     @Bean
+    @ConditionalOnMissingBean(UiCoordinationSession.class)
     public UiCoordinationSession uiCoordinationSession(final UiCoordinationProperties properties) {
         return UiCoordinationSession.create(
                 properties.getServiceName(),

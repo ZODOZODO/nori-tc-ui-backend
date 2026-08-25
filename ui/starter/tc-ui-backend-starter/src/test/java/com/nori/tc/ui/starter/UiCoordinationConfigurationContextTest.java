@@ -12,6 +12,7 @@ import com.nori.tc.common.coordination.types.CatalogHead;
 import com.nori.tc.common.coordination.types.ClusterEpoch;
 import com.nori.tc.ui.adapters.redis.coordination.UiCoordinationContext;
 import com.nori.tc.ui.core.coordination.UiCoordinationRuntime;
+import com.nori.tc.ui.core.coordination.UiCoordinationSession;
 import com.nori.tc.ui.core.coordination.UiCoordinationStatus;
 import com.nori.tc.ui.core.coordination.UiEqpMutationCoordinator;
 import com.nori.tc.ui.core.coordination.UiOperationExecutor;
@@ -55,7 +56,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 class UiCoordinationConfigurationContextTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
-            .withPropertyValues("tc.ui.backend.coordination.allow-local-session-identity=true")
             .withUserConfiguration(AdapterStubs.class, UiCoordinationConfiguration.class);
 
     @Test
@@ -103,6 +103,20 @@ class UiCoordinationConfigurationContextTest {
      */
     @Configuration(proxyBeanMethods = false)
     static class AdapterStubs {
+
+        /**
+         * session 을 고정해 환경 의존을 없앱니다.
+         *
+         * <p>운영 빈은 {@code POD_UID} / {@code KUBERNETES_SERVICE_HOST} 환경 변수를 읽고, Kubernetes
+         * 런타임에서 {@code POD_UID} 가 없으면 프로퍼티와 무관하게 기동을 실패시킵니다(§9.1 / Plan B25).
+         * CI 러너 자체가 Kubernetes Pod 이므로 그 가드가 여기서 걸립니다 — 가드는 의도된 동작이고,
+         * 이 테스트가 보려는 것은 <b>빈 조립</b>이므로 session 만 고정합니다. 가드 자체는
+         * {@code UiCoordinationSessionAndPropertiesTest} 가 검증합니다.</p>
+         */
+        @Bean
+        UiCoordinationSession uiCoordinationSession() {
+            return new UiCoordinationSession("tc-ui-backend", "test-uid", "test-boot", "test-pod");
+        }
 
         @Bean
         UiCoordinationContext uiCoordinationContext() {
