@@ -77,29 +77,38 @@ public class DeployExecutor {
         final long leaseTtlMs = resolveLeaseTtlMs(target);
         final long executionTtlMs = Math.max(1L, deployProperties.summaryCacheTtlSeconds() * 1_000L);
 
+        final java.util.OptionalLong leaseEpoch = awaitTargetLease(eqpId, executionKey, leaseTtlMs);
+        if (leaseEpoch.isEmpty()) {
+            handleTargetFailure(
+                    deployKey,
+                    target,
+                    List.of(),
+                    null,
+                    "TARGET_LEASE_TIMEOUT",
+                    "다른 인스턴스에서 동일 설비 deploy를 처리 중입니다.",
+                    actor
+            );
+            return;
+        }
+
         try {
-            if (!awaitTargetLease(eqpId, executionKey, leaseTtlMs)) {
-                handleTargetFailure(
-                        deployKey,
-                        target,
-                        List.of(),
-                        null,
-                        "TARGET_LEASE_TIMEOUT",
-                        "다른 인스턴스에서 동일 설비 deploy를 처리 중입니다.",
-                        actor
-                );
-                return;
-            }
-            if (!deployExecutionCoordinationPort.registerTargetExecution(executionKey, executionTtlMs)) {
+            final DeployExecutionCoordinationPort.ExecutionClaim claim =
+                    deployExecutionCoordinationPort.claimTargetExecution(executionKey, executionKey, leaseTtlMs);
+            if (claim != DeployExecutionCoordinationPort.ExecutionClaim.CLAIMED) {
                 commandAssembler.refreshDeployStatus(deployKey, null, null);
                 return;
             }
             doExecuteTarget(deployKey, deployEventType, executionTarget, actor);
+            /*
+             * 완료 표시는 실행이 끝난 뒤에만 기록한다(§13.4). 시작 전에 COMPLETED 를 쓰면 그 직후 죽은
+             * 실행이 "이미 끝난 것" 으로 보여 인계 Pod 가 영원히 재개하지 않는다.
+             */
+            deployExecutionCoordinationPort.completeTargetExecution(executionKey, executionTtlMs);
         } finally {
             try {
                 commandAssembler.refreshDeployStatus(deployKey, null, null);
             } finally {
-                deployExecutionCoordinationPort.releaseTargetLease(eqpId, executionKey);
+                deployExecutionCoordinationPort.releaseTargetLease(eqpId, executionKey, leaseEpoch.getAsLong());
             }
         }
     }
@@ -316,24 +325,25 @@ public class DeployExecutor {
         commandAssembler.refreshDeployStatus(deployKey, errorCode, errorMessage);
     }
 
-    private boolean awaitTargetLease(
+    private java.util.OptionalLong awaitTargetLease(
             final String eqpId,
             final String ownerToken,
             final long ttlMs
     ) {
         final long deadlineEpochMs = System.currentTimeMillis() + ttlMs;
         while (System.currentTimeMillis() <= deadlineEpochMs) {
-            if (deployExecutionCoordinationPort.tryAcquireTargetLease(eqpId, ownerToken, ttlMs)) {
-                return true;
+            final var acquired = deployExecutionCoordinationPort.tryAcquireTargetLease(eqpId, ownerToken, ttlMs);
+            if (acquired.isPresent()) {
+                return java.util.OptionalLong.of(acquired.get());
             }
             try {
                 Thread.sleep(LEASE_ACQUIRE_POLL_MS);
             } catch (InterruptedException interruptedException) {
                 Thread.currentThread().interrupt();
-                return false;
+                return java.util.OptionalLong.empty();
             }
         }
-        return false;
+        return java.util.OptionalLong.empty();
     }
 
     private long resolveLeaseTtlMs(final com.nori.tc.ui.core.deploy.PersistedDeployTarget target) {

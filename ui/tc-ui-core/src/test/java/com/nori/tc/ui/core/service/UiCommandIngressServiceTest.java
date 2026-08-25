@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -38,7 +39,12 @@ class UiCommandIngressServiceTest {
     void setUp() {
         dualResponseRedisPort = new RecordingDualResponseRedisPort();
         dualResponseRegistry = new DualResponseRegistry(dualResponseRedisPort);
-        ingressService = new UiCommandIngressService(deployService, dualResponseRegistry, asyncResultStorePort);
+        // 조정 비활성 구성 재현 — reply proof ingest 빈이 없을 때도 레거시 라우팅이 그대로 동작해야 합니다.
+        ingressService = new UiCommandIngressService(
+                deployService,
+                dualResponseRegistry,
+                asyncResultStorePort,
+                mock(org.springframework.beans.factory.ObjectProvider.class));
     }
 
     @Test

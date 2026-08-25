@@ -31,7 +31,8 @@ class LiveMapLayoutPermissionTest {
         final UiApiPermissionCache cache = new UiApiPermissionCache(() -> List.of(
                 permission(WRITE, UiPermissionMatchType.PREFIX, "/api/live-map/layout", null),
                 permission(READ, UiPermissionMatchType.PREFIX, "/api/live-map/layout", "GET")
-        ));
+        ),
+        com.nori.tc.ui.core.coordination.UiPermissionCatalogGuard.disabled());
         cache.loadPermissions();
         return cache;
     }

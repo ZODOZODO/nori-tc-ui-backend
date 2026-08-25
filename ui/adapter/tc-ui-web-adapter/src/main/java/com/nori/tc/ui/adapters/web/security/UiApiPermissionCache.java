@@ -1,5 +1,6 @@
 package com.nori.tc.ui.adapters.web.security;
 
+import com.nori.tc.ui.core.coordination.UiPermissionCatalogGuard;
 import com.nori.tc.ui.core.port.db.UiApiPermissionPort;
 import com.nori.tc.ui.domain.auth.UserPrincipal;
 import com.nori.tc.ui.domain.common.user.UiPermissionMatchType;
@@ -44,6 +45,7 @@ public class UiApiPermissionCache {
     private static final Logger log = LoggerFactory.getLogger(UiApiPermissionCache.class);
 
     private final UiApiPermissionPort apiPermissionPort;
+    private final UiPermissionCatalogGuard catalogGuard;
 
     /**
      * volatile: 기동 후 단 1회 write가 발생하고 이후 read만 발생하므로
@@ -62,9 +64,14 @@ public class UiApiPermissionCache {
      * 필수 의존성을 초기화합니다.
      *
      * @param apiPermissionPort API 권한 전체 조회 포트
+     * @param catalogGuard permission catalog head 게이트(§13.10)
      */
-    public UiApiPermissionCache(final UiApiPermissionPort apiPermissionPort) {
+    public UiApiPermissionCache(
+            final UiApiPermissionPort apiPermissionPort,
+            final UiPermissionCatalogGuard catalogGuard
+    ) {
         this.apiPermissionPort = Objects.requireNonNull(apiPermissionPort, "apiPermissionPort is null");
+        this.catalogGuard = Objects.requireNonNull(catalogGuard, "catalogGuard is null");
     }
 
     /**
@@ -99,6 +106,11 @@ public class UiApiPermissionCache {
             final List<UiPermission> loaded = apiPermissionPort.findAllActiveApiPermissions();
             this.cachedPermissions = loaded;
             this.initializationFailed = false;
+            /*
+             * §13.10 — 적재한 목록의 canonical 표현으로 클러스터 head 를 맞춘다. head 를 갱신하지 않으면
+             * 다른 Pod 는 이 Pod 가 옛 권한을 들고 있는지 알 수 없고, 서로 다른 인가 판단을 내놓는다.
+             */
+            catalogGuard.onPermissionsApplied(canonicalize(loaded));
             if (startup) {
                 log.info("API 권한 캐시 로드 완료. 총 {}개 API 권한 활성.", loaded.size());
             } else {
@@ -134,6 +146,17 @@ public class UiApiPermissionCache {
             return false;
         }
 
+        /*
+         * §13.10 — 보호 요청 처리 시점에 local revision 을 head 와 비교한다. mismatch Pod 만 fail-closed
+         * 하며, 전 session 적용 완료를 기다리는 전역 게이트는 두지 않는다. head 조회가 불확실해도
+         * 거부다 — 인가 판단에서 "모름" 은 허용이 아니다.
+         */
+        if (!catalogGuard.inSync()) {
+            log.warn("permission catalog head mismatch - 요청 차단. uri={}, method={}, userPk={}, headRevision={}",
+                    requestUri, httpMethod, principal.userPk(), catalogGuard.headRevision());
+            return false;
+        }
+
         final List<UiPermission> matching = cachedPermissions.stream()
                 .filter(p -> matchUri(p, requestUri))
                 .filter(p -> matchMethod(p, httpMethod))
@@ -165,6 +188,31 @@ public class UiApiPermissionCache {
     // -------------------------------------------------------------------------
     // 내부 매칭 로직
     // -------------------------------------------------------------------------
+
+    /**
+     * permission 목록을 canonical 표현으로 정규화합니다(§13.10).
+     *
+     * <p>{@code resource / method / matchType / permCode} 순으로 정렬해 <b>적재 순서와 무관한</b>
+     * 표현을 만듭니다 — DB 스캔 순서가 Pod 마다 다르면 같은 권한 집합이 다른 digest 를 내고, 모든 Pod 가
+     * 서로를 mismatch 로 보게 됩니다.</p>
+     *
+     * @param permissions 활성 권한 목록
+     * @return canonical 표현
+     */
+    private static String canonicalize(final List<UiPermission> permissions) {
+        return permissions.stream()
+                .map(permission -> String.join("|",
+                        nullToEmpty(permission.resource()),
+                        nullToEmpty(permission.httpMethod()),
+                        permission.matchType() == null ? "" : permission.matchType().name(),
+                        nullToEmpty(permission.permCode())))
+                .sorted()
+                .collect(java.util.stream.Collectors.joining("\n"));
+    }
+
+    private static String nullToEmpty(final String value) {
+        return value == null ? "" : value;
+    }
 
     /**
      * 권한의 matchType에 따라 요청 URI가 매칭되는지 확인합니다.

@@ -53,6 +53,8 @@ public class JpaEqpQueryPort implements EqpQueryPort {
     private static final int PARAM_VERSION_PAGE_LIMIT = 500;
     private static final int PARAM_VERSION_SCAN_MAX_ROWS = 10_000;
     private static final int CONNECTION_STATE_HISTORY_LIMIT = 100;
+    private static final int MODEL_VERSION_SCAN_PAGE_SIZE = 500;
+    private static final int MODEL_VERSION_SCAN_MAX_ROWS = 20_000;
     // EDIT 버전은 내부 체크아웃 잠금용이므로 드롭다운 목록에 노출하지 않는다.
     private static final String EDIT_VERSION = "EDIT";
 
@@ -444,5 +446,41 @@ public class JpaEqpQueryPort implements EqpQueryPort {
             log.error("설비 런타임 상태 조회 실패. eqpId={}", eqpId, e);
             throw e;
         }
+    }
+
+    /**
+     * 같은 {@code model_version_key} 를 참조하는 설비 ID 를 조회합니다(§7.3 영향 집합 폐쇄).
+     *
+     * <p>{@code TcEqpStore} 에 model_version_key 역참조 조회가 없어 페이지 스캔으로 구현합니다 —
+     * 공통 store 계약을 넓히면 gateway/business 를 포함한 소비 레포 전체의 재발행 주기를 태워야 하고,
+     * 이 조회는 설비 수(수백 규모) 대비 상한 스캔으로 충분합니다. 상한을 넘으면 <b>부분 결과를 쓰지
+     * 않고 실패</b>합니다 — 일부만 잠근 영향 집합으로 진행하는 것이 §7.3 이 금지하는 동작입니다.</p>
+     *
+     * @param modelVersionKey 모델 버전 키
+     * @return 해당 version 을 참조하는 설비 ID 목록
+     */
+    @Override
+    public List<String> findEqpIdsByModelVersionKey(final long modelVersionKey) {
+        final List<String> matched = new ArrayList<>();
+        int offset = 0;
+        while (offset < MODEL_VERSION_SCAN_MAX_ROWS) {
+            final List<TcEqp> page = eqpStore.findAll(
+                    com.nori.tc.db.core.common.PageRequest.of(offset, MODEL_VERSION_SCAN_PAGE_SIZE));
+            if (page.isEmpty()) {
+                return List.copyOf(matched);
+            }
+            for (final TcEqp eqp : page) {
+                if (eqp.modelVersionKey() == modelVersionKey) {
+                    matched.add(eqp.eqpId());
+                }
+            }
+            if (page.size() < MODEL_VERSION_SCAN_PAGE_SIZE) {
+                return List.copyOf(matched);
+            }
+            offset += MODEL_VERSION_SCAN_PAGE_SIZE;
+        }
+        throw new IllegalStateException(
+                "model_version_key 역참조 스캔 상한을 넘었습니다 — 영향 집합을 확정할 수 없습니다. modelVersionKey="
+                        + modelVersionKey + ", scanMaxRows=" + MODEL_VERSION_SCAN_MAX_ROWS);
     }
 }

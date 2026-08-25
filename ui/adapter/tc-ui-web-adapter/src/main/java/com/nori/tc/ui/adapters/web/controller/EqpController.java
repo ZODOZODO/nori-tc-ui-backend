@@ -15,8 +15,9 @@ import com.nori.tc.ui.adapters.web.dto.response.EqpManageDetailBatchResponse;
 import com.nori.tc.ui.adapters.web.dto.response.EqpManageDetailResponse;
 import com.nori.tc.ui.adapters.web.dto.response.EqpManageOptionsResponse;
 import com.nori.tc.ui.adapters.web.dto.response.EqpRuntimeStateResponse;
+import com.nori.tc.ui.adapters.web.dto.response.OperationAcceptResponse;
+import com.nori.tc.ui.core.coordination.model.UiOperationAcceptance;
 import com.nori.tc.ui.core.eqp.EqpAsyncAcceptResult;
-import com.nori.tc.ui.core.eqp.EqpCommandResult;
 import com.nori.tc.ui.core.eqp.EqpManagementOptions;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
@@ -38,10 +39,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.context.request.async.DeferredResult;
 
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -49,7 +50,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * EQP 관리 REST API 컨트롤러입니다.
@@ -63,6 +63,9 @@ import java.util.concurrent.CompletableFuture;
 public class EqpController {
 
     private static final Logger log = LoggerFactory.getLogger(EqpController.class);
+
+    /** Front 가 요청마다 보내는 idempotency key 헤더 이름입니다(§13.2). */
+    private static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 
     private final EqpQueryPort eqpQueryPort;
     private final EqpManagementService eqpManagementService;
@@ -255,19 +258,15 @@ public class EqpController {
      * @return 비동기 처리 결과
      */
     @PostMapping
-    public DeferredResult<ResponseEntity<ApiResponse<Void>>> create(
+    public ResponseEntity<ApiResponse<OperationAcceptResponse>> create(
             @Valid @RequestBody final EqpCreateRequest request,
+            @RequestHeader(name = IDEMPOTENCY_KEY_HEADER, required = false) final String idempotencyKey,
             final Authentication authentication
     ) {
         log.info("EQP 생성 요청. eqpId={}, interfaceType={}", request.eqpId(), request.interfaceType());
-        return submitManagementCommand(
-                eqpManagementService.create(
-                        EqpControllerCommandSupport.toCreateCommand(request, authentication),
-                        dualRequestProperties.getDualRequestTimeoutMs()
-                ),
-                "EQP_CREATE",
-                request.eqpId()
-        );
+        return toAcceptResponse(eqpManagementService.acceptCreate(
+                EqpControllerCommandSupport.toCreateCommand(request, authentication),
+                requireIdempotencyKey(idempotencyKey, "EQP_CREATE", request.eqpId())));
     }
 
     /**
@@ -279,30 +278,22 @@ public class EqpController {
      * @return 비동기 처리 결과
      */
     @PutMapping("/{eqpId}")
-    public DeferredResult<ResponseEntity<ApiResponse<Void>>> update(
+    public ResponseEntity<ApiResponse<OperationAcceptResponse>> update(
             @PathVariable final String eqpId,
             @Valid @RequestBody final EqpUpdateRequest request,
+            @RequestHeader(name = IDEMPOTENCY_KEY_HEADER, required = false) final String idempotencyKey,
             final Authentication authentication
     ) {
         log.info("EQP 수정 요청. eqpId={}", eqpId);
         final Optional<EqpManagementSnapshot> snapshotOptional = eqpManagementService.getManageDetail(eqpId);
         if (snapshotOptional.isEmpty()) {
-            final DeferredResult<ResponseEntity<ApiResponse<Void>>> deferredResult = new DeferredResult<>();
-            deferredResult.setResult(
-                    ResponseEntity.status(HttpStatus.NOT_FOUND)
-                            .body(ApiResponse.error("NOT_FOUND", "설비를 찾을 수 없습니다."))
-            );
-            return deferredResult;
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiResponse.error("NOT_FOUND", "설비를 찾을 수 없습니다."));
         }
-        return submitManagementCommand(
-                eqpManagementService.update(
-                        eqpId,
-                        EqpControllerCommandSupport.toUpdateCommand(request, snapshotOptional.get(), authentication),
-                        dualRequestProperties.getDualRequestTimeoutMs()
-                ),
-                "EQP_UPDATE",
-                eqpId
-        );
+        return toAcceptResponse(eqpManagementService.acceptUpdate(
+                eqpId,
+                EqpControllerCommandSupport.toUpdateCommand(request, snapshotOptional.get(), authentication),
+                requireIdempotencyKey(idempotencyKey, "EQP_UPDATE", eqpId)));
     }
 
     /**
@@ -312,15 +303,13 @@ public class EqpController {
      * @return 비동기 처리 결과
      */
     @DeleteMapping("/{eqpId}")
-    public DeferredResult<ResponseEntity<ApiResponse<Void>>> delete(
-            @PathVariable final String eqpId
+    public ResponseEntity<ApiResponse<OperationAcceptResponse>> delete(
+            @PathVariable final String eqpId,
+            @RequestHeader(name = IDEMPOTENCY_KEY_HEADER, required = false) final String idempotencyKey
     ) {
         log.info("EQP 삭제 요청. eqpId={}", eqpId);
-        return submitManagementCommand(
-                eqpManagementService.delete(eqpId, dualRequestProperties.getDualRequestTimeoutMs()),
-                "EQP_DELETE",
-                eqpId
-        );
+        return toAcceptResponse(eqpManagementService.acceptDelete(
+                eqpId, requireIdempotencyKey(idempotencyKey, "EQP_DELETE", eqpId)));
     }
 
     /**
@@ -457,45 +446,48 @@ public class EqpController {
     }
 
     /**
-     * 관리 명령 future를 HTTP 응답으로 변환합니다.
+     * 접수 결과를 {@code 202 Accepted} 응답으로 변환합니다(§13.2).
      *
-     * @param future 처리 future
-     * @param action 로그용 액션명
-     * @param eqpId 설비 ID
-     * @return DeferredResult 응답
+     * <p>HTTP 연결 종료는 operation 취소가 아니므로 여기서는 결과를 기다리지 않습니다 — 대기하다가
+     * 끊긴 연결을 근거로 rollback 하면, 실제로는 성공한 변경을 취소하게 됩니다.</p>
+     *
+     * @param acceptance 접수 결과
+     * @return 202 응답
      */
-    private DeferredResult<ResponseEntity<ApiResponse<Void>>> submitManagementCommand(
-            final CompletableFuture<EqpCommandResult> future,
+    private static ResponseEntity<ApiResponse<OperationAcceptResponse>> toAcceptResponse(
+            final UiOperationAcceptance acceptance
+    ) {
+        return ResponseEntity.accepted().body(ApiResponse.success(new OperationAcceptResponse(
+                acceptance.operationId(),
+                acceptance.state().name(),
+                acceptance.phase().name(),
+                acceptance.errorCode(),
+                acceptance.errorMsg())));
+    }
+
+    /**
+     * {@code Idempotency-Key} 헤더를 정규화합니다(§13.2/§14.1).
+     *
+     * <p>헤더가 없으면 요청 단위 키를 만들어 씁니다 — 구 Front 요청을 거부하지 않되, 재시도 시
+     * 중복 operation 이 생길 수 있음을 로그로 남깁니다.</p>
+     *
+     * @param rawIdempotencyKey 요청 헤더 값
+     * @param action 로그용 액션명
+     * @param eqpId 대상 설비
+     * @return 사용할 idempotency key
+     */
+    private static String requireIdempotencyKey(
+            final String rawIdempotencyKey,
             final String action,
             final String eqpId
     ) {
-        // 명시 timeout 이 없으면 컨테이너 기본 async timeout(spring.mvc.async.request-timeout 미설정)에
-        // 위임돼 응답 시점이 설정과 무관해진다(S08 D-9). future 쪽 orTimeout 과 같은 값으로 맞춘다.
-        final DeferredResult<ResponseEntity<ApiResponse<Void>>> deferredResult =
-                new DeferredResult<>(dualRequestProperties.getDualRequestTimeoutMs());
-
-        future.whenComplete((result, throwable) -> {
-            if (deferredResult.isSetOrExpired()) {
-                return;
-            }
-
-            if (throwable != null) {
-                log.error("EQP 관리 요청 처리 중 비정상 오류가 발생했습니다. action={}, eqpId={}", action, eqpId, throwable);
-                deferredResult.setResult(ResponseEntity.internalServerError()
-                        .body(ApiResponse.error("INTERNAL_ERROR", "처리 중 내부 오류가 발생했습니다.")));
-                return;
-            }
-
-            if (result.success()) {
-                log.info("EQP 관리 요청 완료. action={}, eqpId={}, statusCode={}", action, eqpId, result.statusCode());
-            } else {
-                log.warn("EQP 관리 요청 실패. action={}, eqpId={}, statusCode={}, errorCode={}",
-                        action, eqpId, result.statusCode(), result.errorCode());
-            }
-            deferredResult.setResult(EqpControllerResponseSupport.toCommandResponse(result));
-        });
-
-        return deferredResult;
+        if (rawIdempotencyKey != null && !rawIdempotencyKey.isBlank()) {
+            return rawIdempotencyKey.trim();
+        }
+        final String generated = java.util.UUID.randomUUID().toString();
+        log.warn("Idempotency-Key 헤더가 없어 요청 단위 키를 생성했습니다 — 재시도 시 중복 접수가 가능합니다. "
+                + "action={}, eqpId={}, generatedKey={}", action, eqpId, generated);
+        return generated;
     }
 
     private ResponseEntity<ApiResponse<AsyncAcceptResponse>> toAsyncAcceptResponse(final EqpAsyncAcceptResult acceptResult) {

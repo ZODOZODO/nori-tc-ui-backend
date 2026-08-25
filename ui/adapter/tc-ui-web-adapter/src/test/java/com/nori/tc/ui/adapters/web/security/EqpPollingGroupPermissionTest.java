@@ -36,7 +36,8 @@ class EqpPollingGroupPermissionTest {
         final UiApiPermissionCache cache = new UiApiPermissionCache(() -> List.of(
                 permission(EQP_WRITE, UiPermissionMatchType.PREFIX, "/api/eqp", null),
                 permission(EQP_READ, UiPermissionMatchType.PREFIX, "/api/eqp", "GET")
-        ));
+        ),
+        com.nori.tc.ui.core.coordination.UiPermissionCatalogGuard.disabled());
         cache.loadPermissions();
         return cache;
     }

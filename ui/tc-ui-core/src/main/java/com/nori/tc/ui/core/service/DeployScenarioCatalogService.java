@@ -12,6 +12,7 @@ import com.nori.tc.ui.core.deploy.DeployScenarioReloadResult;
 import com.nori.tc.ui.core.deploy.DeployScenarioRetryPolicy;
 import com.nori.tc.ui.core.deploy.DeployScenarioValidationResult;
 import com.nori.tc.ui.core.deploy.DeployTargetApp;
+import com.nori.tc.ui.core.coordination.UiScenarioCatalogGuard;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.port.db.DeployScenarioCatalogMetaPort;
@@ -69,6 +70,7 @@ public class DeployScenarioCatalogService {
     private final UiDeployProperties deployProperties;
     private final DeployScenarioCatalogMetaPort catalogMetaPort;
     private final ObjectMapper objectMapper;
+    private final UiScenarioCatalogGuard catalogGuard;
     private final Yaml yaml;
     private final AtomicReference<DeployScenarioCatalog> catalogRef;
     private final ReentrantLock reloadLock;
@@ -76,11 +78,13 @@ public class DeployScenarioCatalogService {
     public DeployScenarioCatalogService(
             final UiDeployProperties deployProperties,
             final DeployScenarioCatalogMetaPort catalogMetaPort,
-            final ObjectMapper objectMapper
+            final ObjectMapper objectMapper,
+            final UiScenarioCatalogGuard catalogGuard
     ) {
         this.deployProperties = Objects.requireNonNull(deployProperties, "deployProperties is null");
         this.catalogMetaPort = Objects.requireNonNull(catalogMetaPort, "catalogMetaPort is null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is null");
+        this.catalogGuard = Objects.requireNonNull(catalogGuard, "catalogGuard is null");
         this.yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
         this.catalogRef = new AtomicReference<>();
         this.reloadLock = new ReentrantLock();
@@ -104,6 +108,7 @@ public class DeployScenarioCatalogService {
         );
         final DeployScenarioCatalog catalog = candidate.toCatalog(meta);
         catalogRef.set(catalog);
+        catalogGuard.onCatalogApplied(catalog.catalogChecksum());
 
         log.info("Deploy scenario catalog startup load 완료. version={}, checksum={}, scenarioCount={}, source={}",
                 catalog.catalogVersion(), catalog.catalogChecksum(), catalog.scenarioCount(), candidate.sourceDescription());
@@ -119,6 +124,21 @@ public class DeployScenarioCatalogService {
         if (currentCatalog == null) {
             throw new IllegalStateException("Deploy scenario catalog is not initialized");
         }
+        return currentCatalog;
+    }
+
+    /**
+     * 새 planning 을 접수하기 전에 이 Pod 의 catalog 가 클러스터 head 와 같은지 확인합니다(§13.9).
+     *
+     * <p>head 와 다르면 {@code 503 CATALOG_NOT_SYNCED} 로 거부합니다. scenario 디렉터리는 Pod-로컬
+     * 외부 경로라 mismatch Pod 는 자동으로 새 catalog 를 얻지 못하며, 그 상태로 planning 을 받으면
+     * 서로 다른 step 계획이 같은 설비에 적용됩니다.</p>
+     *
+     * @return head 와 일치하는 현재 catalog
+     */
+    public DeployScenarioCatalog currentCatalogForPlanning() {
+        final DeployScenarioCatalog currentCatalog = currentCatalog();
+        catalogGuard.requirePlanningAllowed(currentCatalog.catalogChecksum());
         return currentCatalog;
     }
 
@@ -180,6 +200,12 @@ public class DeployScenarioCatalogService {
             );
             final DeployScenarioCatalog reloadedCatalog = candidate.toCatalog(meta);
             catalogRef.set(reloadedCatalog);
+            /*
+             * §13.9 — reload 는 반드시 head commit 을 동반한다. 로컬 AtomicReference 만 바꾸고 끝내면
+             * 이 Pod 만 새 catalog 로 planning 하고 나머지는 옛 catalog 로 planning 한다.
+             * validation 실패 경로는 위에서 이미 반환했으므로 여기 도달한 candidate 는 검증을 통과했다.
+             */
+            catalogGuard.onCatalogApplied(reloadedCatalog.catalogChecksum());
 
             log.info("Deploy scenario catalog reload 완료. beforeVersion={}, afterVersion={}, checksum={}, scenarioCount={}",
                     before.catalogVersion(),

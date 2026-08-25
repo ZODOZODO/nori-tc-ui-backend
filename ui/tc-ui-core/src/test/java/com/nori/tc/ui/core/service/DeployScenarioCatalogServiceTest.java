@@ -52,7 +52,8 @@ class DeployScenarioCatalogServiceTest {
         final DeployScenarioCatalogService service = new DeployScenarioCatalogService(
                 deployProperties(tempDir),
                 new InMemoryCatalogMetaPort(),
-                objectMapper
+                objectMapper,
+                com.nori.tc.ui.core.coordination.UiScenarioCatalogGuard.disabled()
         );
 
         final IllegalStateException exception = assertThrows(
@@ -68,7 +69,8 @@ class DeployScenarioCatalogServiceTest {
         final DeployScenarioCatalogService service = new DeployScenarioCatalogService(
                 deployProperties(tempDir.resolve("missing-scenarios")),
                 new InMemoryCatalogMetaPort(),
-                objectMapper
+                objectMapper,
+                com.nori.tc.ui.core.coordination.UiScenarioCatalogGuard.disabled()
         );
 
         service.initializeCatalog();
@@ -85,7 +87,8 @@ class DeployScenarioCatalogServiceTest {
         final DeployScenarioCatalogService service = new DeployScenarioCatalogService(
                 deployProperties(tempDir),
                 new InMemoryCatalogMetaPort(),
-                objectMapper
+                objectMapper,
+                com.nori.tc.ui.core.coordination.UiScenarioCatalogGuard.disabled()
         );
         service.initializeCatalog();
 
@@ -152,7 +155,8 @@ class DeployScenarioCatalogServiceTest {
         final DeployScenarioCatalogService service = new DeployScenarioCatalogService(
                 deployProperties(tempDir),
                 new InMemoryCatalogMetaPort(),
-                objectMapper
+                objectMapper,
+                com.nori.tc.ui.core.coordination.UiScenarioCatalogGuard.disabled()
         );
 
         final IllegalStateException exception = assertThrows(

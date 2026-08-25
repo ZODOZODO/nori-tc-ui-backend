@@ -202,11 +202,11 @@ public class UiGatewayEventKafkaPublisher implements UiGatewayEventPublishPort {
     private static KafkaUiTaskMessage toKafkaMessage(final UiCommandMessage message) {
         final KafkaUiTaskEventType eventType = KafkaUiTaskEventType.valueOf(message.eventType().name());
         return new KafkaUiTaskMessage(
-                new KafkaUiTaskMessage.KafkaUiTaskMetadata(
+                UiKafkaContractMapper.toMetadata(
                         eventType.name(),
-                        OffsetDateTime.now().toString(),
                         message.source(),
-                        message.traceId()
+                        message.traceId(),
+                        message.coordination()
                 ),
                 new KafkaUiTaskMessage.KafkaUiTaskData(
                         message.eqpId(),

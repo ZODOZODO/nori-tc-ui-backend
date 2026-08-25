@@ -11,6 +11,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.listener.ContainerProperties;
+import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.util.backoff.FixedBackOff;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -42,6 +44,9 @@ public class UiKafkaConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(UiKafkaConfiguration.class);
 
+    /** 인프라 실패 재시도 간격(ms)입니다 — 회복 대기 중 브로커를 과도하게 두드리지 않을 만큼만 둡니다. */
+    private static final long INFRA_RETRY_BACKOFF_MS = 1_000L;
+
     /**
      * tc.ui.commands 전용 Kafka Listener Container Factory입니다.
      *
@@ -71,9 +76,22 @@ public class UiKafkaConfiguration {
         // MANUAL_IMMEDIATE: onMessage 내부 acknowledge() 호출 시 즉시 커밋
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
 
+        /*
+         * §13.5 — 인프라 실패는 무제한 재시도한다. 기본 DefaultErrorHandler 는 10 회 뒤 record 를
+         * "recover"(로그 후 offset 전진)하므로, Redis 장애가 10 회 재시도 안에 회복되지 않으면 그
+         * reply proof 가 소리 없이 사라진다. 업무 실패는 listener 안에서 이미 ACK 되므로 여기에
+         * 도달하지 않는다 — 즉 이 handler 가 보는 예외는 인프라 실패뿐이다.
+         */
+        final DefaultErrorHandler errorHandler = new DefaultErrorHandler(
+                new FixedBackOff(INFRA_RETRY_BACKOFF_MS, FixedBackOff.UNLIMITED_ATTEMPTS));
+        errorHandler.setAckAfterHandle(false);
+        factory.setCommonErrorHandler(errorHandler);
+
         log.info(
-                "uiCommandListenerContainerFactory 초기화 완료. bootstrapServers={}, ackMode=MANUAL_IMMEDIATE",
-                bootstrapServers
+                "uiCommandListenerContainerFactory 초기화 완료. bootstrapServers={}, ackMode=MANUAL_IMMEDIATE, "
+                        + "infraRetry=UNLIMITED, backoffMs={}",
+                bootstrapServers,
+                INFRA_RETRY_BACKOFF_MS
         );
         return factory;
     }

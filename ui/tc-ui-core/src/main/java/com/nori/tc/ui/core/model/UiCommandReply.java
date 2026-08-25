@@ -15,6 +15,7 @@ import com.nori.tc.ui.domain.task.UiTaskStatus;
  * @param status 처리 상태(PASS/FAIL)
  * @param errorCode 실패 코드(성공 시 null)
  * @param errorMsg 실패 메시지(성공 시 null)
+ * @param proof coordination reply proof(§10.2). v1 응답이면 null
  */
 public record UiCommandReply(
         String traceId,
@@ -24,8 +25,43 @@ public record UiCommandReply(
         String interfaceType,
         UiTaskStatus status,
         String errorCode,
-        String errorMsg
+        String errorMsg,
+        UiCommandReplyProof proof
 ) {
+
+    /**
+     * proof 없는 v1 응답을 만듭니다.
+     *
+     * @param traceId 요청/응답 상관관계 추적 ID
+     * @param source 응답 출처
+     * @param eventType 응답 이벤트 타입
+     * @param eqpId 설비 ID
+     * @param interfaceType 인터페이스 타입
+     * @param status 처리 상태
+     * @param errorCode 실패 코드
+     * @param errorMsg 실패 메시지
+     */
+    public UiCommandReply(
+            final String traceId,
+            final String source,
+            final String eventType,
+            final String eqpId,
+            final String interfaceType,
+            final UiTaskStatus status,
+            final String errorCode,
+            final String errorMsg
+    ) {
+        this(traceId, source, eventType, eqpId, interfaceType, status, errorCode, errorMsg, null);
+    }
+
+    /**
+     * coordination proof 를 가진 응답인지 반환합니다.
+     *
+     * @return proof 가 있으면 true
+     */
+    public boolean hasCoordinationProof() {
+        return proof != null;
+    }
 
     /**
      * 필수값을 검증합니다.

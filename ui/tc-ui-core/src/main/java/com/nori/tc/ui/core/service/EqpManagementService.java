@@ -2,6 +2,8 @@ package com.nori.tc.ui.core.service;
 
 import tools.jackson.databind.JsonNode;
 import com.nori.tc.common.runtime.support.TraceIdGenerator;
+import com.nori.tc.ui.core.coordination.UiEqpMutationCoordinator;
+import com.nori.tc.ui.core.coordination.model.UiOperationAcceptance;
 import com.nori.tc.ui.core.eqp.EqpAsyncAcceptResult;
 import com.nori.tc.ui.core.eqp.EqpCommandResult;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
@@ -27,7 +29,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.concurrent.TimeUnit;
 
 /**
  * EQP 관리 생성/수정/삭제와 옵션/상세 조회를 총괄하는 서비스입니다.
@@ -46,6 +47,7 @@ public class EqpManagementService {
     private final EqpDirectScenarioService eqpDirectScenarioService;
     private final Executor eqpManagementExecutor;
     private final AsyncResultStorePort asyncResultStorePort;
+    private final UiEqpMutationCoordinator mutationCoordinator;
 
     /**
      * 필수 의존성을 초기화합니다.
@@ -55,8 +57,10 @@ public class EqpManagementService {
             final EqpOptionsQueryPort eqpOptionsQueryPort,
             final EqpDirectScenarioService eqpDirectScenarioService,
             final AsyncResultStorePort asyncResultStorePort,
+            final UiEqpMutationCoordinator mutationCoordinator,
             @Qualifier(EQP_MANAGEMENT_EXECUTOR_BEAN_NAME) final Executor eqpManagementExecutor
     ) {
+        this.mutationCoordinator = Objects.requireNonNull(mutationCoordinator, "mutationCoordinator is null");
         this.eqpManageQueryPort = Objects.requireNonNull(eqpManageQueryPort, "eqpManageQueryPort is null");
         this.eqpOptionsQueryPort = Objects.requireNonNull(eqpOptionsQueryPort, "eqpOptionsQueryPort is null");
         this.eqpDirectScenarioService = Objects.requireNonNull(eqpDirectScenarioService, "eqpDirectScenarioService is null");
@@ -130,77 +134,44 @@ public class EqpManagementService {
     }
 
     /**
-     * EQP를 생성하고 runtime sync까지 완료합니다.
+     * EQP 생성을 조정 원장 operation 으로 접수합니다(§13.2).
      *
      * @param command 생성 명령
-     * @param timeoutMs dual/lifecycle timeout
-     * @return 최종 처리 결과
+     * @param idempotencyKey 요청 idempotency key
+     * @return 접수 결과
      */
-    public CompletableFuture<EqpCommandResult> create(
+    public UiOperationAcceptance acceptCreate(
             final EqpManagementCommand.Create command,
-            final long timeoutMs
+            final String idempotencyKey
     ) {
-        return withRequestTimeout(
-                CompletableFuture.supplyAsync(() -> eqpDirectScenarioService.executeCreate(command), eqpManagementExecutor),
-                timeoutMs
-        );
+        return mutationCoordinator.create(command, idempotencyKey);
     }
 
     /**
-     * EQP를 수정하고 runtime sync까지 완료합니다.
+     * EQP 수정을 조정 원장 operation 으로 접수합니다(§13.2).
      *
      * @param eqpId 수정 대상 eqp id
      * @param command 수정 명령
-     * @param timeoutMs dual/lifecycle timeout
-     * @return 최종 처리 결과
+     * @param idempotencyKey 요청 idempotency key
+     * @return 접수 결과
      */
-    public CompletableFuture<EqpCommandResult> update(
+    public UiOperationAcceptance acceptUpdate(
             final String eqpId,
             final EqpManagementCommand.Update command,
-            final long timeoutMs
+            final String idempotencyKey
     ) {
-        return withRequestTimeout(
-                CompletableFuture.supplyAsync(
-                        () -> eqpDirectScenarioService.executeUpdate(eqpId, command), eqpManagementExecutor),
-                timeoutMs
-        );
+        return mutationCoordinator.update(eqpId, command, idempotencyKey);
     }
 
     /**
-     * EQP를 종료 후 삭제하고 runtime sync까지 완료합니다.
+     * EQP 삭제를 조정 원장 operation 으로 접수합니다(§13.2).
      *
      * @param eqpId 삭제 대상 eqp id
-     * @param timeoutMs dual/lifecycle timeout
-     * @return 최종 처리 결과
+     * @param idempotencyKey 요청 idempotency key
+     * @return 접수 결과
      */
-    public CompletableFuture<EqpCommandResult> delete(
-            final String eqpId,
-            final long timeoutMs
-    ) {
-        return withRequestTimeout(
-                CompletableFuture.supplyAsync(() -> eqpDirectScenarioService.executeDelete(eqpId), eqpManagementExecutor),
-                timeoutMs
-        );
-    }
-
-    /**
-     * 호출자가 지정한 요청 timeout 을 future 에 실제로 적용합니다.
-     *
-     * <p>종전에는 {@code timeoutMs} 파라미터가 create/update/delete 3곳 모두에서 무시돼
-     * 컨테이너 기본 async timeout 으로 503 이 나갔다 — 사용자에게는 실패로 보이는데 백그라운드 작업은
-     * 계속 진행돼 응답과 실제 결과가 어긋났다(S08 D-9).</p>
-     *
-     * <p>한계: 진행 중인 gateway 왕복 자체는 취소되지 않는다({@code orTimeout} 은 future 만 완료시킨다).
-     * 이 수정의 범위는 <b>응답 시점을 설정값으로 결정론화</b>하는 것이다.</p>
-     */
-    private static CompletableFuture<EqpCommandResult> withRequestTimeout(
-            final CompletableFuture<EqpCommandResult> future,
-            final long timeoutMs
-    ) {
-        if (timeoutMs <= 0L) {
-            throw new IllegalArgumentException("timeoutMs 는 양수여야 합니다. timeoutMs=" + timeoutMs);
-        }
-        return future.orTimeout(timeoutMs, TimeUnit.MILLISECONDS);
+    public UiOperationAcceptance acceptDelete(final String eqpId, final String idempotencyKey) {
+        return mutationCoordinator.delete(eqpId, idempotencyKey);
     }
 
     /**

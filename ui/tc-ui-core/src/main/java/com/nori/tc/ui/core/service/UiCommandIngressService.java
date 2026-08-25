@@ -1,7 +1,9 @@
 package com.nori.tc.ui.core.service;
 
+import com.nori.tc.ui.core.coordination.UiReplyProofIngestService;
 import com.nori.tc.ui.core.model.UiCommandReply;
 import com.nori.tc.ui.core.port.messaging.UiCommandIngressPort;
+import org.springframework.beans.factory.ObjectProvider;
 import com.nori.tc.ui.core.port.redis.AsyncResultStorePort;
 import com.nori.tc.ui.core.registry.DualResponseRegistry;
 import com.nori.tc.ui.domain.task.UiTaskResult;
@@ -45,21 +47,27 @@ public class UiCommandIngressService implements UiCommandIngressPort {
     private final DeployService deployService;
     private final DualResponseRegistry dualResponseRegistry;
     private final AsyncResultStorePort asyncResultStorePort;
+    private final ObjectProvider<UiReplyProofIngestService> replyProofIngestProvider;
 
     /**
      * 필수 의존성을 주입받습니다.
      *
+     * @param deployService deploy reply 라우팅 서비스
      * @param dualResponseRegistry eqp_create/update/delete DeferredResult 관리 레지스트리
      * @param asyncResultStorePort eqp_start/end 비동기 결과 Redis 저장 포트
+     * @param replyProofIngestProvider 조정 reply proof 기록 서비스(비조정 구성이면 비어 있음)
      */
     public UiCommandIngressService(
             final DeployService deployService,
             final DualResponseRegistry dualResponseRegistry,
-            final AsyncResultStorePort asyncResultStorePort
+            final AsyncResultStorePort asyncResultStorePort,
+            final ObjectProvider<UiReplyProofIngestService> replyProofIngestProvider
     ) {
         this.deployService = Objects.requireNonNull(deployService, "deployService is null");
         this.dualResponseRegistry = Objects.requireNonNull(dualResponseRegistry, "dualResponseRegistry is null");
         this.asyncResultStorePort = Objects.requireNonNull(asyncResultStorePort, "asyncResultStorePort is null");
+        this.replyProofIngestProvider =
+                Objects.requireNonNull(replyProofIngestProvider, "replyProofIngestProvider is null");
     }
 
     /**
@@ -74,6 +82,15 @@ public class UiCommandIngressService implements UiCommandIngressPort {
     @Override
     public void handle(final UiCommandReply reply) {
         Objects.requireNonNull(reply, "reply is null");
+
+        /*
+         * §13.5 — proof 기록이 먼저다. 원장 기록에 실패하면 여기서 예외가 올라가 ACK 가 막히고,
+         * 레거시 registry/Pub/Sub 경로가 없어도 operation 은 이 경로만으로 전진한다.
+         */
+        final UiReplyProofIngestService replyProofIngest = replyProofIngestProvider.getIfAvailable();
+        if (replyProofIngest != null && reply.hasCoordinationProof()) {
+            replyProofIngest.ingest(reply, System.currentTimeMillis());
+        }
 
         if (deployService.handleReply(reply)) {
             return;

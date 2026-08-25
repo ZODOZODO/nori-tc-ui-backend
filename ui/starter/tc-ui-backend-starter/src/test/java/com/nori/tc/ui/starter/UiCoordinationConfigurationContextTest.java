@@ -1,0 +1,195 @@
+package com.nori.tc.ui.starter;
+
+import com.nori.tc.common.coordination.script.CoordinationScriptExecutor;
+import com.nori.tc.common.coordination.store.CatalogHeadRedisStore;
+import com.nori.tc.common.coordination.store.CoordinationOutcome;
+import com.nori.tc.common.coordination.store.ClusterEpochRedisStore;
+import com.nori.tc.common.coordination.store.FencedLeaseRedisStore;
+import com.nori.tc.common.coordination.store.MembershipRedisStore;
+import com.nori.tc.common.coordination.store.OperationLedgerRedisStore;
+import com.nori.tc.common.coordination.store.ResourceBarrierRedisStore;
+import com.nori.tc.common.coordination.types.CatalogHead;
+import com.nori.tc.common.coordination.types.ClusterEpoch;
+import com.nori.tc.ui.adapters.redis.coordination.UiCoordinationContext;
+import com.nori.tc.ui.core.coordination.UiCoordinationRuntime;
+import com.nori.tc.ui.core.coordination.UiCoordinationStatus;
+import com.nori.tc.ui.core.coordination.UiEqpMutationCoordinator;
+import com.nori.tc.ui.core.coordination.UiOperationExecutor;
+import com.nori.tc.ui.core.coordination.UiOperationQueryService;
+import com.nori.tc.ui.core.coordination.UiOperationReconciler;
+import com.nori.tc.ui.core.coordination.UiPermissionCatalogGuard;
+import com.nori.tc.ui.core.coordination.UiReplyProofIngestService;
+import com.nori.tc.ui.core.coordination.UiScenarioCatalogGuard;
+import com.nori.tc.ui.core.coordination.port.UiOperationCommandPublisher;
+import com.nori.tc.ui.core.port.db.EqpManageQueryPort;
+import com.nori.tc.ui.core.port.db.EqpQueryPort;
+import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
+import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
+import com.nori.tc.ui.core.port.redis.AsyncResultStorePort;
+import com.nori.tc.ui.core.port.redis.DeployExecutionCoordinationPort;
+import com.nori.tc.ui.core.service.EqpPersistenceService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import tools.jackson.databind.ObjectMapper;
+
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * 조정 빈 그래프가 실제로 조립되는지 검증합니다(§13).
+ *
+ * <p>단위 테스트는 협력자를 손으로 조립하므로 빈 정의가 빠져도 통과하고, 실패는 앱 부팅에서만
+ * 드러납니다 — P2 에서 같은 간극이 {@code NoUniqueBeanDefinitionException} 으로 실제 발생했습니다.
+ * 여기서 그 간극을 막습니다.</p>
+ */
+class UiCoordinationConfigurationContextTest {
+
+    private final ApplicationContextRunner runner = new ApplicationContextRunner()
+            .withPropertyValues("tc.ui.backend.coordination.allow-local-session-identity=true")
+            .withUserConfiguration(AdapterStubs.class, UiCoordinationConfiguration.class);
+
+    @Test
+    @DisplayName("조정 빈 그래프가 단일 인스턴스로 조립된다")
+    void coordinationGraphAssembles() {
+        runner.run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).hasSingleBean(UiOperationExecutor.class);
+            assertThat(context).hasSingleBean(UiOperationReconciler.class);
+            assertThat(context).hasSingleBean(UiReplyProofIngestService.class);
+            assertThat(context).hasSingleBean(UiOperationQueryService.class);
+            assertThat(context).hasSingleBean(UiEqpMutationCoordinator.class);
+            assertThat(context).hasSingleBean(UiScenarioCatalogGuard.class);
+            assertThat(context).hasSingleBean(UiPermissionCatalogGuard.class);
+            assertThat(context).hasSingleBean(UiOperationCommandPublisher.class);
+            assertThat(context).hasSingleBean(UiCoordinationRuntime.class);
+            assertThat(context).hasSingleBean(UiCoordinationStatus.class);
+            assertThat(context).hasSingleBean(DeployExecutionCoordinationPort.class);
+        });
+    }
+
+    @Test
+    @DisplayName("enabled=false 면 조정 빈을 하나도 만들지 않는다")
+    void disabledPropertyRemovesTheWholeGraph() {
+        runner.withPropertyValues("tc.ui.backend.coordination.enabled=false")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).doesNotHaveBean(UiOperationExecutor.class);
+                    assertThat(context).doesNotHaveBean(UiCoordinationRuntime.class);
+                });
+    }
+
+    @Test
+    @DisplayName("readiness 표면은 조정 런타임과 같은 인스턴스다")
+    void coordinationStatusIsTheRuntime() {
+        runner.run(context -> assertThat(context.getBean(UiCoordinationStatus.class))
+                .isSameAs(context.getBean(UiCoordinationRuntime.class)));
+    }
+
+    /**
+     * 다른 ModuleConfiguration 이 제공하는 협력자만 대신 채웁니다.
+     *
+     * <p>{@link UiCoordinationContext} 는 실 Redis 와 발급된 cluster epoch 를 요구하므로 대역을 씁니다 —
+     * 여기서 보려는 것은 원장 동작이 아니라 <b>빈 조립</b>입니다.</p>
+     */
+    @Configuration(proxyBeanMethods = false)
+    static class AdapterStubs {
+
+        @Bean
+        UiCoordinationContext uiCoordinationContext() {
+            /*
+             * SmartLifecycle 이 refresh 에서 실제로 start() 를 부르므로, 기동 경로가 통과할 만큼만
+             * 원장 응답을 채운다 — 여기서 막히면 조립 실패인지 원장 응답 부족인지 구분되지 않는다.
+             */
+            final CoordinationOutcome ok = new CoordinationOutcome("OK", List.of());
+
+            final MembershipRedisStore membershipStore = Mockito.mock(MembershipRedisStore.class);
+            Mockito.when(membershipStore.register(
+                    Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(),
+                    Mockito.anyLong(), Mockito.anyLong())).thenReturn(ok);
+            Mockito.when(membershipStore.renewHeartbeat(
+                    Mockito.any(), Mockito.any(), Mockito.any(), Mockito.anyLong(),
+                    Mockito.anyLong(), Mockito.anyLong())).thenReturn(ok);
+
+            final CatalogHeadRedisStore catalogHeadStore = Mockito.mock(CatalogHeadRedisStore.class);
+            Mockito.when(catalogHeadStore.readHead(Mockito.anyString()))
+                    .thenAnswer(invocation -> new CatalogHead(invocation.getArgument(0), 0L, null));
+            Mockito.when(catalogHeadStore.commitHead(
+                    Mockito.anyString(), Mockito.anyLong(), Mockito.anyString(),
+                    Mockito.any(), Mockito.anyLong())).thenReturn(ok);
+
+            final ClusterEpochRedisStore clusterEpochStore = Mockito.mock(ClusterEpochRedisStore.class);
+            Mockito.when(clusterEpochStore.current()).thenReturn(Optional.of(new ClusterEpoch("epoch-1")));
+
+            final OperationLedgerRedisStore ledgerStore = Mockito.mock(OperationLedgerRedisStore.class);
+            Mockito.when(ledgerStore.pendingOperationIds(Mockito.anyLong(), Mockito.anyLong()))
+                    .thenReturn(List.of());
+
+            final UiCoordinationContext context = Mockito.mock(UiCoordinationContext.class);
+            Mockito.when(context.clusterEpoch()).thenReturn("epoch-1");
+            Mockito.when(context.executor()).thenReturn(Mockito.mock(CoordinationScriptExecutor.class));
+            Mockito.when(context.clusterEpochStore()).thenReturn(clusterEpochStore);
+            Mockito.when(context.operationLedgerStore()).thenReturn(ledgerStore);
+            Mockito.when(context.resourceBarrierStore())
+                    .thenReturn(Mockito.mock(ResourceBarrierRedisStore.class));
+            Mockito.when(context.membershipStore()).thenReturn(membershipStore);
+            Mockito.when(context.leaseStore()).thenReturn(Mockito.mock(FencedLeaseRedisStore.class));
+            Mockito.when(context.catalogHeadStore()).thenReturn(catalogHeadStore);
+            return context;
+        }
+
+        @Bean("businessStringRedisTemplate")
+        StringRedisTemplate businessStringRedisTemplate() {
+            return Mockito.mock(StringRedisTemplate.class);
+        }
+
+        @Bean
+        MeterRegistry meterRegistry() {
+            return new SimpleMeterRegistry();
+        }
+
+        @Bean
+        ObjectMapper objectMapper() {
+            return new ObjectMapper();
+        }
+
+        @Bean
+        EqpQueryPort eqpQueryPort() {
+            return Mockito.mock(EqpQueryPort.class);
+        }
+
+        @Bean
+        EqpManageQueryPort eqpManageQueryPort() {
+            return Mockito.mock(EqpManageQueryPort.class);
+        }
+
+        @Bean
+        EqpPersistenceService eqpPersistenceService() {
+            return Mockito.mock(EqpPersistenceService.class);
+        }
+
+        @Bean
+        AsyncResultStorePort asyncResultStorePort() {
+            return AsyncResultStorePort.noop();
+        }
+
+        @Bean
+        UiGatewayEventPublishPort uiGatewayEventPublishPort() {
+            return UiGatewayEventPublishPort.noop();
+        }
+
+        @Bean
+        UiBusinessEventPublishPort uiBusinessEventPublishPort() {
+            return Mockito.mock(UiBusinessEventPublishPort.class);
+        }
+    }
+}

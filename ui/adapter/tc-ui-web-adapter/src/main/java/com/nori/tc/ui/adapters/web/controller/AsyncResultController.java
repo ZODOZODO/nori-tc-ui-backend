@@ -1,14 +1,12 @@
 package com.nori.tc.ui.adapters.web.controller;
 
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
-import com.nori.tc.ui.adapters.web.dto.response.AsyncResultResponse;
-import com.nori.tc.ui.core.model.AsyncResultEntry;
-import com.nori.tc.ui.core.model.AsyncStatus;
-import com.nori.tc.ui.core.model.UiCommandReply;
-import com.nori.tc.ui.core.port.redis.AsyncResultStorePort;
-import org.springframework.http.HttpStatus;
+import com.nori.tc.ui.adapters.web.dto.response.OperationStatusResponse;
+import com.nori.tc.ui.core.coordination.UiOperationQueryService;
+import com.nori.tc.ui.core.coordination.model.UiOperationStatusView;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,28 +17,22 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * 비동기 작업 결과 polling REST API 컨트롤러입니다.
+ * operation 조회 REST API 컨트롤러입니다(§13.3 / Plan §8 B1).
  *
- * <p>제공 엔드포인트:</p>
+ * <p>{@code GET /api/async/{id}} 를 범용 operation 조회로 확장합니다. {@code id} 는 operationId 와
+ * 레거시 traceId 를 모두 받습니다 — URL 을 유지해 기존 Front 호출을 깨지 않기 위함입니다.</p>
+ *
+ * <p>응답 규칙</p>
  * <ul>
- *   <li>GET /api/async/{traceId} — eqp_start / eqp_end 작업 결과 polling</li>
+ *   <li>비terminal: {@code 202} + {@code status=PENDING} + 상세 phase</li>
+ *   <li>terminal 성공/실패/복구필요: {@code 200} + {@code PASS}/{@code FAIL}/{@code REPAIR_REQUIRED}</li>
+ *   <li>존재하지 않는 ID: {@code 404}</li>
+ *   <li>조정 원장 조회 불가: {@code 503} — <b>404 로 환원하지 않습니다</b>. 환원하면 Front 가
+ *       "작업이 사라졌다" 로 읽고 재요청해 중복 mutation 을 만듭니다.</li>
  * </ul>
  *
- * <p>polling 흐름:</p>
- * <ol>
- *   <li>클라이언트가 EQP_START 또는 EQP_END 요청 → 202 Accepted + traceId 수신</li>
-  *   <li>Gateway가 처리 결과를 tc.ui.commands 토픽에 발행</li>
-  *   <li>UiCommandKafkaSubscriber가 수신하여 {@link AsyncResultStorePort}에 Redis 저장</li>
- *   <li>클라이언트가 이 엔드포인트로 traceId를 사용해 polling</li>
- * </ol>
- *
- * <p>응답 규칙:</p>
- * <ul>
- *   <li>PENDING → 202 Accepted</li>
- *   <li>COMPLETED → 200 OK + {@link AsyncResultResponse} (status=PASS 또는 FAIL)</li>
- *   <li>TIMEOUT → 408 Request Timeout</li>
- *   <li>traceId 없음 → 404 Not Found</li>
- * </ul>
+ * <p>처리 deadline 이 지나도 {@code 408}/{@code TIMEOUT} terminal 을 만들지 않습니다 — 지연은
+ * {@code phase=RECONCILING} 으로만 표현되고, 늦게 도착한 적용이 실제 결과로 수렴합니다.</p>
  */
 @RestController
 @RequestMapping("/api/async")
@@ -48,72 +40,49 @@ public class AsyncResultController {
 
     private static final Logger log = LoggerFactory.getLogger(AsyncResultController.class);
 
-    private final AsyncResultStorePort asyncResultStorePort;
+    private final UiOperationQueryService operationQueryService;
 
     /**
      * 필수 의존성을 초기화합니다.
      *
-     * @param asyncResultStorePort 비동기 작업 결과 조회 포트 (Business Redis)
+     * @param operationQueryService operation 조회 서비스
      */
-    public AsyncResultController(final AsyncResultStorePort asyncResultStorePort) {
-        this.asyncResultStorePort = Objects.requireNonNull(asyncResultStorePort,
-                "asyncResultStorePort is null");
+    public AsyncResultController(final UiOperationQueryService operationQueryService) {
+        this.operationQueryService = Objects.requireNonNull(operationQueryService, "operationQueryService is null");
     }
 
     /**
-     * traceId로 비동기 작업 결과를 조회합니다.
+     * operationId 또는 traceId 로 작업 상태를 조회합니다.
      *
-     * <p>eqp_start / eqp_end 요청 후 Gateway 응답이 Business Redis에 저장되면
-     * 상태에 따라 202/200/408/404를 구분 반환합니다.</p>
-     *
-     * <p>클라이언트 polling 권장 간격:</p>
-     * <p>Gateway 처리 시간은 설비 상태에 따라 수백 밀리초 ~ 수십 초까지 다를 수 있습니다.
-     * 초기 1초 간격으로 시작하여 결과가 없으면 지수 백오프 방식으로 간격을 늘리는 것을 권장합니다.</p>
-     *
-     * @param traceId 조회할 작업 추적 ID (EQP_START/END 요청 시 반환된 traceId)
-     * @return 202(PENDING) | 200(COMPLETED) | 408(TIMEOUT) | 404(traceId 없음)
+     * @param id operationId 또는 traceId
+     * @return 200(terminal) / 202(비terminal) / 404(미존재)
      */
-    @GetMapping("/{traceId}")
-    public ResponseEntity<ApiResponse<AsyncResultResponse>> getResult(
-            @PathVariable final String traceId
-    ) {
-        log.trace("비동기 결과 조회 요청. traceId={}", traceId);
+    @GetMapping("/{id}")
+    public ResponseEntity<ApiResponse<OperationStatusResponse>> getResult(@PathVariable final String id) {
+        log.trace("operation 상태 조회 요청. id={}", id);
 
-        final Optional<AsyncResultEntry> entryOptional = asyncResultStorePort.getWithStatus(traceId);
-
-        if (entryOptional.isEmpty()) {
-            // traceId 자체가 존재하지 않는 경우
-            log.debug("비동기 결과 없음 (존재하지 않는 traceId). traceId={}", traceId);
+        final Optional<UiOperationStatusView> found =
+                operationQueryService.find(id, System.currentTimeMillis());
+        if (found.isEmpty()) {
+            log.debug("operation 없음. id={}", id);
             return ResponseEntity.notFound().build();
         }
 
-        final AsyncResultEntry entry = entryOptional.get();
-        final AsyncStatus status = entry.status();
+        final UiOperationStatusView view = found.get();
+        final OperationStatusResponse response = new OperationStatusResponse(
+                view.operationId(),
+                view.eqpId(),
+                view.status().name(),
+                view.phase().name(),
+                view.desiredRevision(),
+                view.startedAtEpochMs(),
+                view.updatedAtEpochMs(),
+                view.terminalAtEpochMs(),
+                view.errorCode(),
+                view.errorMsg(),
+                view.repairReason());
 
-        if (status == AsyncStatus.PENDING) {
-            log.debug("비동기 결과 처리 중. traceId={}", traceId);
-            final AsyncResultResponse response = new AsyncResultResponse(
-                    traceId, null, AsyncStatus.PENDING.name(), null, null
-            );
-            return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(response));
-        }
-
-        if (status == AsyncStatus.TIMEOUT) {
-            log.warn("비동기 결과 타임아웃. traceId={}", traceId);
-            final AsyncResultResponse response = new AsyncResultResponse(
-                    traceId, null, AsyncStatus.TIMEOUT.name(), "TIMEOUT", "처리 대기 시간이 초과되었습니다."
-            );
-            return ResponseEntity.status(HttpStatus.REQUEST_TIMEOUT).body(ApiResponse.success(response));
-        }
-
-        final UiCommandReply reply = entry.reply();
-        log.debug("비동기 결과 조회 완료. traceId={}, eqpId={}, status={}",
-                traceId, reply.eqpId(), reply.status());
-
-        final AsyncResultResponse response = new AsyncResultResponse(
-                traceId, reply.eqpId(), reply.status().name(), reply.errorCode(), reply.errorMsg()
-        );
-
-        return ResponseEntity.ok(ApiResponse.success(response));
+        final HttpStatus httpStatus = view.terminal() ? HttpStatus.OK : HttpStatus.ACCEPTED;
+        return ResponseEntity.status(httpStatus).body(ApiResponse.success(response));
     }
 }

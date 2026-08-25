@@ -50,6 +50,14 @@ dependencies {
     implementation("com.nori.tc:tc-common-logging:0.0.1-SNAPSHOT")
 
     /*
+     * §13.5 reply ingress 는 조정 원장 접근 실패를 인프라 실패로 분류해 ACK 를 막아야 하므로,
+     * 그 예외 타입(CoordinationUnavailableException)을 식별할 수 있어야 합니다.
+     * Redis 예외 타입 판별에는 spring-data-redis 의 예외 계층을 사용합니다.
+     */
+    implementation("com.nori.tc:tc-common-coordination:0.0.1-SNAPSHOT")
+    implementation(libs.spring.boot.starter.data.redis)
+
+    /*
      * Spring Kafka: KafkaTemplate, @KafkaListener, ProducerRecord 등
      */
     implementation(libs.spring.kafka)

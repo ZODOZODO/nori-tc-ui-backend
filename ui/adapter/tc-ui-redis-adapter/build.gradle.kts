@@ -22,6 +22,8 @@
 
 plugins {
     `java-library`
+    // Docker 미가용 CI 에서 무가드 Testcontainers 베이스가 빌드를 통째로 막는 재발을 차단합니다.
+    id("com.nori.tc.archunit-conventions")
     alias(libs.plugins.spring.dependency.management)
 }
 
@@ -58,6 +60,13 @@ dependencies {
     implementation("com.nori.tc:tc-common-shard:0.0.1-SNAPSHOT")
 
     /*
+     * 클러스터 조정 원장(§8) — operation ledger / resource barrier / membership / fenced lease /
+     * catalog head 의 Lua 원자 연산과 canonical digest 를 공통 구현으로 사용합니다.
+     * core 는 이 모듈에 의존하지 않고 port 로만 표현하며, 번역은 이 어댑터가 담당합니다.
+     */
+    api("com.nori.tc:tc-common-coordination:0.0.1-SNAPSHOT")
+
+    /*
      * Spring Data Redis: RedisTemplate, LettuceConnectionFactory, RedisSerializer 등
      * - spring.data.redis.* 표준 설정을 읽되, RedisConnectionFactory 빈은 직접 구성합니다.
      * - businessRedisTemplate(typed) / dlqRedisTemplate·commLogRedisTemplate(typeless, 적재 측 mode 일치).
@@ -83,6 +92,13 @@ dependencies {
      * transitive 로 가져오며, web-adapter 와 동일한 테스트 컨벤션을 공유합니다.
      */
     testImplementation(libs.spring.boot.starter.test)
+
+    /*
+     * §23.2/§23.3/§23.8 — 조정 원장은 Lua 원자성과 TTL 만료가 본질이라 mock 으로는 검증할 수 없다.
+     * 이 모듈의 기존 mock-only 컨벤션에 대한 의도적 예외이며, Docker 미가용 CI 에서는
+     * @Testcontainers(disabledWithoutDocker = true) 로 자동 skip 된다.
+     */
+    testImplementation("org.testcontainers:testcontainers-junit-jupiter:2.0.3")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

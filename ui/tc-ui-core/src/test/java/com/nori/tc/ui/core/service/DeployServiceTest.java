@@ -1132,6 +1132,11 @@ class DeployServiceTest {
     private EqpQueryPort eqpQueryPort(final InMemoryEqpCrudPort eqpCrudPort) {
         return new EqpQueryPort() {
             @Override
+            public java.util.List<String> findEqpIdsByModelVersionKey(final long modelVersionKey) {
+                return java.util.List.of();
+            }
+
+            @Override
             public PagedResponse<UiEqp> findAll(final UiPageRequest pageRequest) {
                 return PagedResponse.empty(0, 1);
             }
@@ -1267,7 +1272,8 @@ class DeployServiceTest {
         final DeployScenarioCatalogService catalogService = new DeployScenarioCatalogService(
                 deployProperties(scenarioDirectory),
                 new InMemoryCatalogMetaPort(),
-                objectMapper
+                objectMapper,
+                com.nori.tc.ui.core.coordination.UiScenarioCatalogGuard.disabled()
         );
         catalogService.initializeCatalog();
 

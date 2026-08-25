@@ -4,8 +4,11 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import com.nori.tc.logging.TcLogContext;
 import com.nori.tc.messaging.kafka.contract.KafkaUiTaskReplyMessage;
+import com.nori.tc.common.coordination.error.CoordinationUnavailableException;
+import com.nori.tc.ui.core.coordination.UiCoordinationUnavailableException;
 import com.nori.tc.ui.core.logging.UiObservationLogger;
 import com.nori.tc.ui.core.model.UiCommandReply;
+import com.nori.tc.ui.core.model.UiCommandReplyProof;
 import com.nori.tc.ui.core.port.messaging.UiCommandIngressPort;
 import com.nori.tc.ui.domain.task.UiTaskStatus;
 import io.micrometer.core.instrument.Counter;
@@ -16,6 +19,8 @@ import org.apache.kafka.common.KafkaException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.QueryTimeoutException;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
@@ -281,7 +286,34 @@ public class UiCommandKafkaSubscriber {
                 reply.data().interfaceType(),
                 status,
                 reply.data().errorCode(),
-                reply.data().errorMsg()
+                reply.data().errorMsg(),
+                toCoordinationProof(reply)
+        );
+    }
+
+    /**
+     * reply 의 coordination proof(v2)를 추출합니다(§10.2).
+     *
+     * <p>proof 는 <b>operationId 와 함께</b> 있어야 의미가 있습니다 — 어느 operation 의 증명인지 모르면
+     * 원장에 기록할 수 없으므로, 둘 중 하나라도 없으면 v1 응답으로 취급합니다.</p>
+     *
+     * @param reply Kafka 계약 응답
+     * @return proof(없으면 null)
+     */
+    private static UiCommandReplyProof toCoordinationProof(final KafkaUiTaskReplyMessage reply) {
+        final String operationId = reply.metadata().operationId();
+        final String commandState = reply.data().commandState();
+        if (operationId == null || operationId.isBlank() || commandState == null || commandState.isBlank()) {
+            return null;
+        }
+        return new UiCommandReplyProof(
+                operationId,
+                commandState,
+                reply.data().serviceSessionId(),
+                reply.data().ownerEpoch(),
+                reply.data().appliedRevision(),
+                reply.data().desiredRevision(),
+                reply.data().payloadSha256()
         );
     }
 
@@ -316,7 +348,23 @@ public class UiCommandKafkaSubscriber {
      * @return 인프라성 예외면 true
      */
     private static boolean isInfrastructureException(final Throwable ex) {
+        /*
+         * §13.5 — 조정 원장에 proof 를 기록하지 못한 것은 업무 실패가 아니라 인프라 실패다. 여기서
+         * ACK 하면 그 reply 는 영구히 사라지고 operation 은 열린 채로 남는다.
+         */
+        if (ex instanceof UiCoordinationUnavailableException
+                || ex.getCause() instanceof UiCoordinationUnavailableException
+                || ex instanceof CoordinationUnavailableException
+                || ex.getCause() instanceof CoordinationUnavailableException) {
+            return true;
+        }
         if (ex instanceof KafkaException || ex.getCause() instanceof KafkaException) {
+            return true;
+        }
+        if (ex instanceof RedisConnectionFailureException
+                || ex.getCause() instanceof RedisConnectionFailureException
+                || ex instanceof QueryTimeoutException
+                || ex.getCause() instanceof QueryTimeoutException) {
             return true;
         }
         // Spring Kafka 버전에 따라 ContainerStoppedException 타입이 노출되지 않을 수 있으므로

@@ -45,6 +45,7 @@ class EqpManagementServiceManageBatchTest {
             mock(EqpOptionsQueryPort.class),
             mock(EqpDirectScenarioService.class),
             mock(AsyncResultStorePort.class),
+            mock(com.nori.tc.ui.core.coordination.UiEqpMutationCoordinator.class),
             mock(Executor.class)
     );
 

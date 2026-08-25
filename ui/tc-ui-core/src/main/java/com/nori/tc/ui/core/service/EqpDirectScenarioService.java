@@ -139,14 +139,13 @@ public class EqpDirectScenarioService {
     ) {
         final long leaseTtlMs = Math.max(1L, deployProperties.targetLockExtraTtlMs());
         final String ownerToken = newExecutionId();
-        if (!coordinationPort.tryAcquireTargetLease(eqpId, ownerToken, leaseTtlMs)) {
-            throw new UiConflictException(
-                    "같은 설비의 다른 작업이 진행 중입니다. 잠시 후 다시 시도해 주세요. eqpId=" + eqpId);
-        }
+        final long leaseEpoch = coordinationPort.tryAcquireTargetLease(eqpId, ownerToken, leaseTtlMs)
+                .orElseThrow(() -> new UiConflictException(
+                        "같은 설비의 다른 작업이 진행 중입니다. 잠시 후 다시 시도해 주세요. eqpId=" + eqpId));
         try {
             return action.get();
         } finally {
-            coordinationPort.releaseTargetLease(eqpId, ownerToken);
+            coordinationPort.releaseTargetLease(eqpId, ownerToken, leaseEpoch);
         }
     }
 

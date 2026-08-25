@@ -1,7 +1,11 @@
 package com.nori.tc.ui.adapters.kafka.publish;
 
 import com.nori.tc.messaging.kafka.contract.GatewayEquipmentProfileSnapshot;
+import com.nori.tc.messaging.kafka.contract.KafkaUiTaskMessage;
+import com.nori.tc.ui.core.model.UiCommandCoordination;
 import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
+
+import java.time.OffsetDateTime;
 
 /**
  * UI core 의미 모델을 Kafka 계약 모델로 변환하는 어댑터 전용 매퍼입니다.
@@ -9,6 +13,43 @@ import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 final class UiKafkaContractMapper {
 
     private UiKafkaContractMapper() {
+    }
+
+    /**
+     * 명령 metadata 를 만듭니다 — coordination 정보가 있으면 v2, 없으면 v1 입니다(§10.1).
+     *
+     * <p>조정 구성에서 v1 로 내보내면 participant 가 자기 proof 를 어느 operation 에 남겨야 하는지
+     * 알 수 없어 operation 이 영원히 열린 채로 남습니다.</p>
+     *
+     * @param eventTypeName 이벤트 타입 이름
+     * @param source 발행 주체
+     * @param traceId 추적 ID
+     * @param coordination coordination metadata(없으면 null)
+     * @return Kafka 계약 metadata
+     */
+    static KafkaUiTaskMessage.KafkaUiTaskMetadata toMetadata(
+            final String eventTypeName,
+            final String source,
+            final String traceId,
+            final UiCommandCoordination coordination
+    ) {
+        final String timestamp = OffsetDateTime.now().toString();
+        if (coordination == null) {
+            return new KafkaUiTaskMessage.KafkaUiTaskMetadata(eventTypeName, timestamp, source, traceId);
+        }
+        return KafkaUiTaskMessage.KafkaUiTaskMetadata.v2(
+                eventTypeName,
+                timestamp,
+                source,
+                traceId,
+                coordination.operationId(),
+                coordination.executionId(),
+                coordination.phase(),
+                coordination.expectedBaseRevision(),
+                coordination.desiredRevision(),
+                coordination.payloadSha256(),
+                coordination.resourceKeys(),
+                coordination.deadlineAt());
     }
 
     static GatewayEquipmentProfileSnapshot toGatewayEquipmentProfileSnapshot(

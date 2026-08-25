@@ -47,7 +47,8 @@ class DeployPlanningServiceTest {
         final DeployScenarioCatalogService catalogService = new DeployScenarioCatalogService(
                 deployProperties(tempDir.resolve("missing-scenarios")),
                 new InMemoryCatalogMetaPort(),
-                objectMapper
+                objectMapper,
+                com.nori.tc.ui.core.coordination.UiScenarioCatalogGuard.disabled()
         );
         catalogService.initializeCatalog();
 
@@ -255,7 +256,8 @@ class DeployPlanningServiceTest {
         final DeployScenarioCatalogService catalogService = new DeployScenarioCatalogService(
                 deployProperties(tempDir.resolve("missing-scenarios")),
                 new InMemoryCatalogMetaPort(),
-                objectMapper
+                objectMapper,
+                com.nori.tc.ui.core.coordination.UiScenarioCatalogGuard.disabled()
         );
         catalogService.initializeCatalog();
         final DeployPlanningService plcPlanningService = new DeployPlanningService(
@@ -313,7 +315,8 @@ class DeployPlanningServiceTest {
         final DeployScenarioCatalogService catalogService = new DeployScenarioCatalogService(
                 deployProperties(tempDir.resolve("missing-scenarios")),
                 new InMemoryCatalogMetaPort(),
-                objectMapper
+                objectMapper,
+                com.nori.tc.ui.core.coordination.UiScenarioCatalogGuard.disabled()
         );
         catalogService.initializeCatalog();
         final DeployPlanningService plcPlanningService = new DeployPlanningService(
@@ -473,7 +476,8 @@ class DeployPlanningServiceTest {
         final DeployScenarioCatalogService catalogService = new DeployScenarioCatalogService(
                 deployProperties(tempDir.resolve("missing-scenarios")),
                 new InMemoryCatalogMetaPort(),
-                objectMapper
+                objectMapper,
+                com.nori.tc.ui.core.coordination.UiScenarioCatalogGuard.disabled()
         );
         catalogService.initializeCatalog();
         return new DeployPlanningService(

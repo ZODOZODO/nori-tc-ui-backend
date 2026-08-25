@@ -24,7 +24,8 @@ class UiApiPermissionCacheTest {
                         "^/api/deploys/[0-9]+/(start|hold|cancel|redeploy)$",
                         "POST"
                 )
-        ));
+        ),
+        com.nori.tc.ui.core.coordination.UiPermissionCatalogGuard.disabled());
         permissionCache.loadPermissions();
 
         final UserPrincipal principal = new UserPrincipal(1L, "admin", Set.of("DEPLOY_ACTION"));
@@ -42,7 +43,8 @@ class UiApiPermissionCacheTest {
                         "[invalid-regex",
                         "POST"
                 )
-        ));
+        ),
+        com.nori.tc.ui.core.coordination.UiPermissionCatalogGuard.disabled());
         permissionCache.loadPermissions();
 
         final UserPrincipal principal = new UserPrincipal(1L, "admin", Set.of("DEPLOY_ACTION"));

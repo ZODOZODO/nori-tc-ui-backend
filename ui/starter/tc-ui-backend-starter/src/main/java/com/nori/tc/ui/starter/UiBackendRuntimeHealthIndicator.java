@@ -1,5 +1,6 @@
 package com.nori.tc.ui.starter;
 
+import com.nori.tc.ui.core.coordination.UiCoordinationStatus;
 import com.nori.tc.ui.core.service.DeployService;
 import com.nori.tc.ui.core.service.DeployTraceRegistry;
 import com.nori.tc.ui.core.service.EqpRepairTaskService;
@@ -26,17 +27,20 @@ public class UiBackendRuntimeHealthIndicator implements HealthIndicator {
     private final EqpRepairTaskService repairTaskService;
     private final LettuceConnectionFactory gatewayRedisFactory;
     private final LettuceConnectionFactory businessRedisFactory;
+    private final UiCoordinationStatus coordinationStatus;
 
     public UiBackendRuntimeHealthIndicator(
             final DeployService deployService,
             final DeployTraceRegistry deployTraceRegistry,
             final EqpRepairTaskService repairTaskService,
+            final UiCoordinationStatus coordinationStatus,
             @Qualifier("gatewayLettuceConnectionFactory") final LettuceConnectionFactory gatewayRedisFactory,
             @Qualifier("businessLettuceConnectionFactory") final LettuceConnectionFactory businessRedisFactory
     ) {
         this.deployService = Objects.requireNonNull(deployService, "deployService is null");
         this.deployTraceRegistry = Objects.requireNonNull(deployTraceRegistry, "deployTraceRegistry is null");
         this.repairTaskService = Objects.requireNonNull(repairTaskService, "repairTaskService is null");
+        this.coordinationStatus = Objects.requireNonNull(coordinationStatus, "coordinationStatus is null");
         this.gatewayRedisFactory = Objects.requireNonNull(gatewayRedisFactory, "gatewayRedisFactory is null");
         this.businessRedisFactory = Objects.requireNonNull(businessRedisFactory, "businessRedisFactory is null");
     }
@@ -52,11 +56,19 @@ public class UiBackendRuntimeHealthIndicator implements HealthIndicator {
         final boolean saturated = targetExecutorQueueSize > 0
                 && targetExecutorActiveCount >= deployService.targetConcurrency();
         final boolean redisReady = gatewayRedisStats.ready() && businessRedisStats.ready();
+        final boolean coordinationReady = coordinationStatus.readyForMutation();
 
-        // Redis 연결 불가만 DOWN으로 처리. repair 잔존/executor 포화는 처리 중 상태이며 서비스 불가 사유가 아님.
-        final Status status = redisReady ? Status.UP : Status.DOWN;
+        /*
+         * §13.11 — readiness 는 Redis ping 만이 아니라 조정 상태를 함께 본다. atomic script 검증 실패,
+         * cluster epoch mismatch, catalog revision mismatch, recovery backlog 초과, self-fence 는
+         * 모두 "mutation 을 받으면 안 되는" 상태다. repair 잔존/executor 포화는 처리 중 상태이므로
+         * 종전대로 DOWN 사유가 아니다.
+         */
+        final Status status = redisReady && coordinationReady ? Status.UP : Status.DOWN;
 
         return Health.status(status)
+                .withDetail("coordination", coordinationStatus.details())
+                .withDetail("coordinationReady", coordinationReady)
                 .withDetail("gatewayRedisPing", gatewayRedisStats.ping())
                 .withDetail("businessRedisPing", businessRedisStats.ping())
                 .withDetail("gatewayRedisStats", gatewayRedisStats.details())

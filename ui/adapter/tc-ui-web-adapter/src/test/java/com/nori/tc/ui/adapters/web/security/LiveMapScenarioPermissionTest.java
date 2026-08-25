@@ -31,7 +31,8 @@ class LiveMapScenarioPermissionTest {
         final UiApiPermissionCache cache = new UiApiPermissionCache(() -> List.of(
                 permission(DEMO_RUN_WRITE, UiPermissionMatchType.PREFIX, "/api/live-map/demo-runs", "POST"),
                 permission(SCENARIO_DELETE, UiPermissionMatchType.PREFIX, "/api/live-map/demo-runs/scenarios", "DELETE")
-        ));
+        ),
+        com.nori.tc.ui.core.coordination.UiPermissionCatalogGuard.disabled());
         cache.loadPermissions();
         return cache;
     }

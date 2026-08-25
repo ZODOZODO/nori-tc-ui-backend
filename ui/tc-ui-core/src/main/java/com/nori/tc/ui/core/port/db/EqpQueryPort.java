@@ -116,4 +116,16 @@ public interface EqpQueryPort {
      * @return 설비 존재 시 상태 스냅샷(상태 데이터가 없어도 Optional은 present), 설비 미존재 시 empty
      */
     Optional<EqpRuntimeStateView> findRuntimeStateByEqpId(String eqpId);
+
+    /**
+     * 같은 {@code model_version_key} 를 참조하는 모든 설비 ID 를 조회합니다(§7.3 영향 집합 폐쇄).
+     *
+     * <p>model parameter 와 Business JAR 는 {@code modelVersionKey} 공유 상태이므로 그 version 을
+     * 참조하는 <b>모든</b> 설비가 영향 집합입니다. 일부만 잠그고 진행하면 나머지 설비가 옛 plugin/
+     * parameter 로 처리를 계속합니다 — 그래서 이 조회가 실패하면 operation 을 접수하지 않습니다.</p>
+     *
+     * @param modelVersionKey 모델 버전 키
+     * @return 해당 version 을 참조하는 설비 ID 목록(정렬 보장 없음)
+     */
+    List<String> findEqpIdsByModelVersionKey(long modelVersionKey);
 }

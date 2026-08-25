@@ -53,36 +53,39 @@ class EqpManagementServiceTest {
             mock(EqpOptionsQueryPort.class),
             mock(EqpDirectScenarioService.class),
             asyncResultStorePort,
+            mock(com.nori.tc.ui.core.coordination.UiEqpMutationCoordinator.class),
             mock(Executor.class)
     );
 
     /**
-     * S08 D-9 — 컨트롤러가 넘기는 dualRequestTimeoutMs 가 create/update/delete 3곳에서 완전히 무시됐다.
-     * 그러면 사용자에게는 컨테이너 기본 async timeout 으로 503 이 나가는데 백그라운드 작업은 계속 진행돼
-     * 응답과 실제 결과가 어긋난다(사용자는 실패로 알고 재시도 → 동시 편집 유발).
+     * §13.2 — mutation 은 <b>접수</b>로 끝난다. 종전에는 컨트롤러가 넘긴 timeout 만큼 실행을 기다렸고,
+     * 그 시간을 넘기면 사용자에게 실패로 보이는데 백그라운드 작업은 계속 진행돼 응답과 실제 결과가
+     * 어긋났다. 이제는 실행을 기다리지 않으므로 "요청이 오래 걸리면 실패" 라는 개념 자체가 없다.
      */
     @Test
-    @DisplayName("S08 D-9: update 는 timeoutMs 를 넘기면 TimeoutException 으로 완료합니다")
-    void updateAppliesTimeoutFromCaller() {
-        final EqpDirectScenarioService blockingDirectService = mock(EqpDirectScenarioService.class);
-        when(blockingDirectService.executeUpdate(eq("EQP-01"), any())).thenAnswer(invocation -> {
-            Thread.sleep(2_000L);
-            return EqpCommandResult.ok();
-        });
-        final EqpManagementService timeoutService = new EqpManagementService(
+    @DisplayName("§13.2: update 는 실행을 기다리지 않고 접수 결과를 즉시 반환합니다")
+    void updateReturnsAcceptanceWithoutWaitingForExecution() {
+        final com.nori.tc.ui.core.coordination.UiEqpMutationCoordinator slowCoordinator =
+                mock(com.nori.tc.ui.core.coordination.UiEqpMutationCoordinator.class);
+        final com.nori.tc.ui.core.coordination.model.UiOperationAcceptance accepted =
+                com.nori.tc.ui.core.coordination.model.UiOperationAcceptance.accepted("op-1");
+        when(slowCoordinator.update(eq("EQP-01"), any(), eq("KEY-1"))).thenReturn(accepted);
+
+        final EqpManagementService acceptingService = new EqpManagementService(
                 mock(EqpManageQueryPort.class),
                 mock(EqpOptionsQueryPort.class),
-                blockingDirectService,
+                mock(EqpDirectScenarioService.class),
                 asyncResultStorePort,
+                slowCoordinator,
                 Executors.newSingleThreadExecutor()
         );
 
-        final CompletableFuture<EqpCommandResult> future =
-                timeoutService.update("EQP-01", mock(EqpManagementCommand.Update.class), 100L);
+        final var result = acceptingService.acceptUpdate(
+                "EQP-01", mock(EqpManagementCommand.Update.class), "KEY-1");
 
-        final ExecutionException failure = assertThrows(ExecutionException.class,
-                () -> future.get(3, TimeUnit.SECONDS));
-        assertInstanceOf(TimeoutException.class, failure.getCause());
+        assertEquals("op-1", result.operationId());
+        assertEquals(com.nori.tc.ui.core.coordination.model.UiOperationState.PENDING, result.state());
+        assertEquals(com.nori.tc.ui.core.coordination.model.UiOperationPhase.ACCEPTED, result.phase());
     }
 
     /**
@@ -104,6 +107,7 @@ class EqpManagementServiceTest {
                 mock(EqpOptionsQueryPort.class),
                 directService,
                 failingStore,
+                mock(com.nori.tc.ui.core.coordination.UiEqpMutationCoordinator.class),
                 Executors.newSingleThreadExecutor()
         );
 
@@ -190,6 +194,7 @@ class EqpManagementServiceTest {
                 mock(EqpOptionsQueryPort.class),
                 directService,
                 asyncResultStorePort,
+                mock(com.nori.tc.ui.core.coordination.UiEqpMutationCoordinator.class),
                 Executors.newSingleThreadExecutor()
         );
 
@@ -219,6 +224,7 @@ class EqpManagementServiceTest {
                 mock(EqpOptionsQueryPort.class),
                 directService,
                 asyncResultStorePort,
+                mock(com.nori.tc.ui.core.coordination.UiEqpMutationCoordinator.class),
                 Executors.newSingleThreadExecutor()
         );
 
@@ -244,6 +250,7 @@ class EqpManagementServiceTest {
                 mock(EqpOptionsQueryPort.class),
                 mock(EqpDirectScenarioService.class),
                 asyncResultStorePort,
+                mock(com.nori.tc.ui.core.coordination.UiEqpMutationCoordinator.class),
                 mock(Executor.class)
         );
 

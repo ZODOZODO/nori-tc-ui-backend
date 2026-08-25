@@ -418,18 +418,25 @@ class EqpDirectScenarioServiceTest {
     private static DeployExecutionCoordinationPort leaseAlwaysHeldByOthers() {
         return new DeployExecutionCoordinationPort() {
             @Override
-            public boolean tryAcquireTargetLease(final String eqpId, final String ownerToken, final long ttlMs) {
-                return false;
+            public Optional<Long> tryAcquireTargetLease(
+                    final String eqpId, final String ownerToken, final long ttlMs) {
+                return Optional.empty();
             }
 
             @Override
-            public void releaseTargetLease(final String eqpId, final String ownerToken) {
+            public void releaseTargetLease(final String eqpId, final String ownerToken, final long epoch) {
                 throw new AssertionError("lease 를 얻지 못했으면 해제도 호출되지 않아야 합니다.");
             }
 
             @Override
-            public boolean registerTargetExecution(final String executionKey, final long ttlMs) {
-                return true;
+            public ExecutionClaim claimTargetExecution(
+                    final String executionKey, final String ownerToken, final long claimTtlMs) {
+                return ExecutionClaim.CLAIMED;
+            }
+
+            @Override
+            public void completeTargetExecution(final String executionKey, final long retentionTtlMs) {
+                throw new AssertionError("lease 를 얻지 못했으면 완료 기록도 호출되지 않아야 합니다.");
             }
         };
     }
@@ -457,7 +464,8 @@ class EqpDirectScenarioServiceTest {
         final DeployScenarioCatalogService catalogService = new DeployScenarioCatalogService(
                 deployProperties,
                 new InMemoryCatalogMetaPort(),
-                objectMapper
+                objectMapper,
+                com.nori.tc.ui.core.coordination.UiScenarioCatalogGuard.disabled()
         );
         catalogService.initializeCatalog();
         final DeployPlanningService planningService = new DeployPlanningService(
@@ -525,6 +533,11 @@ class EqpDirectScenarioServiceTest {
 
     private EqpQueryPort eqpQueryPort() {
         return new EqpQueryPort() {
+            @Override
+            public java.util.List<String> findEqpIdsByModelVersionKey(final long modelVersionKey) {
+                return java.util.List.of();
+            }
+
             @Override
             public com.nori.tc.ui.core.model.PagedResponse<UiEqp> findAll(final com.nori.tc.ui.core.model.UiPageRequest pageRequest) {
                 return com.nori.tc.ui.core.model.PagedResponse.empty(0, 1);

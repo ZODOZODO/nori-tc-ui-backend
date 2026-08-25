@@ -72,7 +72,7 @@ public class DeployPlanningService {
                     + deployProperties.maxTargetsPerRequest() + "개 이하여야 합니다.");
         }
 
-        final DeployScenarioCatalog catalog = deployScenarioCatalogService.currentCatalog();
+        final DeployScenarioCatalog catalog = deployScenarioCatalogService.currentCatalogForPlanning();
         final List<DeployTargetPlanDraft> targetPlans = new ArrayList<>();
 
         // plan 은 equipmentProfile 을 포함한 전체 상태를 1회 배치 조회한다(근원 B, R3). delta/scenario/step 계산 로직은 불변.
@@ -117,7 +117,7 @@ public class DeployPlanningService {
                     + deployProperties.maxTargetsPerRequest() + "개 이하여야 합니다.");
         }
 
-        final DeployScenarioCatalog catalog = deployScenarioCatalogService.currentCatalog();
+        final DeployScenarioCatalog catalog = deployScenarioCatalogService.currentCatalogForPlanning();
         final List<DeployScenarioDefinition> registerScenarios = catalog.sortedScenarios().stream()
                 .filter(definition -> definition.appliesTo().eventTypes().contains(UiCommandEventType.EQP_REGISTER_DEPLOY))
                 .toList();

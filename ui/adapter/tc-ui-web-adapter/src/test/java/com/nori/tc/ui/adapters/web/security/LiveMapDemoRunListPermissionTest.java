@@ -26,7 +26,8 @@ class LiveMapDemoRunListPermissionTest {
     private UiApiPermissionCache seededCache() {
         final UiApiPermissionCache cache = new UiApiPermissionCache(() -> List.of(
                 permission(DEMO_RUN_READ, UiPermissionMatchType.PREFIX, "/api/live-map/demo-runs", "GET")
-        ));
+        ),
+        com.nori.tc.ui.core.coordination.UiPermissionCatalogGuard.disabled());
         cache.loadPermissions();
         return cache;
     }

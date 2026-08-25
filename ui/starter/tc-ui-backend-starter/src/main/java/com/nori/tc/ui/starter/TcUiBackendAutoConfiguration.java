@@ -8,6 +8,7 @@ import com.nori.tc.ui.adapters.redis.config.UiRedisAdapterAutoConfiguration;
 import com.nori.tc.ui.adapters.redis.config.UiRedisProperties;
 import com.nori.tc.ui.adapters.web.config.UiWebAdapterAutoConfiguration;
 import com.nori.tc.ui.adapters.web.simulator.LiveMapSimulatorRunFacade;
+import com.nori.tc.ui.core.coordination.UiCoordinationStatus;
 import com.nori.tc.ui.core.auth.UiAuthAsyncExecutor;
 import com.nori.tc.ui.core.properties.UiDeployProperties;
 import com.nori.tc.ui.core.service.DeployService;
@@ -60,6 +61,7 @@ import java.util.concurrent.Executor;
 @EnableConfigurationProperties(UiDeployProperties.class)
 @Import({
         UiCoreModuleConfiguration.class,
+        UiCoordinationConfiguration.class,     // 클러스터 조정 원장(§13) — 조정 on/off 를 빈 선택으로 가른다
         UiWebAdapterAutoConfiguration.class,   // Web: Controller + Security
         UiKafkaAdapterAutoConfiguration.class, // Kafka: Publisher/Subscriber + Listener config
         UiRedisAdapterAutoConfiguration.class, // Redis: shared connection + logical templates + Pub/Sub
@@ -269,6 +271,7 @@ public class TcUiBackendAutoConfiguration {
      * @param deployService deploy 실행 상태 조회 서비스
      * @param deployTraceRegistry deploy trace 저장소
      * @param repairTaskService repair backlog 조회 서비스
+     * @param coordinationStatus 조정 상태 표면(§13.11)
      * @param gatewayRedisFactory gateway redis factory
      * @param businessRedisFactory business redis factory
      * @return UI backend runtime readiness contributor
@@ -278,6 +281,7 @@ public class TcUiBackendAutoConfiguration {
             final DeployService deployService,
             final DeployTraceRegistry deployTraceRegistry,
             final EqpRepairTaskService repairTaskService,
+            final UiCoordinationStatus coordinationStatus,
             @Qualifier("gatewayLettuceConnectionFactory") final LettuceConnectionFactory gatewayRedisFactory,
             @Qualifier("businessLettuceConnectionFactory") final LettuceConnectionFactory businessRedisFactory
     ) {
@@ -285,6 +289,7 @@ public class TcUiBackendAutoConfiguration {
                 deployService,
                 deployTraceRegistry,
                 repairTaskService,
+                coordinationStatus,
                 gatewayRedisFactory,
                 businessRedisFactory
         );

@@ -42,7 +42,8 @@ class UiApiPermissionGatingTest {
         final UiApiPermissionCache cache = new UiApiPermissionCache(() -> List.of(
                 permission(USER_READ, UiPermissionMatchType.PREFIX, "/api/user", "GET"),
                 permission(DLQ_READ, UiPermissionMatchType.PREFIX, "/api/dlq", "GET")
-        ));
+        ),
+        com.nori.tc.ui.core.coordination.UiPermissionCatalogGuard.disabled());
         cache.loadPermissions();
         return cache;
     }

@@ -1,6 +1,9 @@
 package com.nori.tc.ui.adapters.web.controller.support;
 
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
+import com.nori.tc.ui.core.coordination.UiCatalogNotSyncedException;
+import com.nori.tc.ui.core.coordination.UiCoordinationUnavailableException;
+import com.nori.tc.ui.core.coordination.UiOperationConflictException;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.exception.UiErrorCode;
@@ -110,6 +113,67 @@ public class UiApiExceptionHandler extends ResponseEntityExceptionHandler {
                 resolveMethod(request), resolveRequestUri(request), exception.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiResponse.error(exception.errorCode(), exception.getMessage()));
+    }
+
+    /**
+     * 조정 원장 충돌을 409로 변환합니다(§13.2/§18.1).
+     *
+     * <p>기존 operation/result 는 바뀌지 않았음을 뜻하므로, Front 는 같은 요청을 다른 key 로 다시
+     * 보내거나 진행 중 작업이 끝나기를 기다려야 합니다.</p>
+     *
+     * @param exception 충돌 예외
+     * @param request 요청
+     * @return 409 응답
+     */
+    @ExceptionHandler(UiOperationConflictException.class)
+    public ResponseEntity<ApiResponse<Void>> handleOperationConflict(
+            final UiOperationConflictException exception,
+            final HttpServletRequest request
+    ) {
+        log.warn("operation 충돌. method={}, uri={}, errorCode={}, conflictingOperationId={}, message={}",
+                resolveMethod(request), resolveRequestUri(request), exception.errorCode(),
+                exception.conflictingOperationId(), exception.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.error(exception.errorCode(), exception.getMessage()));
+    }
+
+    /**
+     * 조정 원장 접근 불가를 503으로 변환합니다(§13.2).
+     *
+     * <p>404 로 환원하지 않습니다 — Front 가 "작업이 사라졌다" 로 읽고 재요청하면 중복 mutation 이
+     * 생깁니다.</p>
+     *
+     * @param exception 조정 불가 예외
+     * @param request 요청
+     * @return 503 응답
+     */
+    @ExceptionHandler(UiCoordinationUnavailableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleCoordinationUnavailable(
+            final UiCoordinationUnavailableException exception,
+            final HttpServletRequest request
+    ) {
+        log.error("조정 원장 접근 불가. method={}, uri={}, message={}",
+                resolveMethod(request), resolveRequestUri(request), exception.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiResponse.error(UiCoordinationUnavailableException.ERROR_CODE, exception.getMessage()));
+    }
+
+    /**
+     * catalog head mismatch 를 503으로 변환합니다(§13.9/§13.10).
+     *
+     * @param exception catalog mismatch 예외
+     * @param request 요청
+     * @return 503 응답
+     */
+    @ExceptionHandler(UiCatalogNotSyncedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleCatalogNotSynced(
+            final UiCatalogNotSyncedException exception,
+            final HttpServletRequest request
+    ) {
+        log.error("catalog head mismatch. method={}, uri={}, catalogType={}, message={}",
+                resolveMethod(request), resolveRequestUri(request), exception.catalogType(), exception.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiResponse.error(UiCatalogNotSyncedException.ERROR_CODE, exception.getMessage()));
     }
 
     /**

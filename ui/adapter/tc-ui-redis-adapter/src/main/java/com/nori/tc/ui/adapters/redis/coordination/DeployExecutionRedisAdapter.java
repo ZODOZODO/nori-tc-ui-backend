@@ -1,100 +1,128 @@
 package com.nori.tc.ui.adapters.redis.coordination;
 
+import com.nori.tc.common.coordination.CoordinationKeys;
+import com.nori.tc.common.coordination.store.CoordinationOutcome;
+import com.nori.tc.common.coordination.store.FencedLeaseRedisStore;
 import com.nori.tc.ui.core.port.redis.DeployExecutionCoordinationPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.context.annotation.Primary;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.stereotype.Service;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
- * Deploy target 분산 lease / idempotency를 Redis에 저장하는 어댑터입니다.
+ * Deploy/direct target 실행의 lease 와 idempotency 를 Redis 에 기록하는 어댑터입니다(§13.4).
+ *
+ * <p>lease 는 공통 {@link FencedLeaseRedisStore} 로 위임합니다 — epoch counter 증가와 lease 설정을
+ * 한 스크립트에서 수행하고, 해제는 {@code session + epoch} 일치일 때만 성공합니다. 종전 구현은
+ * {@code SETNX} 실패 시 {@code GET} 으로 소유자를 확인하고 {@code EXPIRE} 로 연장했는데, 그 사이
+ * lease 가 만료되어 다른 인스턴스가 소유자가 되면 옛 소유자가 새 lease 를 연장하거나 지웠습니다.</p>
+ *
+ * <p>실행 claim 은 시작 전 {@code COMPLETED} 를 쓰지 않습니다 — 완료 표시는 실행이 끝난 뒤에만
+ * 기록되고, claim 은 소유 프로세스가 죽으면 TTL 로 풀려 다른 Pod 가 이어받습니다.</p>
  */
-@Service
-@Primary
-public class DeployExecutionRedisAdapter implements DeployExecutionCoordinationPort {
+public final class DeployExecutionRedisAdapter implements DeployExecutionCoordinationPort {
 
     private static final Logger log = LoggerFactory.getLogger(DeployExecutionRedisAdapter.class);
 
-    private static final String LEASE_KEY_PREFIX = "tc:ui:backend:deploy:lease:";
     private static final String EXECUTION_KEY_PREFIX = "tc:ui:backend:deploy:execution:";
+    private static final String CLAIM_VALUE_PREFIX = "CLAIMED:";
+    private static final String COMPLETED_VALUE = "COMPLETED";
 
-    private final RedisTemplate<String, Object> businessRedisTemplate;
+    private final FencedLeaseRedisStore leaseStore;
+    private final StringRedisTemplate stringRedisTemplate;
 
+    /**
+     * 어댑터를 만듭니다.
+     *
+     * <p>claim key 는 <b>String 직렬화 template</b> 으로만 다룹니다 — JSON 직렬화 template 과 섞으면
+     * 같은 key 를 한쪽은 {@code COMPLETED}, 다른 쪽은 {@code "COMPLETED"} 로 읽어 비교가 어긋납니다.</p>
+     *
+     * @param leaseStore 공통 fenced lease store
+     * @param stringRedisTemplate 실행 claim 저장용 String template
+     */
     public DeployExecutionRedisAdapter(
-            @Qualifier("businessRedisTemplate") final RedisTemplate<String, Object> businessRedisTemplate
+            final FencedLeaseRedisStore leaseStore,
+            final StringRedisTemplate stringRedisTemplate
     ) {
-        this.businessRedisTemplate = Objects.requireNonNull(businessRedisTemplate,
-                "businessRedisTemplate is null");
+        this.leaseStore = Objects.requireNonNull(leaseStore, "leaseStore is null");
+        this.stringRedisTemplate = Objects.requireNonNull(stringRedisTemplate, "stringRedisTemplate is null");
     }
 
     @Override
-    public boolean tryAcquireTargetLease(final String eqpId, final String ownerToken, final long ttlMs) {
+    public Optional<Long> tryAcquireTargetLease(final String eqpId, final String ownerToken, final long ttlMs) {
         Objects.requireNonNull(eqpId, "eqpId is null");
         Objects.requireNonNull(ownerToken, "ownerToken is null");
 
-        final String key = LEASE_KEY_PREFIX + eqpId;
-        final Duration ttl = Duration.ofMillis(Math.max(1L, ttlMs));
-        try {
-            final Boolean acquired = businessRedisTemplate.opsForValue().setIfAbsent(key, ownerToken, ttl);
-            if (Boolean.TRUE.equals(acquired)) {
-                return true;
-            }
-
-            final Object currentOwner = businessRedisTemplate.opsForValue().get(key);
-            if (ownerToken.equals(asString(currentOwner))) {
-                businessRedisTemplate.expire(key, ttl);
-                return true;
-            }
-            return false;
-        } catch (Exception redisException) {
-            log.error("deploy lease 획득 실패. eqpId={}, ownerToken={}", eqpId, ownerToken, redisException);
-            throw redisException;
+        final CoordinationOutcome outcome = leaseStore.acquire(
+                CoordinationKeys.equipmentExecutionEpochKey(eqpId),
+                CoordinationKeys.equipmentExecutionLeaseKey(eqpId),
+                ownerToken,
+                Math.max(1L, ttlMs),
+                "{\"role\":\"deploy-target\"}",
+                System.currentTimeMillis());
+        if ("OK".equals(outcome.code())) {
+            return Optional.of(Long.parseLong(outcome.value(0)));
         }
+        if (log.isDebugEnabled()) {
+            log.debug("deploy target lease 미획득. eqpId={}, code={}, owner={}",
+                    eqpId, outcome.code(), outcome.value(0));
+        }
+        return Optional.empty();
     }
 
     @Override
-    public void releaseTargetLease(final String eqpId, final String ownerToken) {
+    public void releaseTargetLease(final String eqpId, final String ownerToken, final long epoch) {
         if (eqpId == null || ownerToken == null) {
             return;
         }
-
-        final String key = LEASE_KEY_PREFIX + eqpId;
-        try {
-            final Object currentOwner = businessRedisTemplate.opsForValue().get(key);
-            if (ownerToken.equals(asString(currentOwner))) {
-                businessRedisTemplate.delete(key);
-            }
-        } catch (Exception redisException) {
-            log.warn("deploy lease 해제 실패. eqpId={}, ownerToken={}", eqpId, ownerToken, redisException);
+        final String code = leaseStore.release(
+                CoordinationKeys.equipmentExecutionLeaseKey(eqpId),
+                ownerToken,
+                epoch,
+                System.currentTimeMillis()).code();
+        if (!"OK".equals(code)) {
+            log.warn("deploy target lease 해제가 거부되었습니다. eqpId={}, ownerToken={}, epoch={}, code={}",
+                    eqpId, ownerToken, epoch, code);
         }
     }
 
     @Override
-    public boolean registerTargetExecution(final String executionKey, final long ttlMs) {
+    public ExecutionClaim claimTargetExecution(
+            final String executionKey,
+            final String ownerToken,
+            final long claimTtlMs
+    ) {
         Objects.requireNonNull(executionKey, "executionKey is null");
+        Objects.requireNonNull(ownerToken, "ownerToken is null");
 
         final String key = EXECUTION_KEY_PREFIX + executionKey;
-        try {
-            return Boolean.TRUE.equals(businessRedisTemplate.opsForValue().setIfAbsent(
-                    key,
-                    "COMPLETED",
-                    Duration.ofMillis(Math.max(1L, ttlMs))
-            ));
-        } catch (Exception redisException) {
-            log.error("deploy execution idempotency 기록 실패. executionKey={}", executionKey, redisException);
-            throw redisException;
+        final String claimValue = CLAIM_VALUE_PREFIX + ownerToken;
+        final Duration claimTtl = Duration.ofMillis(Math.max(1L, claimTtlMs));
+        if (Boolean.TRUE.equals(stringRedisTemplate.opsForValue().setIfAbsent(key, claimValue, claimTtl))) {
+            return ExecutionClaim.CLAIMED;
         }
+
+        final String current = stringRedisTemplate.opsForValue().get(key);
+        if (COMPLETED_VALUE.equals(current)) {
+            return ExecutionClaim.ALREADY_COMPLETED;
+        }
+        if (claimValue.equals(current)) {
+            stringRedisTemplate.expire(key, claimTtl);
+            return ExecutionClaim.CLAIMED;
+        }
+        return ExecutionClaim.HELD_BY_OTHER;
     }
 
-    private static String asString(final Object raw) {
-        if (raw == null) {
-            return null;
+    @Override
+    public void completeTargetExecution(final String executionKey, final long retentionTtlMs) {
+        if (executionKey == null) {
+            return;
         }
-        return raw.toString();
+        final String key = EXECUTION_KEY_PREFIX + executionKey;
+        stringRedisTemplate.opsForValue().set(
+                key, COMPLETED_VALUE, Duration.ofMillis(Math.max(1L, retentionTtlMs)));
     }
 }

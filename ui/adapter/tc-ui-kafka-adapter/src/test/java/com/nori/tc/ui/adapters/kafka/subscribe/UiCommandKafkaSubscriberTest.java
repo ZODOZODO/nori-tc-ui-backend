@@ -114,6 +114,50 @@ class UiCommandKafkaSubscriberTest {
     }
 
     @Test
+    @DisplayName("§10.2 — proof 를 담은 v2 응답은 coordination proof 로 파싱된다")
+    void v2ReplyCarriesCoordinationProof() {
+        final String payload = """
+                {"metadata":{"eventType":"EQP_UPDATE_REP","timestamp":"2026-08-25T00:00:00Z",\
+                "source":"TC-GATEWAY-APP","traceId":"op-1:APPLY","schemaVersion":"2","operationId":"op-1",\
+                "phase":"APPLY","expectedBaseRevision":0,"desiredRevision":7,\
+                "resourceKeys":["equipment:EQP-001"],"deadlineAt":"2026-08-25T00:02:00Z",\
+                "payloadSha256":"%s"},\
+                "data":{"eqpId":"EQP-001","interfaceType":"SOCKET","STATUS":"PASS","ERRORMSG":null,\
+                "ERRORCODE":null,"commandState":"APPLIED","serviceSessionId":"tc-gateway:pod:boot",\
+                "ownerEpoch":3,"appliedRevision":7,"desiredRevision":7,"payloadSha256":"%s"}}"""
+                .formatted("a".repeat(64), "a".repeat(64));
+
+        subscriber.onMessage(new ConsumerRecord<>("tc.ui.commands", 0, 2L, "EQP-001", payload), acknowledgment);
+
+        final ArgumentCaptor<UiCommandReply> captor = ArgumentCaptor.forClass(UiCommandReply.class);
+        verify(ingressPort).handle(captor.capture());
+
+        final UiCommandReply mapped = captor.getValue();
+        assertTrue(mapped.hasCoordinationProof(), "v2 응답의 proof 를 잃으면 operation 이 영원히 열린 채로 남습니다.");
+        assertEquals("op-1", mapped.proof().operationId());
+        assertEquals("APPLIED", mapped.proof().commandState());
+        assertEquals(3L, mapped.proof().ownerEpoch());
+        assertEquals(7L, mapped.proof().desiredRevision());
+        assertEquals("tc-gateway:pod:boot", mapped.proof().serviceSessionId());
+    }
+
+    @Test
+    @DisplayName("§10.2 — operationId 없는 응답은 v1 로 취급해 proof 를 만들지 않는다")
+    void replyWithoutOperationIdHasNoProof() {
+        final String payload = """
+                {"metadata":{"eventType":"EQP_START_REP","timestamp":"2026-08-25T00:00:00Z",\
+                "source":"TC-GATEWAY-APP","traceId":"trace-1"},\
+                "data":{"eqpId":"EQP-001","interfaceType":"SOCKET","STATUS":"PASS","ERRORMSG":null,\
+                "ERRORCODE":null}}""";
+
+        subscriber.onMessage(new ConsumerRecord<>("tc.ui.commands", 0, 3L, "EQP-001", payload), acknowledgment);
+
+        final ArgumentCaptor<UiCommandReply> captor = ArgumentCaptor.forClass(UiCommandReply.class);
+        verify(ingressPort).handle(captor.capture());
+        assertTrue(!captor.getValue().hasCoordinationProof());
+    }
+
+    @Test
     @DisplayName("W3-1: 메시지 처리 1회 시 tc.message.processing Timer가 등록되고 count=1로 기록")
     void messageProcessing_recordsTimer() {
         final SimpleMeterRegistry registry = new SimpleMeterRegistry();
