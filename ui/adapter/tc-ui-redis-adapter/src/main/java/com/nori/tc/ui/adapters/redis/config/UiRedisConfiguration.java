@@ -12,6 +12,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisPassword;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
+import io.lettuce.core.ClientOptions;
+import io.lettuce.core.SocketOptions;
+import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -108,7 +111,7 @@ public class UiRedisConfiguration {
     )
     public LettuceConnectionFactory uiBackendLettuceConnectionFactory(final UiRedisProperties props) {
         final UiRedisProperties.RedisNodeProperties connection = props.getConnection();
-        final LettuceConnectionFactory factory = buildConnectionFactory(connection);
+        final LettuceConnectionFactory factory = buildConnectionFactory(connection, props);
         log.debug("UI Backend Redis 연결 팩토리 생성 완료. host={}, port={}",
                 connection.getHost(), connection.getPort());
         return factory;
@@ -303,7 +306,10 @@ public class UiRedisConfiguration {
      * @param node Redis 노드 설정
      * @return 초기화된 연결 팩토리
      */
-    private LettuceConnectionFactory buildConnectionFactory(final UiRedisProperties.RedisNodeProperties node) {
+    private LettuceConnectionFactory buildConnectionFactory(
+            final UiRedisProperties.RedisNodeProperties node,
+            final UiRedisProperties props
+    ) {
         final RedisStandaloneConfiguration config = new RedisStandaloneConfiguration();
         config.setHostName(node.getHost());
         config.setPort(node.getPort());
@@ -316,7 +322,22 @@ public class UiRedisConfiguration {
             config.setPassword(RedisPassword.of(node.getPassword()));
         }
 
-        final LettuceConnectionFactory factory = new LettuceConnectionFactory(config);
+        /*
+         * command/connect timeout 을 명시한다(SPEC §19.1). 이 클래스가 팩토리를 직접 만들기 때문에
+         * Boot 의 Redis auto-configuration 이 적용되지 않고, 지정하지 않으면 Lettuce 기본값 60 초가
+         * 쓰인다. 그 값으로는 §9.3 안전 관계식이 성립할 수 없어 조정 원장이 켜진 구성에서
+         * UiCoordinationConfiguration 의 실측 검증(Plan §8 B26)이 기동을 실패시킨다.
+         */
+        final LettuceClientConfiguration clientConfiguration = LettuceClientConfiguration.builder()
+                .commandTimeout(props.getTimeout())
+                .clientOptions(ClientOptions.builder()
+                        .socketOptions(SocketOptions.builder()
+                                .connectTimeout(props.getConnectTimeout())
+                                .build())
+                        .build())
+                .build();
+
+        final LettuceConnectionFactory factory = new LettuceConnectionFactory(config, clientConfiguration);
         factory.afterPropertiesSet();
         return factory;
     }

@@ -238,22 +238,6 @@ public class UiCoordinationConfiguration {
         return new UiOperationCommandKafkaPublisher(gatewayPublishPort, businessPublishPort);
     }
 
-    /**
-     * 마지막 finalized revision 기록/조회 구현입니다.
-     *
-     * <p>현재는 {@link UiFinalizedRevisionProvider#absent()} 입니다 — 값을 담을 컬럼이 Flyway V7(P5)
-     * 선행이기 때문입니다. 그동안 원장 후퇴 검증(§11.11/§12.3)은 동작하지 않으며, executor 가 기록
-     * 실패를 metric 과 경고로 드러냅니다.</p>
-     *
-     * @return finalized revision provider
-     */
-    @Bean
-    public UiFinalizedRevisionProvider uiFinalizedRevisionProvider() {
-        log.warn("UI_LEDGER_REGRESSION_CHECK_INERT. 마지막 finalized revision 컬럼(Flyway V7)이 아직 없어 "
-                + "원장 후퇴 검증이 동작하지 않습니다.");
-        return UiFinalizedRevisionProvider.absent();
-    }
-
     @Bean
     public UiOperationDbFinalizationPort uiOperationDbFinalizationPort(
             final EqpPersistenceService persistenceService,

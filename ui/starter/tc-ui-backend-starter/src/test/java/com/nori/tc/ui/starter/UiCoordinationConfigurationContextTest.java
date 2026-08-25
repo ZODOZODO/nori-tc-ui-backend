@@ -21,6 +21,7 @@ import com.nori.tc.ui.core.coordination.UiOperationReconciler;
 import com.nori.tc.ui.core.coordination.UiPermissionCatalogGuard;
 import com.nori.tc.ui.core.coordination.UiReplyProofIngestService;
 import com.nori.tc.ui.core.coordination.UiScenarioCatalogGuard;
+import com.nori.tc.ui.core.coordination.port.UiFinalizedRevisionProvider;
 import com.nori.tc.ui.core.coordination.port.UiOperationCommandPublisher;
 import com.nori.tc.ui.core.port.db.EqpManageQueryPort;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
@@ -116,6 +117,20 @@ class UiCoordinationConfigurationContextTest {
         @Bean
         UiCoordinationSession uiCoordinationSession() {
             return new UiCoordinationSession("tc-ui-backend", "test-uid", "test-boot", "test-pod");
+        }
+
+        /**
+         * finalized revision provider 는 db-adapter 모듈이 제공합니다
+         * ({@code UiFinalizedRevisionDbAdapter} — {@code tc_eqp.last_finalized_revision}).
+         *
+         * <p>이 테스트는 starter 의 조정 빈 그래프만 띄우므로 db-adapter 빈이 없습니다. 여기서 대역을
+         * 넣지 않으면 조립 실패가 "provider 배선 누락" 이 아니라 "모듈 경계" 때문에 나므로 신호가
+         * 흐려집니다. 실제 배선은 {@code UiDbAdapterModuleConfiguration} 의 {@code @Import} 가 담당하고
+         * 동작은 {@code UiFinalizedRevisionDbAdapterTest} 가 고정합니다.</p>
+         */
+        @Bean
+        UiFinalizedRevisionProvider uiFinalizedRevisionProvider() {
+            return UiFinalizedRevisionProvider.absent();
         }
 
         @Bean

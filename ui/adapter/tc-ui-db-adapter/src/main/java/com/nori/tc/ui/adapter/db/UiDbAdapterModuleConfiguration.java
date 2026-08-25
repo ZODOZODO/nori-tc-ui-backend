@@ -42,7 +42,8 @@ import org.springframework.context.annotation.Import;
         JpaUserCrudPort.class,
         JpaUserGroupMappingPort.class,
         JpaUserPort.class,
-        UiEqpRoutePartitionDbAdapter.class
+        UiEqpRoutePartitionDbAdapter.class,
+        UiFinalizedRevisionDbAdapter.class
 })
 public class UiDbAdapterModuleConfiguration {
 }
