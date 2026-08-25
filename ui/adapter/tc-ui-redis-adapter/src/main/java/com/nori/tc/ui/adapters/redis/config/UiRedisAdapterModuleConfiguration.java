@@ -23,7 +23,9 @@ import org.springframework.context.annotation.Import;
         UiRedisConfiguration.class,
         AsyncResultStoreService.class,
         CommLogRedisQueryAdapter.class,
-        DeployExecutionRedisAdapter.class,
+        // DeployExecutionRedisAdapter 는 여기서 등록하지 않는다 — 스테레오타입이 아니고 협력자
+        // (공통 FencedLeaseRedisStore)를 조정 configuration 만 갖고 있다. 여기서 함께 등록하면
+        // DeployExecutionCoordinationPort 후보가 2 개가 되어 앱이 기동하지 못한다.
         DeployTracePubSubListener.class,
         DeployTraceRedisAdapter.class,
         BusinessDlqRedisService.class,
