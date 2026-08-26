@@ -4,6 +4,7 @@ import com.nori.tc.ui.core.coordination.model.UiOperationPhase;
 import com.nori.tc.ui.core.coordination.model.UiOperationState;
 import com.nori.tc.ui.core.coordination.model.UiOperationView;
 import com.nori.tc.ui.core.coordination.model.UiParticipantProofView;
+import com.nori.tc.ui.core.coordination.model.UiPhaseTransitionView;
 
 import java.util.List;
 import java.util.Map;
@@ -214,6 +215,17 @@ public interface UiOperationLedgerPort {
      * @return participant proof 목록
      */
     List<UiParticipantProofView> readParticipantProofs(String operationId);
+
+    /**
+     * operation 의 phase 전이 이력을 조회합니다(§20.3).
+     *
+     * <p>기록 상한에 닿은 operation 은 <b>뒤쪽이 잘려 있을 수 있습니다</b> — 전이 순서가 진단
+     * 대상이라 앞을 남기는 선택입니다.</p>
+     *
+     * @param operationId operation 식별자
+     * @return 전이 이력(없으면 빈 목록)
+     */
+    List<UiPhaseTransitionView> readPhaseHistory(String operationId);
 
     /**
      * 불변 manifest 를 조회합니다.

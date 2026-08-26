@@ -9,6 +9,7 @@ import com.nori.tc.ui.core.coordination.model.UiOperationPhase;
 import com.nori.tc.ui.core.coordination.model.UiOperationState;
 import com.nori.tc.ui.core.coordination.model.UiOperationView;
 import com.nori.tc.ui.core.coordination.model.UiParticipantProofView;
+import com.nori.tc.ui.core.coordination.model.UiPhaseTransitionView;
 import com.nori.tc.ui.core.coordination.port.UiOperationLedgerPort;
 
 import java.util.EnumSet;
@@ -210,6 +211,13 @@ public final class RedisUiOperationLedgerAdapter implements UiOperationLedgerPor
                         proof.appliedRevision(),
                         proof.appliedDigest(),
                         proof.ownerEpoch()))
+                .toList());
+    }
+
+    @Override
+    public List<UiPhaseTransitionView> readPhaseHistory(final String operationId) {
+        return translating(() -> store.readPhaseHistory(operationId).stream()
+                .map(transition -> new UiPhaseTransitionView(transition.phase(), transition.atEpochMs()))
                 .toList());
     }
 

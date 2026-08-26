@@ -28,6 +28,7 @@ import java.util.List;
  * @param terminalAtEpochMs terminal 확정 시각
  * @param resources 영향 resource 별 현재 head
  * @param participantProofs 고정 participant 별 proof
+ * @param phaseHistory phase 전이 이력(기록 상한에 닿으면 뒤가 잘릴 수 있음)
  */
 public record OperationAdminResponse(
         String operationId,
@@ -47,8 +48,18 @@ public record OperationAdminResponse(
         Long updatedAtEpochMs,
         Long terminalAtEpochMs,
         List<ResourceHead> resources,
-        List<ParticipantProof> participantProofs
+        List<ParticipantProof> participantProofs,
+        List<PhaseTransition> phaseHistory
 ) {
+
+    /**
+     * phase 전이 한 건입니다.
+     *
+     * @param phase 전이한 phase
+     * @param atEpochMs 전이 시각
+     */
+    public record PhaseTransition(String phase, long atEpochMs) {
+    }
 
     /**
      * 영향 resource 의 현재 장벽 상태입니다.
@@ -131,6 +142,9 @@ public record OperationAdminResponse(
                                 proof.appliedRevision(),
                                 proof.appliedDigest(),
                                 proof.ownerEpoch()))
+                        .toList(),
+                view.phaseHistory().stream()
+                        .map(transition -> new PhaseTransition(transition.phase(), transition.atEpochMs()))
                         .toList());
     }
 }

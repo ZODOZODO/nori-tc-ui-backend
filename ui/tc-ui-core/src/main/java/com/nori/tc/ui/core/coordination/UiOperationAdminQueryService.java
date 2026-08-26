@@ -62,7 +62,8 @@ public final class UiOperationAdminQueryService {
         return Optional.of(new UiOperationAdminView(
                 operation.get(),
                 readHeads(operation.get().resourceKeys()),
-                operationLedger.readParticipantProofs(operationId)));
+                operationLedger.readParticipantProofs(operationId),
+                operationLedger.readPhaseHistory(operationId)));
     }
 
     /**

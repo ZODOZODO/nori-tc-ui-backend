@@ -20,11 +20,13 @@ import java.util.Objects;
  * @param operation operation 원장 스냅샷
  * @param resources 영향 resource 별 현재 head
  * @param participantProofs 고정 participant 별 proof(고정 전이면 빈 목록)
+ * @param phaseHistory phase 전이 이력(기록 상한에 닿으면 뒤가 잘릴 수 있음)
  */
 public record UiOperationAdminView(
         UiOperationView operation,
         List<UiResourceHeadView> resources,
-        List<UiParticipantProofView> participantProofs
+        List<UiParticipantProofView> participantProofs,
+        List<UiPhaseTransitionView> phaseHistory
 ) {
 
     /**
@@ -34,5 +36,6 @@ public record UiOperationAdminView(
         Objects.requireNonNull(operation, "operation is null");
         resources = resources == null ? List.of() : List.copyOf(resources);
         participantProofs = participantProofs == null ? List.of() : List.copyOf(participantProofs);
+        phaseHistory = phaseHistory == null ? List.of() : List.copyOf(phaseHistory);
     }
 }

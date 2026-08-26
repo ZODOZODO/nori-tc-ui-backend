@@ -290,6 +290,11 @@ class UiOperationAcceptanceContractTest {
         }
 
         @Override
+        public java.util.List<com.nori.tc.ui.core.coordination.model.UiPhaseTransitionView> readPhaseHistory(final String operationId) {
+            return java.util.List.of();
+        }
+
+        @Override
 
         public Optional<String> readManifest(final String operationId) {
             return Optional.empty();

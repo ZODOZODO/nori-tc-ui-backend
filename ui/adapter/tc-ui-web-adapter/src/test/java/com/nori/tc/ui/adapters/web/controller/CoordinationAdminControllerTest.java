@@ -7,6 +7,7 @@ import com.nori.tc.ui.core.coordination.model.UiOperationPhase;
 import com.nori.tc.ui.core.coordination.model.UiOperationState;
 import com.nori.tc.ui.core.coordination.model.UiOperationView;
 import com.nori.tc.ui.core.coordination.model.UiParticipantProofView;
+import com.nori.tc.ui.core.coordination.model.UiPhaseTransitionView;
 import com.nori.tc.ui.core.coordination.model.UiResourceHeadView;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -57,7 +58,11 @@ class CoordinationAdminControllerTest {
                         "digest", 0L, 3L, false, null, null, null, null, 1L, 2L, null),
                 List.of(new UiResourceHeadView("equipment:CLN_001", 3L, 0L, OPERATION_ID, OPERATION_ID)),
                 List.of(new UiParticipantProofView(
-                        "tc-business:pod-1:sess-1", 3L, "digest", null, null, 7L)))));
+                        "tc-business:pod-1:sess-1", 3L, "digest", null, null, 7L)),
+                List.of(
+                        new UiPhaseTransitionView("ACCEPTED", 100L),
+                        new UiPhaseTransitionView("PREPARING", 200L),
+                        new UiPhaseTransitionView("APPLYING", 300L)))));
 
         mockMvcWith(service)
                 .perform(get("/api/coordination/operations/" + OPERATION_ID))
@@ -72,7 +77,12 @@ class CoordinationAdminControllerTest {
                 // prepared 만 있고 applied 가 비어 있다 = 이 participant 에서 멈춰 있다.
                 .andExpect(jsonPath("$.data.participantProofs[0].preparedRevision").value(3))
                 .andExpect(jsonPath("$.data.participantProofs[0].appliedRevision").doesNotExist())
-                .andExpect(jsonPath("$.data.participantProofs[0].ownerEpoch").value(7));
+                .andExpect(jsonPath("$.data.participantProofs[0].ownerEpoch").value(7))
+                // 현재 phase 만으로는 되돌아온 전이나 반복 재시도를 구분할 수 없다(§20.3).
+                .andExpect(jsonPath("$.data.phaseHistory.length()").value(3))
+                .andExpect(jsonPath("$.data.phaseHistory[0].phase").value("ACCEPTED"))
+                .andExpect(jsonPath("$.data.phaseHistory[2].phase").value("APPLYING"))
+                .andExpect(jsonPath("$.data.phaseHistory[2].atEpochMs").value(300));
     }
 
     @Test
