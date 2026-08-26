@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Import;
  */
 @Configuration(proxyBeanMethods = false)
 @Import({
+        DeployApplyDriver.class,
         DeployCommandAssembler.class,
         DeployEqpFinalizationService.class,
         DeployExecutor.class,
@@ -37,7 +38,8 @@ import org.springframework.context.annotation.Import;
         ModelFlowCommandService.class,
         ModelFlowQueryService.class,
         UiCoreFallbackStorageConfiguration.class,
-        UiCommandIngressService.class
+        UiCommandIngressService.class,
+        UiDeployOperationDbFinalizer.class
 })
 public class UiCoreServiceModuleConfiguration {
 }

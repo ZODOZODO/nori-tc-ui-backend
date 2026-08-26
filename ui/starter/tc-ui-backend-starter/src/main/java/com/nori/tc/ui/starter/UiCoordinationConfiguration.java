@@ -24,6 +24,7 @@ import com.nori.tc.ui.core.coordination.UiCoordinationStatus;
 import com.nori.tc.ui.core.coordination.UiEqpDescriptorFactory;
 import com.nori.tc.ui.core.coordination.UiEqpMutationCoordinator;
 import com.nori.tc.ui.core.coordination.UiEqpOperationDbFinalizer;
+import com.nori.tc.ui.core.coordination.UiOperationDbFinalizationRouter;
 import com.nori.tc.ui.core.coordination.UiOperationAcceptanceService;
 import com.nori.tc.ui.core.coordination.UiOperationExecutor;
 import com.nori.tc.ui.core.coordination.UiOperationManifestFactory;
@@ -56,6 +57,7 @@ import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
 import com.nori.tc.ui.core.port.redis.AsyncResultStorePort;
 import com.nori.tc.ui.core.port.redis.DeployExecutionCoordinationPort;
 import com.nori.tc.ui.core.service.EqpPersistenceService;
+import com.nori.tc.ui.core.service.UiDeployOperationDbFinalizer;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,6 +68,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import tools.jackson.databind.ObjectMapper;
@@ -243,13 +246,29 @@ public class UiCoordinationConfiguration {
         return new UiOperationCommandKafkaPublisher(gatewayPublishPort, businessPublishPort);
     }
 
+    /**
+     * DB 확정을 명령 종류에 따라 분배합니다(§13.7).
+     *
+     * <p>{@code @Primary} 입니다 — deploy 확정기도 같은 포트 타입의 빈이라 executor 주입 지점에서
+     * 후보가 둘이 됩니다. 실행 경로가 반드시 거쳐야 하는 것은 라우터 쪽입니다.</p>
+     *
+     * @param persistenceService 설비 DB 영속화 서비스
+     * @param objectMapper JSON 파서
+     * @param descriptorReader descriptor 해석기
+     * @param deployFinalizer deploy target 확정기
+     * @return 분배 라우터
+     */
     @Bean
+    @Primary
     public UiOperationDbFinalizationPort uiOperationDbFinalizationPort(
             final EqpPersistenceService persistenceService,
             final ObjectMapper objectMapper,
-            final UiRuntimeDescriptorReader descriptorReader
+            final UiRuntimeDescriptorReader descriptorReader,
+            final UiDeployOperationDbFinalizer deployFinalizer
     ) {
-        return new UiEqpOperationDbFinalizer(persistenceService, objectMapper, descriptorReader);
+        return new UiOperationDbFinalizationRouter(
+                new UiEqpOperationDbFinalizer(persistenceService, objectMapper, descriptorReader),
+                deployFinalizer);
     }
 
     /**
