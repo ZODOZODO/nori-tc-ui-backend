@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
+import static com.nori.tc.ui.adapters.redis.coordination.UiCoordinationFailures.translating;
+
 /**
  * {@link UiResourceHeadPort} 의 Redis 구현입니다(§7.3/§18.1).
  */
@@ -40,7 +42,7 @@ public final class RedisUiResourceHeadAdapter implements UiResourceHeadPort {
                         candidate.expectedBaseRevision(),
                         candidate.descriptorJson()))
                 .toList();
-        final CoordinationOutcome outcome = store.issueCandidate(operationId, mapped, nowEpochMs);
+        final CoordinationOutcome outcome = translating(() -> store.issueCandidate(operationId, mapped, nowEpochMs));
         return switch (outcome.code()) {
             case "OK" -> new IssueResult(IssueCode.OK, parseLong(outcome.value(0)), null);
             case "ALREADY_ISSUED" -> new IssueResult(IssueCode.ALREADY_ISSUED, parseLong(outcome.value(0)), null);
@@ -52,7 +54,7 @@ public final class RedisUiResourceHeadAdapter implements UiResourceHeadPort {
 
     @Override
     public UiResourceHeadView readHead(final String resourceType, final String resourceId) {
-        final ResourceHead head = store.readHead(resourceType, resourceId);
+        final ResourceHead head = translating(() -> store.readHead(resourceType, resourceId));
         return new UiResourceHeadView(
                 head.resourceKey(),
                 head.committedRevision(),
@@ -67,7 +69,7 @@ public final class RedisUiResourceHeadAdapter implements UiResourceHeadPort {
             final String resourceId,
             final long revision
     ) {
-        return store.readDescriptor(resourceType, resourceId, revision);
+        return translating(() -> store.readDescriptor(resourceType, resourceId, revision));
     }
 
     @Override

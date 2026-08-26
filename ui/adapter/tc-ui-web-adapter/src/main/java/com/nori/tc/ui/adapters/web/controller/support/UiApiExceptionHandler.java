@@ -143,6 +143,10 @@ public class UiApiExceptionHandler extends ResponseEntityExceptionHandler {
      * <p>404 로 환원하지 않습니다 — Front 가 "작업이 사라졌다" 로 읽고 재요청하면 중복 mutation 이
      * 생깁니다.</p>
      *
+     * <p>이 모듈은 조정 라이브러리에 의존하지 않으므로(헥사고날 경계) 공통 조정 예외를 여기서 직접
+     * 받을 수 없습니다. 번역은 store 를 감싸는 redis 어댑터가 수행합니다
+     * ({@code UiCoordinationFailures}) — 번역이 빠지면 cluster epoch 불일치가 500 으로 나갑니다.</p>
+     *
      * @param exception 조정 불가 예외
      * @param request 요청
      * @return 503 응답

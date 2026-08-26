@@ -18,6 +18,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static com.nori.tc.ui.adapters.redis.coordination.UiCoordinationFailures.translating;
+
 /**
  * {@link UiOperationLedgerPort} 의 Redis 구현입니다(§13.1).
  *
@@ -45,8 +47,8 @@ public final class RedisUiOperationLedgerAdapter implements UiOperationLedgerPor
             final Map<String, String> extraFields,
             final long nowEpochMs
     ) {
-        final CoordinationOutcome outcome =
-                store.createOperation(operationId, manifestSha256, manifestJson, extraFields, nowEpochMs);
+        final CoordinationOutcome outcome = translating(() ->
+                store.createOperation(operationId, manifestSha256, manifestJson, extraFields, nowEpochMs));
         if (!CreateResult.EXISTING.equals(outcome.code())) {
             return new CreateResult(outcome.code(), UiOperationState.PENDING, UiOperationPhase.ACCEPTED, null, null);
         }
@@ -75,7 +77,7 @@ public final class RedisUiOperationLedgerAdapter implements UiOperationLedgerPor
         final Set<OperationPhase> expected = expectedPhases.stream()
                 .map(phase -> OperationPhase.valueOf(phase.name()))
                 .collect(Collectors.toCollection(() -> EnumSet.noneOf(OperationPhase.class)));
-        return store.transition(
+        return translating(() -> store.transition(
                 operationId,
                 expected,
                 OperationPhase.valueOf(newPhase.name()),
@@ -85,7 +87,7 @@ public final class RedisUiOperationLedgerAdapter implements UiOperationLedgerPor
                 errorCode,
                 errorMsg,
                 repairReason,
-                nowEpochMs).code();
+                nowEpochMs).code());
     }
 
     @Override
@@ -95,7 +97,7 @@ public final class RedisUiOperationLedgerAdapter implements UiOperationLedgerPor
             final boolean force,
             final long nowEpochMs
     ) {
-        return store.freezeParticipants(operationId, participantIds, force, nowEpochMs).code();
+        return translating(() -> store.freezeParticipants(operationId, participantIds, force, nowEpochMs).code());
     }
 
     @Override
@@ -105,12 +107,13 @@ public final class RedisUiOperationLedgerAdapter implements UiOperationLedgerPor
             final String expiredSessionId,
             final long nowEpochMs
     ) {
-        return store.excludeExpiredParticipant(operationId, serviceName, expiredSessionId, nowEpochMs).code();
+        return translating(() ->
+                store.excludeExpiredParticipant(operationId, serviceName, expiredSessionId, nowEpochMs).code());
     }
 
     @Override
     public String closeBarrier(final String operationId, final List<String> resourceHeadKeys, final long nowEpochMs) {
-        return store.closeBarrier(operationId, resourceHeadKeys, nowEpochMs).code();
+        return translating(() -> store.closeBarrier(operationId, resourceHeadKeys, nowEpochMs).code());
     }
 
     @Override
@@ -120,12 +123,14 @@ public final class RedisUiOperationLedgerAdapter implements UiOperationLedgerPor
             final List<Long> expectedBaseRevisions,
             final long nowEpochMs
     ) {
-        return store.commitHead(operationId, resourceHeadKeys, expectedBaseRevisions, nowEpochMs).code();
+        return translating(() ->
+                store.commitHead(operationId, resourceHeadKeys, expectedBaseRevisions, nowEpochMs).code());
     }
 
     @Override
     public int checkApplied(final String operationId, final boolean advanceToFinalizing, final long nowEpochMs) {
-        final CoordinationOutcome outcome = store.checkApplied(operationId, advanceToFinalizing, nowEpochMs);
+        final CoordinationOutcome outcome =
+                translating(() -> store.checkApplied(operationId, advanceToFinalizing, nowEpochMs));
         if (!CoordinationOutcome.CODE_OK.equals(outcome.code())) {
             return -1;
         }
@@ -144,8 +149,9 @@ public final class RedisUiOperationLedgerAdapter implements UiOperationLedgerPor
             final long finalizedRevision,
             final long nowEpochMs
     ) {
-        return store.recordDbFinalized(operationId, executorSessionId, executorEpoch, finalizedRevision, nowEpochMs)
-                .code();
+        return translating(() -> store
+                .recordDbFinalized(operationId, executorSessionId, executorEpoch, finalizedRevision, nowEpochMs)
+                .code());
     }
 
     @Override
@@ -154,7 +160,7 @@ public final class RedisUiOperationLedgerAdapter implements UiOperationLedgerPor
             final List<String> resourceHeadKeys,
             final long nowEpochMs
     ) {
-        return store.openBarrierAndPass(operationId, resourceHeadKeys, nowEpochMs).code();
+        return translating(() -> store.openBarrierAndPass(operationId, resourceHeadKeys, nowEpochMs).code());
     }
 
     @Override
@@ -165,7 +171,7 @@ public final class RedisUiOperationLedgerAdapter implements UiOperationLedgerPor
             final String errorMsg,
             final long nowEpochMs
     ) {
-        return store.abort(operationId, resourceHeadKeys, errorCode, errorMsg, nowEpochMs).code();
+        return translating(() -> store.abort(operationId, resourceHeadKeys, errorCode, errorMsg, nowEpochMs).code());
     }
 
     @Override
@@ -180,27 +186,27 @@ public final class RedisUiOperationLedgerAdapter implements UiOperationLedgerPor
             final String proofJson,
             final long nowEpochMs
     ) {
-        final CoordinationOutcome outcome = applied
+        final CoordinationOutcome outcome = translating(() -> applied
                 ? store.ackApplied(operationId, participantId, revision, digest, ownerLeaseKey, ownerEpoch,
                         proofJson, nowEpochMs)
                 : store.ackPrepared(operationId, participantId, revision, digest, ownerLeaseKey, ownerEpoch,
-                        proofJson, nowEpochMs);
+                        proofJson, nowEpochMs));
         return outcome.code();
     }
 
     @Override
     public Optional<UiOperationView> readOperation(final String operationId) {
-        return store.readOperation(operationId).map(RedisUiOperationLedgerAdapter::toView);
+        return translating(() -> store.readOperation(operationId).map(RedisUiOperationLedgerAdapter::toView));
     }
 
     @Override
     public Optional<String> readManifest(final String operationId) {
-        return store.readManifest(operationId);
+        return translating(() -> store.readManifest(operationId));
     }
 
     @Override
     public List<String> pendingOperationIds(final long limit) {
-        return store.pendingOperationIds(Long.MAX_VALUE, limit);
+        return translating(() -> store.pendingOperationIds(Long.MAX_VALUE, limit));
     }
 
     private static UiOperationView toView(final OperationRecord record) {
