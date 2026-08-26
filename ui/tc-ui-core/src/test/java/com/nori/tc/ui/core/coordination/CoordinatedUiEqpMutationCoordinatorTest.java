@@ -17,6 +17,7 @@ import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
+import com.nori.tc.ui.core.port.db.BusinessJarDigestPort;
 import com.nori.tc.ui.core.port.db.EqpManageQueryPort;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
 import com.nori.tc.ui.core.coordination.model.UiMembershipState;
@@ -27,6 +28,7 @@ import com.nori.tc.ui.domain.eqp.UiEqpParam;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
@@ -77,7 +79,7 @@ class CoordinatedUiEqpMutationCoordinatorTest {
     @DisplayName("model 만 바뀌는 수정은 Gateway 참여를 요구하지 않는다")
     void modelOnlyUpdateDoesNotRequireGatewayParticipant() {
         final RecordingLedger ledger = new RecordingLedger();
-        coordinator(ledger, List.of()).update(EQP_ID, updateCommand(2_002L, 0), "KEY-1");
+        coordinator(ledger, List.of()).update(EQP_ID, updateCommand(2_002L, 0, 20L), "KEY-1");
 
         assertTrue(ledger.lastManifest.contains("\"requiresGatewayParticipant\":false"),
                 "§23.2 — non-PLC model 변경은 Gateway proof 를 요구하지 않아야 합니다.");
@@ -88,7 +90,7 @@ class CoordinatedUiEqpMutationCoordinatorTest {
     @DisplayName("route partition 이 바뀌면 Gateway 참여를 요구한다")
     void routePartitionChangeRequiresGatewayParticipant() {
         final RecordingLedger ledger = new RecordingLedger();
-        coordinator(ledger, List.of()).update(EQP_ID, updateCommand(1_001L, 3), "KEY-1");
+        coordinator(ledger, List.of()).update(EQP_ID, updateCommand(1_001L, 3, 20L), "KEY-1");
 
         assertTrue(ledger.lastManifest.contains("\"requiresGatewayParticipant\":true"));
         assertTrue(ledger.lastManifest.contains("\"routePartition\":3"));
@@ -98,11 +100,64 @@ class CoordinatedUiEqpMutationCoordinatorTest {
     @DisplayName("model 공유 설비가 있으면 영향 집합이 정렬된 형태로 확장된다")
     void sharedModelEquipmentExpandsTheResourceSet() {
         final RecordingLedger ledger = new RecordingLedger();
-        coordinator(ledger, List.of("EQP003", "EQP002")).update(EQP_ID, updateCommand(2_002L, 0), "KEY-1");
+        coordinator(ledger, List.of("EQP003", "EQP002")).update(EQP_ID, updateCommand(2_002L, 0, 20L), "KEY-1");
 
         assertTrue(ledger.lastManifest.contains(
                         "[\"equipment:EQP001\",\"equipment:EQP002\",\"equipment:EQP003\"]"),
                 "영향 집합은 정렬돼야 하고 공유 설비를 모두 포함해야 합니다. manifest=" + ledger.lastManifest);
+    }
+
+    @Test
+    @DisplayName("§15.2 — model 변경 manifest 는 old/new Business JAR key/name/SHA-256 을 모두 고정한다")
+    void modelChangeManifestCarriesOldAndNewJarLocator() {
+        final RecordingLedger ledger = new RecordingLedger();
+        coordinator(ledger, List.of()).update(EQP_ID, updateCommand(2_002L, 0, 21L), "KEY-1");
+
+        final JsonNode target = descriptorNode(ledger, "descriptors", "equipment:EQP001");
+        final JsonNode previous = descriptorNode(ledger, "previousDescriptors", "equipment:EQP001");
+
+        assertEquals(21L, target.path("businessJarKey").asLong());
+        assertEquals("plugin-21.jar", target.path("businessJarFileName").asString());
+        assertEquals("sha-21", target.path("businessJarSha256").asString());
+
+        assertEquals(20L, previous.path("businessJarKey").asLong());
+        assertEquals("plugin-20.jar", previous.path("businessJarFileName").asString());
+        assertEquals("sha-20", previous.path("businessJarSha256").asString());
+    }
+
+    @Test
+    @DisplayName("§15.2 — 공유 설비 descriptor 는 대상과 같은 JAR locator 를 선언한다")
+    void sharedDescriptorsDeclareTheSameJarLocator() {
+        final RecordingLedger ledger = new RecordingLedger();
+        coordinator(ledger, List.of("EQP002")).update(EQP_ID, updateCommand(2_002L, 0, 21L), "KEY-1");
+
+        /*
+         * Business reconciler 는 한 modelVersionKey 를 공유하는 descriptor 들이 같은 digest 를 선언하도록
+         * 요구한다(BusinessCandidateReconciler#requireConsistentSharedModelState). 공유 설비의 옛
+         * 스냅샷에서 이름/digest 를 읽으면 여기서 갈라져 prepare 가 거부된다.
+         */
+        final JsonNode shared = descriptorNode(ledger, "descriptors", "equipment:EQP002");
+        assertEquals(21L, shared.path("businessJarKey").asLong());
+        assertEquals("plugin-21.jar", shared.path("businessJarFileName").asString());
+        assertEquals("sha-21", shared.path("businessJarSha256").asString());
+    }
+
+    @Test
+    @DisplayName("§15.2 — model 공유 상태를 바꾸지 않는 수정에는 JAR digest 를 싣지 않는다")
+    void plainUpdateOmitsJarDigest() {
+        final RecordingLedger ledger = new RecordingLedger();
+        coordinator(ledger, List.of()).update(EQP_ID, updateCommand(1_001L, 0, 20L), "KEY-1");
+
+        assertTrue(ledger.lastManifest.contains("\"eventType\":\"EQP_UPDATE\""),
+                "manifest=" + ledger.lastManifest);
+        /*
+         * digest 를 실으면 Business 가 이 operation 을 공유 상태 변경으로 보고 영향 집합 폐쇄를
+         * 요구하는데(BusinessCandidateReconciler#requireCompleteImpactClosure), 평범한 EQP_UPDATE 는
+         * 대상 설비 하나만 잠근다 — 같은 model 을 쓰는 설비가 하나라도 더 있으면 prepare 가 거부된다.
+         */
+        assertTrue(descriptorNode(ledger, "descriptors", "equipment:EQP001")
+                        .path("businessJarSha256").isMissingNode(),
+                "manifest=" + ledger.lastManifest);
     }
 
     @Test
@@ -131,6 +186,14 @@ class CoordinatedUiEqpMutationCoordinatorTest {
     }
 
     // ------------------------------------------------------------------ fixture
+
+    private static JsonNode descriptorNode(
+            final RecordingLedger ledger,
+            final String section,
+            final String resourceKey
+    ) {
+        return new ObjectMapper().readTree(ledger.lastManifest).path(section).path(resourceKey);
+    }
 
     private CoordinatedUiEqpMutationCoordinator coordinator(
             final RecordingLedger ledger,
@@ -163,12 +226,19 @@ class CoordinatedUiEqpMutationCoordinatorTest {
 
         return new CoordinatedUiEqpMutationCoordinator(
                 queryPort,
+                jarDigestPort(),
                 new UiResourceKeyPlanner(eqpQueryPort(sharedEqpIds)),
                 new UiEqpDescriptorFactory(),
                 headPort,
                 new UiOperationAcceptanceService(ledger, headPort, manifestFactory),
                 new UiOperationReconciler(ledger, executor, properties, metrics),
                 objectMapper);
+    }
+
+    /** business jar key 20 = 새 JAR, 21 = 옛 JAR. digest 는 key 를 그대로 반영해 뒤바뀜을 드러낸다. */
+    private static BusinessJarDigestPort jarDigestPort() {
+        return businessJarKey -> Optional.of(new BusinessJarDigestPort.JarLocator(
+                "plugin-" + businessJarKey + ".jar", "sha-" + businessJarKey));
     }
 
     private static EqpManagementCommand.Create createCommand() {
@@ -179,11 +249,12 @@ class CoordinatedUiEqpMutationCoordinatorTest {
 
     private static EqpManagementCommand.Update updateCommand(
             final long modelVersionKey,
-            final int routePartition
+            final int routePartition,
+            final Long businessJarRef
     ) {
         return new EqpManagementCommand.Update(
                 "tester", 1L, "PASSIVE", false, routePartition, "10.0.0.1", 6000,
-                modelVersionKey, "V1", 30L, 20L, null, null, null, null);
+                modelVersionKey, "V1", 30L, businessJarRef, null, null, null, null);
     }
 
     private static EqpManagementSnapshot snapshot() {

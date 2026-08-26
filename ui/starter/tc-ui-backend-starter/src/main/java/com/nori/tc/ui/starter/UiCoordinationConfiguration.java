@@ -46,6 +46,7 @@ import com.nori.tc.ui.core.coordination.port.UiOperationCommandPublisher;
 import com.nori.tc.ui.core.coordination.port.UiOperationDbFinalizationPort;
 import com.nori.tc.ui.core.coordination.port.UiOperationLedgerPort;
 import com.nori.tc.ui.core.coordination.port.UiResourceHeadPort;
+import com.nori.tc.ui.core.port.db.BusinessJarDigestPort;
 import com.nori.tc.ui.core.port.db.EqpManageQueryPort;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
 import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
@@ -316,6 +317,7 @@ public class UiCoordinationConfiguration {
     @Bean
     public UiEqpMutationCoordinator uiEqpMutationCoordinator(
             final EqpManageQueryPort eqpManageQueryPort,
+            final BusinessJarDigestPort businessJarDigestPort,
             final UiResourceKeyPlanner resourceKeyPlanner,
             final UiEqpDescriptorFactory descriptorFactory,
             final UiResourceHeadPort resourceHeadPort,
@@ -323,8 +325,8 @@ public class UiCoordinationConfiguration {
             final UiOperationReconciler reconciler,
             final ObjectMapper objectMapper
     ) {
-        return new CoordinatedUiEqpMutationCoordinator(eqpManageQueryPort, resourceKeyPlanner, descriptorFactory,
-                resourceHeadPort, acceptanceService, reconciler, objectMapper);
+        return new CoordinatedUiEqpMutationCoordinator(eqpManageQueryPort, businessJarDigestPort, resourceKeyPlanner,
+                descriptorFactory, resourceHeadPort, acceptanceService, reconciler, objectMapper);
     }
 
     @Bean

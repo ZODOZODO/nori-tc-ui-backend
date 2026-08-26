@@ -23,6 +23,7 @@ import com.nori.tc.ui.core.coordination.UiReplyProofIngestService;
 import com.nori.tc.ui.core.coordination.UiScenarioCatalogGuard;
 import com.nori.tc.ui.core.coordination.port.UiFinalizedRevisionProvider;
 import com.nori.tc.ui.core.coordination.port.UiOperationCommandPublisher;
+import com.nori.tc.ui.core.port.db.BusinessJarDigestPort;
 import com.nori.tc.ui.core.port.db.EqpManageQueryPort;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
 import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
@@ -199,6 +200,11 @@ class UiCoordinationConfigurationContextTest {
         @Bean
         EqpManageQueryPort eqpManageQueryPort() {
             return Mockito.mock(EqpManageQueryPort.class);
+        }
+
+        @Bean
+        BusinessJarDigestPort businessJarDigestPort() {
+            return Mockito.mock(BusinessJarDigestPort.class);
         }
 
         @Bean

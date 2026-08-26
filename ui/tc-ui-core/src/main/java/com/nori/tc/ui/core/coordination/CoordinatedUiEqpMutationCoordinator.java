@@ -9,6 +9,7 @@ import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.core.model.UiCommandEventType;
+import com.nori.tc.ui.core.port.db.BusinessJarDigestPort;
 import com.nori.tc.ui.core.port.db.EqpManageQueryPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +35,7 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
     private static final Logger log = LoggerFactory.getLogger(CoordinatedUiEqpMutationCoordinator.class);
 
     private final EqpManageQueryPort eqpManageQueryPort;
+    private final BusinessJarDigestPort businessJarDigestPort;
     private final UiResourceKeyPlanner resourceKeyPlanner;
     private final UiEqpDescriptorFactory descriptorFactory;
     private final UiResourceHeadPort resourceHeadPort;
@@ -45,6 +47,7 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
      * 조정 coordinator 를 만듭니다.
      *
      * @param eqpManageQueryPort 설비 스냅샷 조회 포트
+     * @param businessJarDigestPort Business JAR digest 조회 포트
      * @param resourceKeyPlanner 영향 집합 산출기
      * @param descriptorFactory descriptor 팩토리
      * @param resourceHeadPort 리소스 head 포트
@@ -54,6 +57,7 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
      */
     public CoordinatedUiEqpMutationCoordinator(
             final EqpManageQueryPort eqpManageQueryPort,
+            final BusinessJarDigestPort businessJarDigestPort,
             final UiResourceKeyPlanner resourceKeyPlanner,
             final UiEqpDescriptorFactory descriptorFactory,
             final UiResourceHeadPort resourceHeadPort,
@@ -62,6 +66,7 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
             final ObjectMapper objectMapper
     ) {
         this.eqpManageQueryPort = Objects.requireNonNull(eqpManageQueryPort, "eqpManageQueryPort is null");
+        this.businessJarDigestPort = Objects.requireNonNull(businessJarDigestPort, "businessJarDigestPort is null");
         this.resourceKeyPlanner = Objects.requireNonNull(resourceKeyPlanner, "resourceKeyPlanner is null");
         this.descriptorFactory = Objects.requireNonNull(descriptorFactory, "descriptorFactory is null");
         this.resourceHeadPort = Objects.requireNonNull(resourceHeadPort, "resourceHeadPort is null");
@@ -86,6 +91,7 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
                 command.modelVersionKey(),
                 command.routePartition(),
                 command.businessJarRef(),
+                null,
                 null,
                 null,
                 UiRuntimeDescriptor.GATEWAY_STATE_ENDED,
@@ -127,17 +133,34 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
                         ? null
                         : command.routePartition();
 
+        /*
+         * §15.2 — JAR digest 는 model 공유 상태를 바꾸는 operation 에서만 싣는다. Business
+         * reconciler 는 descriptor 에 digest 가 있으면 그 operation 이 modelVersionKey 공유 상태를
+         * 바꾼다고 보고 영향 집합 폐쇄를 요구하는데(BusinessCandidateReconciler#requireCompleteImpactClosure),
+         * 폐쇄를 계획하는 것은 sharesModelState 인 이벤트뿐이다. 평범한 EQP_UPDATE 에까지 digest 를
+         * 실으면 그 설비 하나만 잠근 채 폐쇄를 요구받아 prepare 에서 거부된다.
+         */
+        final BusinessJarDigestPort.JarLocator targetJar = UiResourceKeyPlanner.sharesModelState(eventType)
+                ? locatorOf(command.businessJarRef())
+                : null;
+
         final UiRuntimeDescriptor target = descriptorFactory.forTarget(
                 eqpId,
                 before,
                 command.modelVersionKey(),
                 routePartitionChange,
                 command.businessJarRef(),
-                before.businessJar() == null ? null : before.businessJar().jarFileName(),
+                targetJar != null
+                        ? targetJar.jarFileName()
+                        : (before.businessJar() == null ? null : before.businessJar().jarFileName()),
+                targetJar == null ? null : targetJar.sha256Hex(),
                 null,
                 null,
                 null);
 
+        final BusinessJarDigestPort.JarLocator previousJar = UiResourceKeyPlanner.sharesModelState(eventType)
+                ? locatorOf(before.eqp().businessJarKey())
+                : null;
         final Set<Long> affectedModelVersionKeys = new LinkedHashSet<>();
         affectedModelVersionKeys.add(command.modelVersionKey());
         affectedModelVersionKeys.add(before.eqp().modelVersionKey());
@@ -148,7 +171,7 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
                 command.actor(),
                 interfaceTypeOf(before.eqp().commInterface() == null ? null : before.eqp().commInterface().name()),
                 target,
-                previousDescriptorOf(eqpId, before),
+                previousDescriptorOf(eqpId, before, previousJar),
                 affectedModelVersionKeys,
                 command.businessJarRef(),
                 UiOperationRequest.DB_COMMAND_UPDATE,
@@ -166,7 +189,7 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
                 "SYSTEM",
                 interfaceTypeOf(before.eqp().commInterface() == null ? null : before.eqp().commInterface().name()),
                 tombstone,
-                previousDescriptorOf(eqpId, before),
+                previousDescriptorOf(eqpId, before, null),
                 Set.of(before.eqp().modelVersionKey()),
                 before.eqp().businessJarKey(),
                 UiOperationRequest.DB_COMMAND_DELETE,
@@ -176,18 +199,38 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
 
     /**
      * 변경 전 상태를 descriptor 로 고정합니다(§13.7 expected old 판정 / §13.8 보상 원본).
+     *
+     * @param previousJar 변경 전 Business JAR locator(§15.2 대상이 아니면 null)
      */
-    private UiRuntimeDescriptor previousDescriptorOf(final String eqpId, final EqpManagementSnapshot before) {
+    private UiRuntimeDescriptor previousDescriptorOf(
+            final String eqpId,
+            final EqpManagementSnapshot before,
+            final BusinessJarDigestPort.JarLocator previousJar
+    ) {
         return descriptorFactory.forTarget(
                 eqpId,
                 before,
                 before.eqp().modelVersionKey(),
                 before.eqp().routePartition(),
                 before.eqp().businessJarKey(),
-                before.businessJar() == null ? null : before.businessJar().jarFileName(),
+                previousJar != null
+                        ? previousJar.jarFileName()
+                        : (before.businessJar() == null ? null : before.businessJar().jarFileName()),
+                previousJar == null ? null : previousJar.sha256Hex(),
                 null,
                 null,
                 null);
+    }
+
+    /**
+     * business jar locator 를 조회합니다.
+     *
+     * <p>키가 없거나 JAR row 가 사라졌으면 {@code null} 입니다 — 여기서 거부하지 않습니다. JAR 부재는
+     * DB 확정 단계에서 참조 무결성으로 드러나고, 접수 단계에서 막으면 이미 접수된 operation 의 재조회
+     * 경로까지 함께 실패합니다.</p>
+     */
+    private BusinessJarDigestPort.JarLocator locatorOf(final Long businessJarKey) {
+        return businessJarKey == null ? null : businessJarDigestPort.findLocator(businessJarKey).orElse(null);
     }
 
     private UiOperationAcceptance accept(
@@ -212,7 +255,7 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
             final String affectedEqpId = UiResourceKeyPlanner.eqpIdOf(resourceKey);
             descriptors.put(resourceKey, affectedEqpId.equals(eqpId)
                     ? target
-                    : sharedDescriptor(affectedEqpId, target.modelVersionKey(), businessJarKey));
+                    : sharedDescriptor(affectedEqpId, target, businessJarKey));
             final UiResourceHeadView head =
                     resourceHeadPort.readHead(UiResourceKeyPlanner.RESOURCE_TYPE_EQUIPMENT, affectedEqpId);
             expectedBaseRevisions.put(resourceKey, head.committedRevision());
@@ -248,9 +291,17 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
         return acceptance;
     }
 
+    /**
+     * 같은 modelVersionKey 를 공유하는 다른 설비의 descriptor 를 만듭니다.
+     *
+     * <p>JAR 파일명과 digest 는 <b>대상 설비의 descriptor 에서 그대로 가져옵니다</b> — 공유 설비는
+     * 대상과 같은 {@code businessJarKey} 를 가리키므로, 각 설비의 옛 스냅샷에서 이름을 읽으면 key 와
+     * 이름이 서로 다른 JAR 을 가리키게 됩니다. Business reconciler 는 한 modelVersionKey 를 공유하는
+     * descriptor 들이 같은 digest 를 선언하도록 요구합니다(§11.1).</p>
+     */
     private UiRuntimeDescriptor sharedDescriptor(
             final String affectedEqpId,
-            final Long modelVersionKey,
+            final UiRuntimeDescriptor target,
             final Long businessJarKey
     ) {
         final Optional<EqpManagementSnapshot> snapshot =
@@ -258,11 +309,10 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
         return descriptorFactory.forSharedModel(
                 affectedEqpId,
                 snapshot.orElse(null),
-                modelVersionKey,
+                target.modelVersionKey(),
                 businessJarKey,
-                snapshot.map(EqpManagementSnapshot::businessJar)
-                        .map(jar -> jar == null ? null : jar.jarFileName())
-                        .orElse(null));
+                target.businessJarFileName(),
+                target.businessJarSha256());
     }
 
     /**

@@ -19,6 +19,7 @@ import org.springframework.context.annotation.Import;
         EqpPlcPollGroupAdapter.class,
         JpaDeployRegisterQueryPort.class,
         JpaApiPermissionPort.class,
+        JpaBusinessJarDigestPort.class,
         JpaEqpCrudPort.class,
         JpaEqpManageQueryPort.class,
         JpaEqpOptionsQueryPort.class,

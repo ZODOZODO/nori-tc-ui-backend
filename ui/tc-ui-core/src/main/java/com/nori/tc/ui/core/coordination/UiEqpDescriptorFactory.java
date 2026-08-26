@@ -28,6 +28,7 @@ public final class UiEqpDescriptorFactory {
      * @param routePartition 목표 route partition(미변경이면 null)
      * @param businessJarKey 목표 Business JAR key(미변경이면 null)
      * @param businessJarFileName 목표 Business JAR 파일명(미변경이면 null)
+     * @param businessJarSha256 목표 Business JAR digest(§15.2 — 공유 상태 미변경이면 null)
      * @param eqpParams 목표 설비 파라미터 snapshot(미변경이면 null)
      * @param gatewayDesiredState Gateway 연결 의도(미변경이면 null)
      * @param plcEnabledPollGroups 활성 폴 그룹(미변경이면 null, 빈 목록이면 전부 해제)
@@ -40,6 +41,7 @@ public final class UiEqpDescriptorFactory {
             final Integer routePartition,
             final Long businessJarKey,
             final String businessJarFileName,
+            final String businessJarSha256,
             final Map<String, String> eqpParams,
             final String gatewayDesiredState,
             final List<String> plcEnabledPollGroups
@@ -55,7 +57,7 @@ public final class UiEqpDescriptorFactory {
                 routePartition,
                 businessJarKey,
                 businessJarFileName,
-                null,
+                businessJarSha256,
                 null,
                 eqpParams,
                 pluginAffected,
@@ -103,6 +105,7 @@ public final class UiEqpDescriptorFactory {
      * @param modelVersionKey 목표 modelVersionKey
      * @param businessJarKey 목표 Business JAR key
      * @param businessJarFileName 목표 Business JAR 파일명
+     * @param businessJarSha256 목표 Business JAR digest(§15.2)
      * @return candidate descriptor
      */
     public UiRuntimeDescriptor forSharedModel(
@@ -110,7 +113,8 @@ public final class UiEqpDescriptorFactory {
             final EqpManagementSnapshot snapshot,
             final Long modelVersionKey,
             final Long businessJarKey,
-            final String businessJarFileName
+            final String businessJarFileName,
+            final String businessJarSha256
     ) {
         Objects.requireNonNull(eqpId, "eqpId is null");
         final UiEqp existing = snapshot == null ? null : snapshot.eqp();
@@ -122,7 +126,7 @@ public final class UiEqpDescriptorFactory {
                 null,
                 businessJarKey,
                 businessJarFileName,
-                null,
+                businessJarSha256,
                 null,
                 null,
                 true,
