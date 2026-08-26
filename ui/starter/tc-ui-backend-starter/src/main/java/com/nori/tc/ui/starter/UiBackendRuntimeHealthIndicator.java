@@ -22,6 +22,15 @@ import java.util.Properties;
  */
 public class UiBackendRuntimeHealthIndicator implements HealthIndicator {
 
+    /**
+     * repair 잔여 건수를 조회하지 못했음을 나타내는 값입니다.
+     *
+     * <p>{@code Health.Builder} 가 null detail 을 거부하므로 키를 지우는 대신 센티넬을 씁니다 — 키가
+     * 사라지면 이 값을 읽던 대시보드가 조용히 비어 버립니다. 실패 사유는 {@code repairBacklogError}
+     * 로 함께 실립니다.</p>
+     */
+    private static final int BACKLOG_UNKNOWN = -1;
+
     private final DeployService deployService;
     private final DeployTraceRegistry deployTraceRegistry;
     private final EqpRepairTaskService repairTaskService;
@@ -49,7 +58,7 @@ public class UiBackendRuntimeHealthIndicator implements HealthIndicator {
     public Health health() {
         final RedisRuntimeStats gatewayRedisStats = collectRedisStats(gatewayRedisFactory);
         final RedisRuntimeStats businessRedisStats = collectRedisStats(businessRedisFactory);
-        final int repairBacklogCount = repairTaskService.backlogCount();
+        final RepairBacklogProbe repairBacklog = probeRepairBacklog();
         final int pendingDeployTraceCount = deployTraceRegistry.pendingCount();
         final int targetExecutorActiveCount = deployService.targetExecutorActiveCount();
         final int targetExecutorQueueSize = deployService.targetExecutorQueueSize();
@@ -66,19 +75,39 @@ public class UiBackendRuntimeHealthIndicator implements HealthIndicator {
          */
         final Status status = redisReady && coordinationReady ? Status.UP : Status.DOWN;
 
-        return Health.status(status)
+        final Health.Builder builder = Health.status(status)
                 .withDetail("coordination", coordinationStatus.details())
                 .withDetail("coordinationReady", coordinationReady)
                 .withDetail("gatewayRedisPing", gatewayRedisStats.ping())
                 .withDetail("businessRedisPing", businessRedisStats.ping())
                 .withDetail("gatewayRedisStats", gatewayRedisStats.details())
                 .withDetail("businessRedisStats", businessRedisStats.details())
-                .withDetail("repairBacklogCount", repairBacklogCount)
+                .withDetail("repairBacklogCount", repairBacklog.count());
+        if (repairBacklog.error() != null) {
+            builder.withDetail("repairBacklogError", repairBacklog.error());
+        }
+        return builder
                 .withDetail("pendingDeployTraceCount", pendingDeployTraceCount)
                 .withDetail("targetExecutorActiveCount", targetExecutorActiveCount)
                 .withDetail("targetExecutorQueueSize", targetExecutorQueueSize)
                 .withDetail("targetConcurrency", deployService.targetConcurrency())
                 .build();
+    }
+
+    /**
+     * repair 잔여 건수를 조회합니다 — 실패해도 <b>던지지 않습니다</b>.
+     *
+     * <p>이 조회는 Redis 를 탑니다. Redis 가 내려가면 여기서 예외가 나가는데, health indicator 밖으로
+     * 나가면 actuator 가 <b>500</b> 을 응답합니다. §13.11 은 그런 상황에서 readiness 를 {@code false}
+     * 로 요구하므로 DOWN + 사유가 실린 503 이어야 합니다 — 500 은 운영자에게 "왜" 를 알려주지
+     * 못합니다. 상태 판정은 {@code redisReady} 가 이미 담당하므로 여기서는 사유만 남깁니다.</p>
+     */
+    private RepairBacklogProbe probeRepairBacklog() {
+        try {
+            return new RepairBacklogProbe(repairTaskService.backlogCount(), null);
+        } catch (Exception ex) {
+            return new RepairBacklogProbe(BACKLOG_UNKNOWN, ex.getClass().getSimpleName());
+        }
     }
 
     private static RedisRuntimeStats collectRedisStats(final LettuceConnectionFactory connectionFactory) {
@@ -142,6 +171,15 @@ public class UiBackendRuntimeHealthIndicator implements HealthIndicator {
             return next;
         }
         return current + "," + next;
+    }
+
+    /**
+     * repair 잔여 건수 조회 결과입니다.
+     *
+     * @param count 잔여 건수(조회 실패면 {@link #BACKLOG_UNKNOWN})
+     * @param error 조회 실패 사유(성공이면 null)
+     */
+    private record RepairBacklogProbe(int count, String error) {
     }
 
     private record RedisRuntimeStats(

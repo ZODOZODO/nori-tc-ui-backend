@@ -104,4 +104,48 @@ class UiBackendRuntimeHealthIndicatorTest {
 
         assertEquals(Status.DOWN, indicator.health().getStatus());
     }
+
+    /**
+     * §13.11 / §23.9 — Redis 가 내려가면 readiness 는 <b>DOWN 을 응답</b>해야 하고 예외를 던져서는
+     * 안 됩니다.
+     *
+     * <p>실환경 재현(2026-08-27, 전용 Redis 컨테이너 중단): {@code EqpRepairTaskService.backlogCount()}
+     * 가 Redis {@code HVALS} 를 타고, 그 예외가 {@code health()} 밖으로 나가 actuator 가
+     * <b>HTTP 500</b> 을 응답했다. §13.11 은 readiness {@code false} 를 요구하고, 500 은 운영자에게
+     * "왜 내려갔는지" 를 전혀 알려주지 못한다.</p>
+     */
+    @org.junit.jupiter.api.Test
+    void redisOutageMakesReadinessDownInsteadOfThrowing() {
+        final DeployService deployService = mock(DeployService.class);
+        final DeployTraceRegistry deployTraceRegistry = mock(DeployTraceRegistry.class);
+        final EqpRepairTaskService repairTaskService = mock(EqpRepairTaskService.class);
+        final LettuceConnectionFactory gatewayRedisFactory = mock(LettuceConnectionFactory.class);
+        final LettuceConnectionFactory businessRedisFactory = mock(LettuceConnectionFactory.class);
+
+        // Redis 가 내려간 상태 — 연결 획득도, repair 잔여 조회도 실패한다.
+        when(gatewayRedisFactory.getConnection())
+                .thenThrow(new org.springframework.dao.QueryTimeoutException("redis down"));
+        when(businessRedisFactory.getConnection())
+                .thenThrow(new org.springframework.dao.QueryTimeoutException("redis down"));
+        when(repairTaskService.backlogCount())
+                .thenThrow(new org.springframework.dao.QueryTimeoutException("redis down"));
+        when(deployTraceRegistry.pendingCount()).thenReturn(0);
+        when(deployService.targetExecutorActiveCount()).thenReturn(0);
+        when(deployService.targetExecutorQueueSize()).thenReturn(0);
+        when(deployService.targetConcurrency()).thenReturn(4);
+
+        final UiBackendRuntimeHealthIndicator indicator = new UiBackendRuntimeHealthIndicator(
+                deployService,
+                deployTraceRegistry,
+                repairTaskService,
+                com.nori.tc.ui.core.coordination.UiCoordinationStatus.disabled(),
+                gatewayRedisFactory,
+                businessRedisFactory
+        );
+
+        final org.springframework.boot.health.contributor.Health health = indicator.health();
+        assertEquals(Status.DOWN, health.getStatus());
+        assertEquals("QueryTimeoutException", health.getDetails().get("repairBacklogError"),
+                "운영자가 무엇이 실패했는지 알 수 있어야 합니다 — 500 은 그 정보를 지웁니다.");
+    }
 }

@@ -11,6 +11,7 @@ import com.nori.tc.common.coordination.store.ResourceBarrierRedisStore;
 import com.nori.tc.common.coordination.types.CatalogHead;
 import com.nori.tc.common.coordination.types.ClusterEpoch;
 import com.nori.tc.ui.adapters.redis.coordination.UiCoordinationContext;
+import com.nori.tc.ui.core.coordination.DeployOperationCoordinator;
 import com.nori.tc.ui.core.coordination.UiCoordinationRuntime;
 import com.nori.tc.ui.core.coordination.UiCoordinationSession;
 import com.nori.tc.ui.core.coordination.UiCoordinationStatus;
@@ -31,6 +32,7 @@ import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
 import com.nori.tc.ui.core.port.redis.AsyncResultStorePort;
 import com.nori.tc.ui.core.port.redis.DeployExecutionCoordinationPort;
 import com.nori.tc.ui.core.service.EqpPersistenceService;
+import com.nori.tc.ui.core.service.UiDeployOperationDbFinalizer;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
@@ -76,6 +78,7 @@ class UiCoordinationConfigurationContextTest {
             assertThat(context).hasSingleBean(UiCoordinationRuntime.class);
             assertThat(context).hasSingleBean(UiCoordinationStatus.class);
             assertThat(context).hasSingleBean(DeployExecutionCoordinationPort.class);
+            assertThat(context).hasSingleBean(DeployOperationCoordinator.class);
         });
     }
 
@@ -205,6 +208,17 @@ class UiCoordinationConfigurationContextTest {
         @Bean
         BusinessJarDigestPort businessJarDigestPort() {
             return Mockito.mock(BusinessJarDigestPort.class);
+        }
+
+        /**
+         * deploy 확정기 대역입니다.
+         *
+         * <p>운영에서는 {@code UiCoreServiceModuleConfiguration} 의 {@code @Import} 가 등록합니다 —
+         * 이 runner 는 조정 configuration 만 올리므로 여기서 대신 넣습니다.</p>
+         */
+        @Bean
+        UiDeployOperationDbFinalizer uiDeployOperationDbFinalizer() {
+            return Mockito.mock(UiDeployOperationDbFinalizer.class);
         }
 
         @Bean
