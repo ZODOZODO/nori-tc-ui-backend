@@ -9,6 +9,7 @@ import com.nori.tc.ui.adapters.web.application.admin.UserAdminFacade;
 import com.nori.tc.ui.adapters.web.controller.AsyncResultController;
 import com.nori.tc.ui.adapters.web.controller.CoordinationAdminController;
 import com.nori.tc.ui.adapters.web.controller.AuthController;
+import com.nori.tc.ui.adapters.web.controller.BusinessAppAssignmentController;
 import com.nori.tc.ui.adapters.web.controller.CommLogController;
 import com.nori.tc.ui.adapters.web.controller.DeployController;
 import com.nori.tc.ui.adapters.web.controller.DeployScenarioAdminController;
@@ -55,6 +56,7 @@ import org.springframework.context.annotation.Import;
         AsyncResultController.class,
         CoordinationAdminController.class,
         AuthController.class,
+        BusinessAppAssignmentController.class,
         CommLogController.class,
         DeployController.class,
         DeployScenarioAdminController.class,
