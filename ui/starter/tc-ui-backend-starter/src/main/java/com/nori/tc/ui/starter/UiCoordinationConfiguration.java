@@ -1,8 +1,14 @@
 package com.nori.tc.ui.starter;
 
 import com.nori.tc.common.coordination.store.CatalogHeadRedisStore;
+import com.nori.tc.common.shard.SharedShardGroupProperties;
+import com.nori.tc.ui.adapters.redis.config.UiGatewayLeaseProperties;
+import com.nori.tc.ui.adapters.redis.config.UiRuntimeInstanceProperties;
+import com.nori.tc.ui.adapters.redis.lease.GatewayShardLeaseRedisAdapter;
 import com.nori.tc.ui.adapters.redis.coordination.CommonCoordinationDigestAdapter;
+import com.nori.tc.ui.adapters.redis.coordination.CoordinatedGatewayShardLeaseAdapter;
 import com.nori.tc.ui.adapters.redis.coordination.DeployExecutionRedisAdapter;
+import com.nori.tc.ui.adapters.redis.coordination.RuntimeInstanceRedisAdapter;
 import com.nori.tc.ui.adapters.redis.coordination.RedisUiCatalogHeadAdapter;
 import com.nori.tc.ui.adapters.redis.coordination.RedisUiCoordinationProbeAdapter;
 import com.nori.tc.ui.adapters.redis.coordination.RedisUiExecutorLeaseAdapter;
@@ -58,6 +64,8 @@ import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
 import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
 import com.nori.tc.ui.core.port.redis.AsyncResultStorePort;
 import com.nori.tc.ui.core.port.redis.DeployExecutionCoordinationPort;
+import com.nori.tc.ui.core.port.redis.GatewayShardLeasePort;
+import com.nori.tc.ui.core.port.redis.RuntimeInstanceQueryPort;
 import com.nori.tc.ui.core.service.EqpPersistenceService;
 import com.nori.tc.ui.core.service.UiDeployOperationDbFinalizer;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -87,7 +95,8 @@ import tools.jackson.databind.ObjectMapper;
  * 빈 선택이 바뀌지 않습니다(Plan §10.3 L2).</p>
  */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(UiCoordinationProperties.class)
+@EnableConfigurationProperties({UiCoordinationProperties.class, UiRuntimeInstanceProperties.class,
+        UiGatewayLeaseProperties.class})
 @ConditionalOnProperty(prefix = "tc.ui.backend.coordination", name = "enabled", havingValue = "true",
         matchIfMissing = true)
 public class UiCoordinationConfiguration {
@@ -153,6 +162,61 @@ public class UiCoordinationConfiguration {
     @Bean
     public UiCoordinationMembershipPort uiCoordinationMembershipPort(final UiCoordinationContext context) {
         return new RedisUiMembershipAdapter(context.membershipStore());
+    }
+
+    /**
+     * Gateway shard lease 조회를 등록합니다(§12.2).
+     *
+     * <p>lease 기록 스키마는 <b>Gateway 쪽 버전</b>이 정하고 이 프로퍼티와 무관합니다 — 조정을 쓰는
+     * Gateway 는 fence epoch hash 에, 그 이전 Gateway 는 raw String 키에 씁니다. 그래서 어느 한쪽만
+     * 읽지 않고 두 스키마를 모두 보는 어댑터를 등록해 배포 순서와 화면 정확성을 분리합니다.</p>
+     *
+     * @param context coordination context
+     * @param shardGroupProperties Gateway 와 공유하는 shard-group 정의
+     * @param stringRedisTemplate 레거시 raw String lease 를 읽는 template
+     * @param leaseProperties 레거시 lease 키 prefix 설정
+     * @return shard lease 조회 포트
+     */
+    @Bean
+    public GatewayShardLeasePort coordinatedGatewayShardLeasePort(
+            final UiCoordinationContext context,
+            final SharedShardGroupProperties shardGroupProperties,
+            @Qualifier("businessStringRedisTemplate") final StringRedisTemplate stringRedisTemplate,
+            final UiGatewayLeaseProperties leaseProperties
+    ) {
+        return new CoordinatedGatewayShardLeaseAdapter(
+                context.leaseStore(),
+                shardGroupProperties,
+                new GatewayShardLeaseRedisAdapter(stringRedisTemplate, shardGroupProperties, leaseProperties));
+    }
+
+    /**
+     * Gateway 런타임 인스턴스 조망 조회를 등록합니다(§9.1).
+     *
+     * <p>lease 는 "점유된 슬롯"만 답하므로 슬롯을 못 잡은 대기(spare) Pod 이 빠집니다. membership 은
+     * lease 획득 여부와 무관하게 등록되므로 Pod 축은 여기서 옵니다.</p>
+     *
+     * <p>조회 key namespace 인 serviceName 은 operation 발행 경로와 같은 설정
+     * ({@link UiCoordinationProperties#getGatewayServiceName()} /
+     * {@link UiCoordinationProperties#getBusinessServiceName()})에서 받습니다 — 두 곳에 두면 한쪽만
+     * 바뀔 때 조회가 조용히 0 건이 됩니다.</p>
+     *
+     * @param context coordination context
+     * @param coordinationProperties 조정 설정(serviceName 출처)
+     * @param properties 조회 상한 설정
+     * @return 런타임 인스턴스 조회 포트
+     */
+    @Bean
+    public RuntimeInstanceQueryPort runtimeInstanceQueryPort(
+            final UiCoordinationContext context,
+            final UiCoordinationProperties coordinationProperties,
+            final UiRuntimeInstanceProperties properties
+    ) {
+        return new RuntimeInstanceRedisAdapter(
+                context.membershipStore(),
+                coordinationProperties.getGatewayServiceName(),
+                coordinationProperties.getBusinessServiceName(),
+                properties);
     }
 
     @Bean

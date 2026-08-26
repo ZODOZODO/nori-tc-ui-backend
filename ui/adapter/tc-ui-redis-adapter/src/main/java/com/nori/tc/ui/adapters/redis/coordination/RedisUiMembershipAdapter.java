@@ -40,6 +40,9 @@ public final class RedisUiMembershipAdapter implements UiCoordinationMembershipP
         final CoordinationOutcome outcome = translating(() -> store.register(
                 identityOf(sessionId),
                 podName,
+                // podIp 는 IP 만 아는 관측면(Kafka consumer group)과 원장을 맞추는 조인 키다.
+                // ui-backend session 은 그런 관측면이 없어 실을 값이 없다.
+                null,
                 protocolVersion,
                 MembershipState.valueOf(initialState.name()),
                 heartbeatTtlMs,

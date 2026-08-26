@@ -8,10 +8,13 @@ import com.nori.tc.ui.core.coordination.UiScenarioCatalogGuard;
 import com.nori.tc.ui.core.port.db.EqpRepairTaskPort;
 import com.nori.tc.ui.core.port.redis.DeployExecutionCoordinationPort;
 import com.nori.tc.ui.core.port.redis.DeployTraceRedisPort;
+import com.nori.tc.ui.core.port.redis.RuntimeInstanceQueryPort;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.List;
 
 /**
  * Redis/DB 어댑터가 없는 테스트 환경을 위한 fallback 저장소 구성입니다.
@@ -95,5 +98,30 @@ class UiCoreFallbackStorageConfiguration {
     @ConditionalOnProperty(prefix = COORDINATION_PREFIX, name = "enabled", havingValue = "false")
     UiCoordinationStatus disabledUiCoordinationStatus() {
         return UiCoordinationStatus.disabled();
+    }
+
+    /**
+     * 조정 원장 구성이 없을 때 쓰는 런타임 인스턴스 조망입니다.
+     *
+     * <p>인스턴스 목록의 원천은 membership 원장뿐입니다 — 원장을 쓰지 않는 구성에서는 알 수 있는 것이
+     * 없으므로 빈 목록을 돌려줍니다(포트 계약에 명시). 다른 원천으로 추정해 채우지 않습니다.</p>
+     *
+     * @return 항상 빈 목록을 돌려주는 조망
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = COORDINATION_PREFIX, name = "enabled", havingValue = "false")
+    RuntimeInstanceQueryPort emptyRuntimeInstanceQueryPort() {
+        return new RuntimeInstanceQueryPort() {
+
+            @Override
+            public List<RuntimeInstanceView> findGatewayInstances() {
+                return List.of();
+            }
+
+            @Override
+            public List<RuntimeInstanceView> findBusinessInstances() {
+                return List.of();
+            }
+        };
     }
 }

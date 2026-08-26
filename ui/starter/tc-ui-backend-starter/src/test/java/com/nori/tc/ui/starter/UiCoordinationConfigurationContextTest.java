@@ -10,6 +10,9 @@ import com.nori.tc.common.coordination.store.OperationLedgerRedisStore;
 import com.nori.tc.common.coordination.store.ResourceBarrierRedisStore;
 import com.nori.tc.common.coordination.types.CatalogHead;
 import com.nori.tc.common.coordination.types.ClusterEpoch;
+import com.nori.tc.common.shard.SharedShardGroupProperties;
+import com.nori.tc.ui.core.port.redis.GatewayShardLeasePort;
+import com.nori.tc.ui.core.port.redis.RuntimeInstanceQueryPort;
 import com.nori.tc.ui.adapters.redis.coordination.UiCoordinationContext;
 import com.nori.tc.ui.core.coordination.DeployOperationCoordinator;
 import com.nori.tc.ui.core.coordination.UiCoordinationRuntime;
@@ -79,6 +82,12 @@ class UiCoordinationConfigurationContextTest {
             assertThat(context).hasSingleBean(UiCoordinationStatus.class);
             assertThat(context).hasSingleBean(DeployExecutionCoordinationPort.class);
             assertThat(context).hasSingleBean(DeployOperationCoordinator.class);
+            /*
+             * shard lease 조회는 조정 구현만 등록되어야 한다 — 레거시 raw String 키 구현이 함께 뜨면
+             * 후보 2 개로 기동이 깨지고, 조정 구현이 빠지면 전 group 이 미점유로 오표시된다.
+             */
+            assertThat(context).hasSingleBean(GatewayShardLeasePort.class);
+            assertThat(context).hasSingleBean(RuntimeInstanceQueryPort.class);
         });
     }
 
@@ -147,7 +156,7 @@ class UiCoordinationConfigurationContextTest {
 
             final MembershipRedisStore membershipStore = Mockito.mock(MembershipRedisStore.class);
             Mockito.when(membershipStore.register(
-                    Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(),
+                    Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(),
                     Mockito.anyLong(), Mockito.anyLong())).thenReturn(ok);
             Mockito.when(membershipStore.renewHeartbeat(
                     Mockito.any(), Mockito.any(), Mockito.any(), Mockito.anyLong(),
@@ -183,6 +192,17 @@ class UiCoordinationConfigurationContextTest {
         @Bean("businessStringRedisTemplate")
         StringRedisTemplate businessStringRedisTemplate() {
             return Mockito.mock(StringRedisTemplate.class);
+        }
+
+        /**
+         * 공유 shard-group 매핑은 실 앱에서 {@code tc-common-shard} 의 auto-configuration 이 제공합니다.
+         *
+         * <p>이 테스트는 starter 의 조정 빈 그래프만 띄우므로 그 auto-configuration 이 없습니다 —
+         * 매핑이 빈 상태(단일 인스턴스 호환 모드)로 두면 조립 검증에는 충분합니다.</p>
+         */
+        @Bean
+        SharedShardGroupProperties sharedShardGroupProperties() {
+            return new SharedShardGroupProperties();
         }
 
         @Bean

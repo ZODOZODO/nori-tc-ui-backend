@@ -9,6 +9,7 @@ import com.nori.tc.ui.adapters.web.application.admin.UserAdminFacade;
 import com.nori.tc.ui.adapters.web.controller.AsyncResultController;
 import com.nori.tc.ui.adapters.web.controller.CoordinationAdminController;
 import com.nori.tc.ui.adapters.web.controller.AuthController;
+import com.nori.tc.ui.adapters.web.controller.BusinessAppAssignmentController;
 import com.nori.tc.ui.adapters.web.controller.CommLogController;
 import com.nori.tc.ui.adapters.web.controller.DeployController;
 import com.nori.tc.ui.adapters.web.controller.DeployScenarioAdminController;
@@ -26,6 +27,7 @@ import com.nori.tc.ui.adapters.web.controller.ModelFlowController;
 import com.nori.tc.ui.adapters.web.controller.ModelMutationController;
 import com.nori.tc.ui.adapters.web.controller.ModelQueryController;
 import com.nori.tc.ui.adapters.web.controller.PermissionController;
+import com.nori.tc.ui.adapters.web.controller.RuntimeInstanceController;
 import com.nori.tc.ui.adapters.web.controller.UserController;
 import com.nori.tc.ui.adapters.web.controller.support.UiApiExceptionHandler;
 import com.nori.tc.ui.adapters.web.controller.support.UiAuthCookieFactory;
@@ -55,6 +57,7 @@ import org.springframework.context.annotation.Import;
         AsyncResultController.class,
         CoordinationAdminController.class,
         AuthController.class,
+        BusinessAppAssignmentController.class,
         CommLogController.class,
         DeployController.class,
         DeployScenarioAdminController.class,
@@ -72,6 +75,7 @@ import org.springframework.context.annotation.Import;
         ModelMutationController.class,
         ModelQueryController.class,
         PermissionController.class,
+        RuntimeInstanceController.class,
         UserController.class,
         UiApiExceptionHandler.class,
         UiAuthCookieFactory.class,

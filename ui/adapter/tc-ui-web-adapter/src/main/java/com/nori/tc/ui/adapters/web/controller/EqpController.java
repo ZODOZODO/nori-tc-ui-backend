@@ -125,7 +125,7 @@ public class EqpController {
         final Optional<UiEqp> optionalEqp = eqpQueryPort.findByEqpId(eqpId);
         if (optionalEqp.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ApiResponse.error("NOT_FOUND", "설비를 찾을 수 없습니다."));
+                    .body(ApiResponse.error("NOT_FOUND", "설비를 찾을 수 없습니다. eqpId=" + eqpId));
         }
 
         return ResponseEntity.ok(ApiResponse.success(EqpControllerResponseSupport.toEqpInfoResponse(optionalEqp.get())));
@@ -144,7 +144,7 @@ public class EqpController {
         final Optional<EqpManagementSnapshot> snapshotOptional = eqpManagementService.getManageDetail(eqpId);
         if (snapshotOptional.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ApiResponse.error("NOT_FOUND", "설비를 찾을 수 없습니다."));
+                    .body(ApiResponse.error("NOT_FOUND", "설비를 찾을 수 없습니다. eqpId=" + eqpId));
         }
 
         return ResponseEntity.ok(ApiResponse.success(EqpControllerResponseSupport.toManageDetailResponse(snapshotOptional.get())));
@@ -219,7 +219,7 @@ public class EqpController {
         final Optional<UiEqp> optionalEqp = eqpQueryPort.findByEqpId(eqpId);
         if (optionalEqp.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ApiResponse.error("NOT_FOUND", "설비를 찾을 수 없습니다."));
+                    .body(ApiResponse.error("NOT_FOUND", "설비를 찾을 수 없습니다. eqpId=" + eqpId));
         }
 
         return ResponseEntity.ok(ApiResponse.success(eqpQueryPort.findParamVersionsByEqpId(eqpId)));
@@ -238,7 +238,7 @@ public class EqpController {
         final Optional<EqpQueryPort.EqpRuntimeStateView> optionalState = eqpQueryPort.findRuntimeStateByEqpId(eqpId);
         if (optionalState.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ApiResponse.error("NOT_FOUND", "설비를 찾을 수 없습니다."));
+                    .body(ApiResponse.error("NOT_FOUND", "설비를 찾을 수 없습니다. eqpId=" + eqpId));
         }
 
         final EqpQueryPort.EqpRuntimeStateView state = optionalState.get();
@@ -288,7 +288,7 @@ public class EqpController {
         final Optional<EqpManagementSnapshot> snapshotOptional = eqpManagementService.getManageDetail(eqpId);
         if (snapshotOptional.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ApiResponse.error("NOT_FOUND", "설비를 찾을 수 없습니다."));
+                    .body(ApiResponse.error("NOT_FOUND", "설비를 찾을 수 없습니다. eqpId=" + eqpId));
         }
         return toAcceptResponse(eqpManagementService.acceptUpdate(
                 eqpId,

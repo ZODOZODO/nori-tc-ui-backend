@@ -18,6 +18,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.beans.factory.NoSuchBeanDefinitionException;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -56,7 +58,47 @@ class AsyncResultControllerTest {
         when(ledgerPort.readOperation(anyString())).thenReturn(Optional.empty());
         final UiOperationQueryService queryService = new UiOperationQueryService(
                 ledgerPort, asyncResultStorePort, new UiCoordinationProperties());
-        mockMvc = MockMvcBuilders.standaloneSetup(new AsyncResultController(queryService)).build();
+        mockMvc = MockMvcBuilders
+                .standaloneSetup(new AsyncResultController(providerOf(queryService)))
+                .build();
+    }
+
+    @Test
+    @DisplayName("조정 원장이 비활성인 구성에서는 503 이고 404 로 환원하지 않는다")
+    void coordinationDisabledReturnsServiceUnavailable() throws Exception {
+        /*
+         * 이 컨트롤러가 조회 서비스를 직접 주입받던 동안에는 조정 비활성 구성에서 앱이 기동조차
+         * 하지 못했다(UnsatisfiedDependencyException — 2026-08-26 프로덕션 배포 실패).
+         * 404 로 환원하지 않는 이유는 Front 가 "작업이 사라졌다" 로 읽고 재요청해 중복 mutation 을
+         * 만들기 때문이다.
+         */
+        final MockMvc disabled = MockMvcBuilders
+                .standaloneSetup(new AsyncResultController(providerOf(null)))
+                .build();
+
+        disabled.perform(get("/api/async/op-1"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("COORDINATION_DISABLED"));
+    }
+
+    /** 조정 on/off 두 구성을 모사하는 공급자 — null 이면 빈 공급자다. */
+    private static ObjectProvider<UiOperationQueryService> providerOf(final UiOperationQueryService service) {
+        return new ObjectProvider<>() {
+
+            @Override
+            public UiOperationQueryService getObject() {
+                if (service == null) {
+                    throw new NoSuchBeanDefinitionException(UiOperationQueryService.class);
+                }
+                return service;
+            }
+
+            @Override
+            public UiOperationQueryService getIfAvailable() {
+                return service;
+            }
+        };
     }
 
     @Test
