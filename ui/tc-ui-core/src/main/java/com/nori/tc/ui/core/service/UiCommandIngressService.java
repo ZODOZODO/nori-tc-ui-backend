@@ -5,9 +5,6 @@ import com.nori.tc.ui.core.model.UiCommandReply;
 import com.nori.tc.ui.core.port.messaging.UiCommandIngressPort;
 import org.springframework.beans.factory.ObjectProvider;
 import com.nori.tc.ui.core.port.redis.AsyncResultStorePort;
-import com.nori.tc.ui.core.registry.DualResponseRegistry;
-import com.nori.tc.ui.domain.task.UiTaskResult;
-import com.nori.tc.ui.domain.task.UiTaskStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -26,8 +23,8 @@ import java.util.Objects;
  * <ul>
  *   <li>EQP_CREATE_REP / EQP_UPDATE_REP / EQP_MODEL_UPDATE_REP / EQP_DELETE_REP /
  *       EQP_GATEWAY_JARFILE_UPDATE_REP / EQP_BUSINESS_JARFILE_UPDATE_REP →
- *       {@link DualResponseRegistry}: Gateway와 Business 양쪽 응답을 수집하여
- *       DeferredResult 완료 처리</li>
+ *       {@link UiReplyProofIngestService}: 조정 원장에 proof 를 기록하고, front 는
+ *       operationId 로 진행 상태를 조회합니다</li>
  *   <li>EQP_START_REP / EQP_END_REP / EQP_RECONNECT_REP /
  *       EQP_SEND_MESSAGE_REP / EQP_PARAMETER_UPDATE_REP /
  *       EQP_PLC_GROUP_START_REP / EQP_PLC_GROUP_END_REP →
@@ -45,7 +42,6 @@ public class UiCommandIngressService implements UiCommandIngressPort {
     private static final Logger log = LoggerFactory.getLogger(UiCommandIngressService.class);
 
     private final DeployService deployService;
-    private final DualResponseRegistry dualResponseRegistry;
     private final AsyncResultStorePort asyncResultStorePort;
     private final ObjectProvider<UiReplyProofIngestService> replyProofIngestProvider;
 
@@ -53,18 +49,15 @@ public class UiCommandIngressService implements UiCommandIngressPort {
      * 필수 의존성을 주입받습니다.
      *
      * @param deployService deploy reply 라우팅 서비스
-     * @param dualResponseRegistry eqp_create/update/delete DeferredResult 관리 레지스트리
      * @param asyncResultStorePort eqp_start/end 비동기 결과 Redis 저장 포트
      * @param replyProofIngestProvider 조정 reply proof 기록 서비스(비조정 구성이면 비어 있음)
      */
     public UiCommandIngressService(
             final DeployService deployService,
-            final DualResponseRegistry dualResponseRegistry,
             final AsyncResultStorePort asyncResultStorePort,
             final ObjectProvider<UiReplyProofIngestService> replyProofIngestProvider
     ) {
         this.deployService = Objects.requireNonNull(deployService, "deployService is null");
-        this.dualResponseRegistry = Objects.requireNonNull(dualResponseRegistry, "dualResponseRegistry is null");
         this.asyncResultStorePort = Objects.requireNonNull(asyncResultStorePort, "asyncResultStorePort is null");
         this.replyProofIngestProvider =
                 Objects.requireNonNull(replyProofIngestProvider, "replyProofIngestProvider is null");
@@ -101,14 +94,20 @@ public class UiCommandIngressService implements UiCommandIngressPort {
         final String source    = reply.source();
 
         switch (eventType) {
-            // dual-response: Gateway + Business 양방향 응답 수집
+            /*
+             * 설비 mutation reply 의 상태 기록은 위 proof ingest 가 이미 마쳤다(§13.5).
+             * 이 분기는 알려진 eventType 임을 표시해 default 의 "처리되지 않은 eventType" 경고를
+             * 피하기 위해 남긴다 — 종전의 DualResponseRegistry 기록은 그 future 를 기다리는 호출부가
+             * 워크스페이스 전체에 없어(register 호출 0건) 아무도 읽지 않는 쓰기였으므로 제거했다.
+             */
             case "EQP_CREATE_REP",
                  "EQP_UPDATE_REP",
                  "EQP_MODEL_UPDATE_REP",
                  "EQP_DELETE_REP",
                  "EQP_GATEWAY_JARFILE_UPDATE_REP",
                  "EQP_BUSINESS_JARFILE_UPDATE_REP" ->
-                handleDualResponse(traceId, source, reply);
+                log.debug("설비 mutation reply 수신. traceId={}, source={}, status={}",
+                        traceId, source, reply.status());
 
             // 단일 응답: polling 결과 저장
             case "EQP_START_REP",
@@ -126,32 +125,9 @@ public class UiCommandIngressService implements UiCommandIngressPort {
     }
 
     /**
-     * eqp_create / eqp_update / eqp_delete 응답을 DualResponseRegistry에 기록합니다.
-     *
-     * <p>Gateway(TC-GATEWAY-APP)와 Business(TC-BUSINESS-APP) 양쪽 응답을
-     * traceId + source 조합으로 매핑합니다. 양쪽 모두 수신 완료 시 Registry가
-     * 자동으로 CompletableFuture를 완료시킵니다.</p>
-     *
-     * @param traceId 작업 추적 ID
-     * @param source  응답 출처 (TC-GATEWAY-APP 또는 TC-BUSINESS-APP)
-     * @param reply   수신된 reply 메시지
-     */
-    private void handleDualResponse(
-            final String traceId,
-            final String source,
-            final UiCommandReply reply
-    ) {
-        final UiTaskResult result = toUiTaskResult(traceId, source, reply);
-        log.info("DualResponse 기록. traceId={}, source={}, status={}",
-                traceId, source, result.status());
-        dualResponseRegistry.record(traceId, source, result);
-    }
-
-    /**
      * eqp_start / eqp_end 응답을 Redis에 저장합니다.
      *
-     * <p>front가 GET /api/async/{traceId} polling으로 결과를 확인합니다.
-     * Gateway 단일 응답이므로 DualResponseRegistry를 거치지 않습니다.</p>
+     * <p>front가 GET /api/async/{traceId} polling으로 결과를 확인합니다.</p>
      *
      * @param traceId 작업 추적 ID
      * @param reply   수신된 reply 메시지
@@ -159,24 +135,5 @@ public class UiCommandIngressService implements UiCommandIngressPort {
     private void handleAsyncResult(final String traceId, final UiCommandReply reply) {
         log.info("비동기 결과 COMPLETED 저장. traceId={}, status={}", traceId, reply.status());
         asyncResultStorePort.markCompleted(traceId, reply);
-    }
-
-    /**
-     * UiCommandReply를 UiTaskResult 도메인 객체로 변환합니다.
-     *
-     * @param traceId 작업 추적 ID
-     * @param source  응답 출처
-     * @param reply   변환할 reply 메시지
-     * @return 변환된 UiTaskResult
-     */
-    private UiTaskResult toUiTaskResult(
-            final String traceId,
-            final String source,
-            final UiCommandReply reply
-    ) {
-        if (reply.status() == UiTaskStatus.PASS) {
-            return UiTaskResult.pass(traceId, source);
-        }
-        return UiTaskResult.fail(traceId, source, reply.errorCode(), reply.errorMsg());
     }
 }

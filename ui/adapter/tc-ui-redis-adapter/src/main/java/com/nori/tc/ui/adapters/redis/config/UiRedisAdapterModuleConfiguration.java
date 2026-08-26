@@ -8,8 +8,6 @@ import com.nori.tc.ui.adapters.redis.dlq.GatewayDlqRedisService;
 import com.nori.tc.ui.adapters.redis.lease.GatewayShardLeaseRedisAdapter;
 import com.nori.tc.ui.adapters.redis.registry.DeployTracePubSubListener;
 import com.nori.tc.ui.adapters.redis.registry.DeployTraceRedisAdapter;
-import com.nori.tc.ui.adapters.redis.registry.DualResponsePubSubListener;
-import com.nori.tc.ui.adapters.redis.registry.DualResponseRedisAdapter;
 import com.nori.tc.ui.adapters.redis.repair.RedisEqpRepairTaskStore;
 import com.nori.tc.ui.adapters.redis.session.UiSessionCacheService;
 import org.springframework.context.annotation.Configuration;
@@ -31,8 +29,6 @@ import org.springframework.context.annotation.Import;
         BusinessDlqRedisService.class,
         GatewayDlqRedisService.class,
         GatewayShardLeaseRedisAdapter.class,
-        DualResponsePubSubListener.class,
-        DualResponseRedisAdapter.class,
         RedisEqpRepairTaskStore.class,
         UiSessionCacheService.class
 })

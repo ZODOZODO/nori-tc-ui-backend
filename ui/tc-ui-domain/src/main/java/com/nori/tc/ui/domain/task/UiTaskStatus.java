@@ -6,7 +6,7 @@ package com.nori.tc.ui.domain.task;
  * <p>사용 흐름:</p>
  * <ul>
  *   <li>tc.ui.commands 수신 시 {@code KafkaUiTaskReplyData.status} 문자열을 이 enum으로 변환합니다.</li>
- *   <li>DualResponseRegistry에서 gateway/business 양측 결과를 취합할 때 사용합니다.</li>
+ *   <li>gateway/business 양측 결과를 취합할 때 사용합니다.</li>
  *   <li>AsyncResultStorePort가 Redis에 저장하는 eqp_start/end reply 결과에 포함됩니다.</li>
  * </ul>
  *

@@ -3,7 +3,7 @@
  *
  * 역할
  * - tc.ui.events.gateway / tc.ui.events.business 발행 Port를 구현합니다.
- * - tc.ui.commands 구독 후 DualResponseRegistry 또는 AsyncResultStore에 결과를 저장합니다.
+ * - tc.ui.commands 구독 후 조정 원장 proof 또는 AsyncResultStore에 결과를 저장합니다.
  *
  * 주요 구성 (Phase 5에서 구현)
  * Publisher:
@@ -14,7 +14,7 @@
  * Subscriber:
  *   - UiCommandKafkaSubscriber ← tc.ui.commands
  *     * Consumer Group: tc-ui-backend-group, MANUAL_IMMEDIATE
- *     * EQP_CREATE/UPDATE/DELETE → DualResponseRegistry
+ *     * EQP_CREATE/UPDATE/DELETE → 조정 원장 proof(UiReplyProofIngestService)
  *     * EQP_START_REP/EQP_END_REP → AsyncResultStorePort (Business Redis)
  */
 

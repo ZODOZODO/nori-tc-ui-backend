@@ -2,7 +2,6 @@ package com.nori.tc.ui.starter;
 
 import com.nori.tc.ui.core.auth.UiAuthMetrics;
 import com.nori.tc.ui.core.auth.UiTokenRecheckWindowCache;
-import com.nori.tc.ui.core.registry.DualResponseRegistry;
 import com.nori.tc.ui.core.service.DeployRegisterQueryService;
 import com.nori.tc.ui.core.service.UiCoreServiceModuleConfiguration;
 import com.nori.tc.ui.core.usecase.LoginUseCase;
@@ -21,7 +20,6 @@ import org.springframework.context.annotation.Import;
 @Import({
         UiAuthMetrics.class,
         UiTokenRecheckWindowCache.class,
-        DualResponseRegistry.class,
         DeployRegisterQueryService.class,
         UiCoreServiceModuleConfiguration.class,
         LoginUseCase.class,

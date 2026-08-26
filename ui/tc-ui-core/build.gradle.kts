@@ -21,7 +21,7 @@
  * UseCase:
  *   - LoginUseCase, LogoutUseCase, ValidateTokenUseCase
  * Registry:
- *   - DualResponseRegistry : eqp_create/update/delete DeferredResult 관리
+ *   - UiOperationExecutor : eqp_create/update/delete 조정 operation 진행
  */
 
 plugins {
@@ -57,7 +57,7 @@ dependencies {
 
     /*
      * Phase 4 OPS-01:
-     * - DualResponseRegistry 메트릭(카운터/타이머) 기록을 위해 Micrometer API를 사용합니다.
+     * - 조정 metric(카운터/타이머) 기록을 위해 Micrometer API를 사용합니다.
      * - 실제 registry 구현체는 앱 계층(Actuator/Prometheus)에서 주입합니다.
      */
     implementation(libs.micrometer.core)

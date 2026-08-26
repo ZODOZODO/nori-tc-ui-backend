@@ -7,12 +7,12 @@ import java.util.Objects;
  *
  * <p>역할:</p>
  * <p>tc.ui.commands 토픽에서 수신한 gateway/business 응답을 도메인 객체로 표현합니다.
- * DualResponseRegistry(eqp_create/update/delete)와 AsyncResultStore(eqp_start/end)
+ * 조정 원장 proof(eqp_create/update/delete)와 AsyncResultStore(eqp_start/end)
  * 양쪽에서 공통으로 사용하는 결과 컨테이너입니다.</p>
  *
  * <p>source 필드:</p>
  * <p>{@code KafkaUiTaskReplyMessage.metadata.source} 값을 그대로 보관합니다.
- * DualResponseRegistry에서 gateway 응답과 business 응답을 구분하는 데 사용합니다.</p>
+ * 응답 출처(gateway/business)를 구분하는 데 사용합니다.</p>
  * <ul>
  *   <li>{@code TC-GATEWAY-APP}: gateway가 발행한 응답</li>
  *   <li>{@code TC-BUSINESS-APP}: business가 발행한 응답</li>

@@ -2,8 +2,6 @@ package com.nori.tc.ui.adapters.redis.config;
 
 import com.nori.tc.ui.adapters.redis.registry.DeployTracePubSubListener;
 import com.nori.tc.ui.adapters.redis.registry.DeployTraceRedisAdapter;
-import com.nori.tc.ui.adapters.redis.registry.DualResponsePubSubListener;
-import com.nori.tc.ui.adapters.redis.registry.DualResponseRedisAdapter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -33,7 +31,7 @@ import tools.jackson.databind.json.JsonMapper;
  * <ul>
  *   <li>물리 Redis 연결은 1개만 생성하고, gateway/business는 논리 역할 이름으로만 유지합니다.</li>
  *   <li>기존 JDK 직렬화를 제거하고 JSON 직렬화로 통일합니다.</li>
- *   <li>DualResponse 완료 알림 채널을 Business Redis Pub/Sub로 수신합니다.</li>
+ *   <li>Deploy trace 완료 알림 채널을 Business Redis Pub/Sub로 수신합니다.</li>
  * </ul>
  *
  * <p>직렬화 전략:</p>
@@ -129,7 +127,7 @@ public class UiRedisConfiguration {
     /**
      * Business RedisTemplate 빈입니다.
      *
-     * <p>토큰 캐시, 비동기 결과 저장, DualResponse 상태 저장에 사용됩니다.</p>
+     * <p>토큰 캐시와 비동기 결과 저장에 사용됩니다.</p>
      *
      * @param factory business 연결 팩토리
      * @param valueSerializer JSON 직렬화기
@@ -248,33 +246,6 @@ public class UiRedisConfiguration {
 
         log.info("dlqRedisTemplate 초기화 완료. serializer=GenericJacksonJsonRedisSerializer(typeless)");
         return template;
-    }
-
-    // -------------------------------------------------------------------------
-    // DualResponse Redis Pub/Sub
-    // -------------------------------------------------------------------------
-
-    /**
-     * DualResponse 완료 알림 채널 구독 컨테이너입니다.
-     *
-     * <p>Business Redis 연결을 사용하여 완료 채널을 구독합니다.
-     * 메시지 수신 시 {@link DualResponsePubSubListener}가 traceId 기준으로
-     * 로컬 CompletableFuture 완료를 트리거합니다.</p>
-     *
-     * @param businessFactory business Redis 연결 팩토리
-     * @param listener 완료 메시지 리스너
-     * @return RedisMessageListenerContainer
-     */
-    @Bean(name = "dualResponseRedisMessageListenerContainer")
-    public RedisMessageListenerContainer dualResponseRedisMessageListenerContainer(
-            @Qualifier("businessLettuceConnectionFactory") final LettuceConnectionFactory businessFactory,
-            final DualResponsePubSubListener listener
-    ) {
-        final RedisMessageListenerContainer container = new RedisMessageListenerContainer();
-        container.setConnectionFactory(businessFactory);
-        container.addMessageListener(listener, new ChannelTopic(DualResponseRedisAdapter.DUAL_COMPLETE_CHANNEL));
-        log.info("DualResponse Pub/Sub 리스너 등록 완료. channel={}", DualResponseRedisAdapter.DUAL_COMPLETE_CHANNEL);
-        return container;
     }
 
     /**
