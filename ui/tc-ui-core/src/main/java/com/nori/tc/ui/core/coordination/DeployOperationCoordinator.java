@@ -161,7 +161,7 @@ public final class DeployOperationCoordinator {
         Objects.requireNonNull(dispatchTargets, "dispatchTargets is null");
 
         final List<DeployOperationGroup> groups = new ArrayList<>();
-        for (final DeployExecutionTarget target : dispatchTargets) {
+        for (final DeployExecutionTarget target : participating(dispatchTargets)) {
             final Set<String> closure = new LinkedHashSet<>(closureOf(eventType, target));
             /*
              * 이미 만든 그룹 중 영향 집합이 겹치는 것을 전부 흡수한다. 겹치는 그룹이 둘 이상일 수
@@ -271,6 +271,24 @@ public final class DeployOperationCoordinator {
      */
     public static String executionIdOf(final long deployKey, final long representativeTargetKey) {
         return DEPLOY_KEY_PREFIX + deployKey + ":" + representativeTargetKey;
+    }
+
+    /**
+     * operation 에 참여하는 target 만 남깁니다.
+     *
+     * <p>이 정규화는 <b>여기</b>에 있어야 합니다. operationId 는 그룹의 대표 target key 에서 도출되므로
+     * (§13.6 / Plan D9), 접수와 취소가 서로 다른 목록으로 그룹을 만들면 같은 deploy 인데 다른
+     * operationId 가 나옵니다. 호출부마다 거르게 두면 그 일치를 호출부가 책임지게 되고, 실제로
+     * 접수는 실행 대상만, 취소는 계획 전체를 넘겨 갈라졌습니다.</p>
+     *
+     * <p>기준은 {@code noChange} 입니다 — 계획 시점에 {@code NO_CHANGE} 로 저장되고 이후 바뀌지 않아
+     * 어느 시점에 물어도 같은 답이 나옵니다({@code DeployJdbcStoreSupport:198}). {@code targetStatus}
+     * 는 실행 중 전이하므로 이 판정에 쓸 수 없습니다.</p>
+     */
+    private static List<DeployExecutionTarget> participating(final List<DeployExecutionTarget> targets) {
+        return targets.stream()
+                .filter(target -> !target.target().planDraft().noChange())
+                .toList();
     }
 
     private List<String> closureOf(final UiCommandEventType eventType, final DeployExecutionTarget target) {

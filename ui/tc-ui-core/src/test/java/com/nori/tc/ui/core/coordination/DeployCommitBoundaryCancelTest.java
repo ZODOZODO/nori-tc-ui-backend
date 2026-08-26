@@ -90,6 +90,61 @@ class DeployCommitBoundaryCancelTest {
                 "EQP002 그룹은 stub 이 false 를 돌려주므로 커밋 목록에 남습니다.");
     }
 
+    @Test
+    @DisplayName("NO_CHANGE target 이 섞여 있어도 취소는 접수와 같은 operation 을 가리킨다")
+    void noChangeTargetDoesNotShiftTheCancelOperationId() {
+        final UiOperationManifestFactory manifestFactory = manifestFactory();
+        // 접수는 실행 대상만 넘긴다(DeployService 가 NO_CHANGE 를 걸러낸다). 그때 만들어진 operationId.
+        final String accepted = manifestFactory.operationIdOf(
+                DeployOperationCoordinator.executionIdOf(DEPLOY_KEY, 12L));
+
+        final UiOperationExecutor executor = mock(UiOperationExecutor.class);
+        when(executor.abortBeforeCommit(anyString(), anyString(), anyString(), anyLong())).thenReturn(false);
+        when(executor.abortBeforeCommit(eq(accepted), anyString(), anyString(), anyLong())).thenReturn(true);
+
+        // 취소는 계획 전체를 넘긴다 — NO_CHANGE target 은 접수된 적이 없다.
+        final DeployOperationCoordinator.CancelOutcome outcome =
+                coordinator(executor, manifestFactory).cancelBeforeCommit(
+                        DEPLOY_KEY, UiCommandEventType.EQP_UPDATE,
+                        List.of(noChangeTarget(11L, "EQP001"), target(12L, "EQP002")));
+
+        assertEquals(List.of(accepted), outcome.abortedOperationIds(),
+                "NO_CHANGE target 은 접수되지 않았으므로 취소 그룹에서도 빠져야 합니다.");
+        assertTrue(outcome.committedOperationIds().isEmpty(),
+                "존재한 적 없는 operation 을 '이미 커밋됨' 으로 보고하면 취소가 영구히 거부됩니다.");
+    }
+
+    @Test
+    @DisplayName("NO_CHANGE target 이 같은 모델을 공유해도 대표 target key 를 밀어내지 않는다")
+    void noChangeTargetSharingTheModelDoesNotShiftTheRepresentative() {
+        final UiOperationManifestFactory manifestFactory = manifestFactory();
+        final String accepted = manifestFactory.operationIdOf(
+                DeployOperationCoordinator.executionIdOf(DEPLOY_KEY, 12L));
+
+        final UiOperationExecutor executor = mock(UiOperationExecutor.class);
+        when(executor.abortBeforeCommit(anyString(), anyString(), anyString(), anyLong())).thenReturn(false);
+        when(executor.abortBeforeCommit(eq(accepted), anyString(), anyString(), anyLong())).thenReturn(true);
+
+        // 두 설비가 같은 modelVersionKey 를 쓰면 영향 집합이 겹쳐 한 그룹으로 합쳐진다. NO_CHANGE 인
+        // 11 이 그룹에 남으면 대표 key 가 11 로 밀려 접수된 operation 을 영영 찾지 못한다.
+        final DeployOperationCoordinator.CancelOutcome outcome = new DeployOperationCoordinator(
+                new UiResourceKeyPlanner(sharedModelEqpQueryPort()),
+                new UiDeployDescriptorFactory(),
+                mock(com.nori.tc.ui.core.coordination.port.UiResourceHeadPort.class),
+                mock(UiOperationAcceptanceService.class),
+                mock(UiOperationReconciler.class),
+                executor,
+                manifestFactory,
+                new ObjectMapper()
+        ).cancelBeforeCommit(
+                DEPLOY_KEY, UiCommandEventType.EQP_MODEL_UPDATE,
+                List.of(noChangeTarget(11L, "EQP001"), target(12L, "EQP002")));
+
+        assertEquals(List.of(accepted), outcome.abortedOperationIds(),
+                "대표 target key 가 밀리면 접수된 operation 이 취소되지 않고 계속 진행됩니다.");
+        assertTrue(outcome.committedOperationIds().isEmpty());
+    }
+
     private static DeployOperationCoordinator coordinator(final UiOperationExecutor executor) {
         return coordinator(executor, manifestFactory());
     }
@@ -134,6 +189,67 @@ class DeployCommitBoundaryCancelTest {
                 throw new IllegalStateException(ex);
             }
         }
+    }
+
+    /**
+     * 변경 없음으로 계획된 target 입니다.
+     *
+     * <p>계획 시점에 {@code NO_CHANGE} 로 저장되며 실행 대상에서 빠집니다
+     * ({@code DeployJdbcStoreSupport:198}). 상태는 이후에도 바뀌지 않으므로 취소 시점에도 그대로
+     * 조회됩니다 — 그래서 접수와 취소의 그룹 입력이 갈립니다.</p>
+     */
+    private static DeployExecutionTarget noChangeTarget(final long deployTargetKey, final String eqpId) {
+        final DeployExecutionTarget changed = target(deployTargetKey, eqpId);
+        final DeployTargetPlanDraft draft = changed.target().planDraft();
+        final DeployTargetPlanDraft noChangeDraft = new DeployTargetPlanDraft(
+                draft.eqpId(), draft.interfaceType(), draft.currentState(), draft.desiredState(),
+                draft.deltaKinds(), draft.resolvedScenarioCode(), draft.resolvedScenarioVersion(),
+                draft.resolvedSteps(), draft.desiredStateJson(), draft.deltaJson(),
+                draft.resolvedStepPlanJson(), true);
+        return new DeployExecutionTarget(
+                new PersistedDeployTarget(deployTargetKey, changed.target().targetOrder(), noChangeDraft),
+                DeployTargetStatus.NO_CHANGE, null, null, DeployStepStatus.PENDING);
+    }
+
+    /** 두 설비가 같은 {@code modelVersionKey} 를 공유해 영향 집합이 겹치는 구성입니다. */
+    private static EqpQueryPort sharedModelEqpQueryPort() {
+        final EqpQueryPort delegate = eqpQueryPort();
+        return new EqpQueryPort() {
+            @Override
+            public PagedResponse<UiEqp> findAll(final UiPageRequest pageRequest) {
+                return delegate.findAll(pageRequest);
+            }
+
+            @Override
+            public Optional<UiEqp> findByEqpId(final String eqpId) {
+                return delegate.findByEqpId(eqpId);
+            }
+
+            @Override
+            public List<String> findParamVersionsByEqpId(final String eqpId) {
+                return delegate.findParamVersionsByEqpId(eqpId);
+            }
+
+            @Override
+            public List<UiEqpParam> findParamsByEqpIdAndVersion(final String eqpId, final String version) {
+                return delegate.findParamsByEqpIdAndVersion(eqpId, version);
+            }
+
+            @Override
+            public Optional<EqpCheckoutStateView> findCheckoutStateByEqpId(final String eqpId) {
+                return delegate.findCheckoutStateByEqpId(eqpId);
+            }
+
+            @Override
+            public Optional<EqpRuntimeStateView> findRuntimeStateByEqpId(final String eqpId) {
+                return delegate.findRuntimeStateByEqpId(eqpId);
+            }
+
+            @Override
+            public List<String> findEqpIdsByModelVersionKey(final long modelVersionKey) {
+                return List.of("EQP001", "EQP002");
+            }
+        };
     }
 
     private static DeployExecutionTarget target(final long deployTargetKey, final String eqpId) {

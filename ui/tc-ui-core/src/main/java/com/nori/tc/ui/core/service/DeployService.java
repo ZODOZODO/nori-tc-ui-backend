@@ -612,6 +612,10 @@ public class DeployService {
      * operation 상태 기계가 lease 아래에서 수행하고, target {@code COMPLETED} 는 그 operation 이
      * 모든 applied proof 와 DB 확정을 끝냈을 때만 기록됩니다. 조정이 꺼진 구성은 기존처럼 target 마다
      * 실행 스레드를 띄웁니다.</p>
+     *
+     * <p>접수에는 {@code dispatchTargets} 가 아니라 <b>계획 전체</b>를 넘깁니다 — 취소도 계획 전체를
+     * 넘기므로, 두 호출이 같은 목록을 봐야 같은 그룹과 같은 operationId 가 나옵니다. 참여 대상 선별은
+     * {@code DeployOperationCoordinator} 가 합니다.</p>
      */
     private void dispatch(
             final long deployKey,
@@ -626,7 +630,7 @@ public class DeployService {
             return;
         }
         final List<String> operationIds = coordinator.acceptAll(
-                deployKey, executionPlan.eventType(), dispatchTargets, normalizedActor);
+                deployKey, executionPlan.eventType(), executionPlan.targets(), normalizedActor);
         log.info("Deploy를 조정 원장 operation 으로 접수했습니다. {}",
                 RuntimeLogSummary.kv(
                         "deployKey", deployKey,

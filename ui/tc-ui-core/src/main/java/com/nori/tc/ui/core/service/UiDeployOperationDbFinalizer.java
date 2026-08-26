@@ -20,7 +20,8 @@ import java.util.Optional;
 /**
  * commit 된 revision 을 deploy target 상태로 확정합니다(§13.6/§13.7).
  *
- * <p>여기가 target {@code COMPLETED} 를 쓰는 <b>유일한</b> 지점입니다. step 하나의 로컬 성공을 전체
+ * <p>조정 원장이 켜진 구성에서 target {@code COMPLETED} 를 쓰는 <b>유일한</b> 지점입니다(조정이 꺼진
+ * 구성은 {@code DeployExecutor} 가 step 완주 직후 씁니다). step 하나의 로컬 성공을 전체
  * target 의 확정으로 해석하지 않는 것이 §13.6 의 요구이고, 이 클래스는 operation 이 모든 applied
  * proof 를 모은 뒤 finalization 단계에서만 호출됩니다.</p>
  *

@@ -33,8 +33,9 @@ import java.util.Optional;
  * {@code /api/coordination/operations} prefix + {@code GET} 으로 등록되어 있고 ADMIN 그룹에만
  * grant 됩니다(Flyway V8). 이 백엔드는 closed-by-default 라 grant 가 없으면 admin 이라도 차단됩니다.</p>
  *
- * <p>미완성 항목: §20.3 이 요구하는 <b>phase history</b> 는 아직 돌려주지 않습니다. 원장이 현재
- * phase 만 보관하고 전이 이력을 남기지 않기 때문이며, 이력 저장은 별도 작업입니다.</p>
+ * <p>phase 전이 이력도 함께 돌려줍니다. 이력은 별도 key 가 아니라 operation hash 의
+ * {@code phaseHistory} field 에 쌓이며, 기록 상한에 닿으면 뒤쪽이 잘립니다 —
+ * {@code OperationLedgerRedisStore#readPhaseHistory} 참조.</p>
  */
 @RestController
 @RequestMapping("/api/coordination/operations")
