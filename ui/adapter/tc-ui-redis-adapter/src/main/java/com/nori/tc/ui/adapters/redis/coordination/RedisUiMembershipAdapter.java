@@ -10,6 +10,8 @@ import com.nori.tc.ui.core.coordination.port.UiCoordinationMembershipPort;
 import java.util.List;
 import java.util.Objects;
 
+import static com.nori.tc.ui.adapters.redis.coordination.UiCoordinationFailures.translating;
+
 /**
  * {@link UiCoordinationMembershipPort} 의 Redis 구현입니다(§9.1/§9.2/§11.3).
  */
@@ -35,13 +37,13 @@ public final class RedisUiMembershipAdapter implements UiCoordinationMembershipP
             final long heartbeatTtlMs,
             final long nowEpochMs
     ) {
-        final CoordinationOutcome outcome = store.register(
+        final CoordinationOutcome outcome = translating(() -> store.register(
                 identityOf(sessionId),
                 podName,
                 protocolVersion,
                 MembershipState.valueOf(initialState.name()),
                 heartbeatTtlMs,
-                nowEpochMs);
+                nowEpochMs));
         return switch (outcome.code()) {
             case "OK" -> Result.OK;
             case "ALREADY" -> Result.ALREADY_REGISTERED;
@@ -59,13 +61,13 @@ public final class RedisUiMembershipAdapter implements UiCoordinationMembershipP
             final long heartbeatTtlMs,
             final long nowEpochMs
     ) {
-        final CoordinationOutcome outcome = store.renewHeartbeat(
+        final CoordinationOutcome outcome = translating(() -> store.renewHeartbeat(
                 identityOf(sessionId),
                 protocolVersion,
                 MembershipState.valueOf(state.name()),
                 lastAppliedGlobalRevision,
                 heartbeatTtlMs,
-                nowEpochMs);
+                nowEpochMs));
         return switch (outcome.code()) {
             case "OK" -> Result.OK;
             case "FENCED" -> Result.FENCED;
@@ -86,12 +88,13 @@ public final class RedisUiMembershipAdapter implements UiCoordinationMembershipP
             final String protocolVersion,
             final long limit
     ) {
-        return store.liveSessionIds(serviceName, MembershipState.ACTIVE_SYNCED, protocolVersion, limit);
+        return translating(() ->
+                store.liveSessionIds(serviceName, MembershipState.ACTIVE_SYNCED, protocolVersion, limit));
     }
 
     @Override
     public boolean expired(final String serviceName, final String sessionId) {
-        return store.readMember(serviceName, sessionId).isEmpty();
+        return translating(() -> store.readMember(serviceName, sessionId).isEmpty());
     }
 
     private static SessionIdentity identityOf(final String sessionId) {

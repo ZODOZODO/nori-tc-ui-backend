@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory;
 import java.util.Objects;
 import java.util.Optional;
 
+import static com.nori.tc.ui.adapters.redis.coordination.UiCoordinationFailures.translating;
+
 /**
  * {@link UiExecutorLeasePort} 의 Redis 구현입니다(§13.4).
  *
@@ -40,13 +42,13 @@ public final class RedisUiExecutorLeaseAdapter implements UiExecutorLeasePort {
             final long ttlMs,
             final long nowEpochMs
     ) {
-        final CoordinationOutcome outcome = store.acquire(
+        final CoordinationOutcome outcome = translating(() -> store.acquire(
                 CoordinationKeys.executorEpochKey(operationId),
                 CoordinationKeys.executorLeaseKey(operationId),
                 sessionId,
                 ttlMs,
                 "{\"role\":\"operation-executor\"}",
-                nowEpochMs);
+                nowEpochMs));
         if (!"OK".equals(outcome.code())) {
             if (log.isDebugEnabled()) {
                 log.debug("UI_EXECUTOR_LEASE_HELD. operationId={}, code={}, owner={}",
@@ -59,21 +61,21 @@ public final class RedisUiExecutorLeaseAdapter implements UiExecutorLeasePort {
 
     @Override
     public boolean renew(final UiExecutorLease lease, final long ttlMs, final long nowEpochMs) {
-        return "OK".equals(store.renew(
+        return "OK".equals(translating(() -> store.renew(
                 CoordinationKeys.executorLeaseKey(lease.operationId()),
                 lease.sessionId(),
                 lease.epoch(),
                 ttlMs,
-                nowEpochMs).code());
+                nowEpochMs).code()));
     }
 
     @Override
     public void release(final UiExecutorLease lease, final long nowEpochMs) {
-        final String code = store.release(
+        final String code = translating(() -> store.release(
                 CoordinationKeys.executorLeaseKey(lease.operationId()),
                 lease.sessionId(),
                 lease.epoch(),
-                nowEpochMs).code();
+                nowEpochMs).code());
         if (!"OK".equals(code) && log.isDebugEnabled()) {
             log.debug("UI_EXECUTOR_LEASE_RELEASE_SKIPPED. operationId={}, code={}", lease.operationId(), code);
         }

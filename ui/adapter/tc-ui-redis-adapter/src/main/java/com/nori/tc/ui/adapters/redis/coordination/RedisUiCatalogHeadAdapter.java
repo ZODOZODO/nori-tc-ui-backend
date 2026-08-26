@@ -7,6 +7,8 @@ import com.nori.tc.ui.core.coordination.port.UiCatalogHeadPort;
 
 import java.util.Objects;
 
+import static com.nori.tc.ui.adapters.redis.coordination.UiCoordinationFailures.translating;
+
 /**
  * {@link UiCatalogHeadPort} 의 Redis 구현입니다(§13.9/§13.10).
  */
@@ -31,12 +33,13 @@ public final class RedisUiCatalogHeadAdapter implements UiCatalogHeadPort {
             final Long expectedRevision,
             final long nowEpochMs
     ) {
-        return store.commitHead(catalogType, newRevision, digest, expectedRevision, nowEpochMs).code();
+        return translating(() ->
+                store.commitHead(catalogType, newRevision, digest, expectedRevision, nowEpochMs).code());
     }
 
     @Override
     public UiCatalogHeadView readHead(final String catalogType) {
-        final CatalogHead head = store.readHead(catalogType);
+        final CatalogHead head = translating(() -> store.readHead(catalogType));
         return new UiCatalogHeadView(head.catalogType(), head.revision(), head.digest());
     }
 }

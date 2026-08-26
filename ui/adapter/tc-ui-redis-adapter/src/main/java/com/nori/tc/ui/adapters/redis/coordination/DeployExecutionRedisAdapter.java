@@ -12,6 +12,8 @@ import java.time.Duration;
 import java.util.Objects;
 import java.util.Optional;
 
+import static com.nori.tc.ui.adapters.redis.coordination.UiCoordinationFailures.translating;
+
 /**
  * Deploy/direct target 실행의 lease 와 idempotency 를 Redis 에 기록하는 어댑터입니다(§13.4).
  *
@@ -56,13 +58,13 @@ public final class DeployExecutionRedisAdapter implements DeployExecutionCoordin
         Objects.requireNonNull(eqpId, "eqpId is null");
         Objects.requireNonNull(ownerToken, "ownerToken is null");
 
-        final CoordinationOutcome outcome = leaseStore.acquire(
+        final CoordinationOutcome outcome = translating(() -> leaseStore.acquire(
                 CoordinationKeys.equipmentExecutionEpochKey(eqpId),
                 CoordinationKeys.equipmentExecutionLeaseKey(eqpId),
                 ownerToken,
                 Math.max(1L, ttlMs),
                 "{\"role\":\"deploy-target\"}",
-                System.currentTimeMillis());
+                System.currentTimeMillis()));
         if ("OK".equals(outcome.code())) {
             return Optional.of(Long.parseLong(outcome.value(0)));
         }
@@ -78,11 +80,11 @@ public final class DeployExecutionRedisAdapter implements DeployExecutionCoordin
         if (eqpId == null || ownerToken == null) {
             return;
         }
-        final String code = leaseStore.release(
+        final String code = translating(() -> leaseStore.release(
                 CoordinationKeys.equipmentExecutionLeaseKey(eqpId),
                 ownerToken,
                 epoch,
-                System.currentTimeMillis()).code();
+                System.currentTimeMillis()).code());
         if (!"OK".equals(code)) {
             log.warn("deploy target lease 해제가 거부되었습니다. eqpId={}, ownerToken={}, epoch={}, code={}",
                     eqpId, ownerToken, epoch, code);

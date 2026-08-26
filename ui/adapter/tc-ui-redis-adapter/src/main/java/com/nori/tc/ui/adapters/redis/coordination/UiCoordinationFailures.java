@@ -15,6 +15,13 @@ import java.util.function.Supplier;
  * (2026-08-26 P6 통합 검증에서 cluster epoch 변조 시 실제로 500 이 관측됐다).</p>
  *
  * <p>번역만 하고 삼키지 않는다 — 실패는 여전히 예외로 전파되어 접수/조회가 성공으로 보이지 않는다.</p>
+ *
+ * <p>Redis 를 타는 조정 어댑터는 <b>모두</b> 이 경계를 통과한다. HTTP 도달 여부로 고르지 않는다 —
+ * core 가 공통 예외 타입을 참조할 수 없는 이상, 번역 누락은 그 자체가 계층 위반이고 새 HTTP 경로가
+ * 생길 때마다 같은 500 이 재발한다. 제외는 둘뿐이며 이유가 다르다:
+ * {@code CommonCoordinationDigestAdapter} 는 Redis 를 타지 않는 순수 계산이고,
+ * {@code RedisUiCoordinationProbeAdapter} 는 readiness probe 라 예외를 던지지 않고 false 를
+ * 돌려주는 것이 계약이다.</p>
  */
 final class UiCoordinationFailures {
 
