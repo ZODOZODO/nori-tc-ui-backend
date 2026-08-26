@@ -95,6 +95,17 @@ public class DeployTraceRegistry {
     }
 
     /**
+     * traceId 의 분산 저장소 상태를 <b>블로킹 없이</b> 조회합니다(§13.6).
+     *
+     * @param traceId 조회 대상 traceId
+     * @return 분산 저장소 조회 결과
+     */
+    public DeployTraceRedisLookupResult completionOf(final String traceId) {
+        Objects.requireNonNull(traceId, "traceId is null");
+        return deployTraceRedisPort.getCompletion(traceId);
+    }
+
+    /**
      * timeout/취소 시 trace 대기를 제거합니다.
      *
      * @param traceId traceId

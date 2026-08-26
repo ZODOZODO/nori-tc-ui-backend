@@ -43,6 +43,7 @@ import com.nori.tc.ui.core.coordination.port.UiCoordinationMembershipPort;
 import com.nori.tc.ui.core.coordination.port.UiCoordinationProbePort;
 import com.nori.tc.ui.core.coordination.port.UiExecutorLeasePort;
 import com.nori.tc.ui.core.coordination.port.UiFinalizedRevisionProvider;
+import com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver;
 import com.nori.tc.ui.core.coordination.port.UiOperationCommandPublisher;
 import com.nori.tc.ui.core.coordination.port.UiOperationDbFinalizationPort;
 import com.nori.tc.ui.core.coordination.port.UiOperationLedgerPort;
@@ -58,6 +59,7 @@ import com.nori.tc.ui.core.service.EqpPersistenceService;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -282,11 +284,13 @@ public class UiCoordinationConfiguration {
             final UiFinalizedRevisionProvider finalizedRevisionProvider,
             final UiOperationManifestReader manifestReader,
             final UiCompensationIssuer compensationIssuer,
+            final ObjectProvider<UiOperationApplyDriver> applyDriverProvider,
             final UiCoordinationMetrics metrics
     ) {
         return new UiOperationExecutor(session, properties, ledgerPort, resourceHeadPort, leasePort,
                 membershipPort, commandPublisher, dbFinalizationPort, finalizedRevisionProvider,
-                manifestReader, compensationIssuer, metrics);
+                manifestReader, compensationIssuer,
+                applyDriverProvider.getIfAvailable(UiOperationApplyDriver::none), metrics);
     }
 
     @Bean

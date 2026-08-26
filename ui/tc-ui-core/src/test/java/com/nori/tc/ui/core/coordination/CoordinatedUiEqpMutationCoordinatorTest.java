@@ -223,7 +223,7 @@ class CoordinatedUiEqpMutationCoordinatorTest {
                 (operationId, manifest, revision) -> UiOperationDbFinalizationPort.Outcome.FINALIZED,
                 UiFinalizedRevisionProvider.absent(),
                 new UiOperationManifestReader(objectMapper),
-                CompensationIssuerFixture.issuer(ledger, headPort), metrics);
+                CompensationIssuerFixture.issuer(ledger, headPort), com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(), metrics);
 
         return new CoordinatedUiEqpMutationCoordinator(
                 queryPort,

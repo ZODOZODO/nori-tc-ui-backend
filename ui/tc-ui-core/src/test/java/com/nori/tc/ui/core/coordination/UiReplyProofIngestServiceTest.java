@@ -109,7 +109,8 @@ class UiReplyProofIngestServiceTest {
                         com.nori.tc.ui.core.coordination.port.UiOperationDbFinalizationPort.Outcome.FINALIZED,
                 com.nori.tc.ui.core.coordination.port.UiFinalizedRevisionProvider.absent(),
                 new UiOperationManifestReader(new tools.jackson.databind.ObjectMapper()),
-                CompensationIssuerFixture.issuer(ledger, headPort()), metrics);
+                CompensationIssuerFixture.issuer(ledger, headPort()),
+                com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(), metrics);
         return new UiReplyProofIngestService(ledger, executor, metrics);
     }
 

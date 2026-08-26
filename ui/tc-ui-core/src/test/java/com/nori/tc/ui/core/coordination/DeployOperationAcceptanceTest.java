@@ -179,7 +179,7 @@ class DeployOperationAcceptanceTest {
                         com.nori.tc.ui.core.coordination.port.UiOperationDbFinalizationPort.Outcome.FINALIZED,
                 com.nori.tc.ui.core.coordination.port.UiFinalizedRevisionProvider.absent(),
                 new UiOperationManifestReader(objectMapper),
-                CompensationIssuerFixture.issuer(ledger, headPort), metrics);
+                CompensationIssuerFixture.issuer(ledger, headPort), com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(), metrics);
 
         return new DeployOperationAcceptanceService(
                 new UiResourceKeyPlanner(eqpQueryPort(sharedEqpIds)),

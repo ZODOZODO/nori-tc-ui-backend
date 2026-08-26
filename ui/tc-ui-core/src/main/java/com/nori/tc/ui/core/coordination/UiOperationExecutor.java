@@ -8,6 +8,7 @@ import com.nori.tc.ui.core.coordination.model.UiOperationView;
 import com.nori.tc.ui.core.coordination.port.UiCoordinationMembershipPort;
 import com.nori.tc.ui.core.coordination.port.UiExecutorLeasePort;
 import com.nori.tc.ui.core.coordination.port.UiFinalizedRevisionProvider;
+import com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver;
 import com.nori.tc.ui.core.coordination.port.UiOperationCommandPublisher;
 import com.nori.tc.ui.core.coordination.port.UiOperationDbFinalizationPort;
 import com.nori.tc.ui.core.coordination.port.UiOperationLedgerPort;
@@ -51,7 +52,10 @@ public final class UiOperationExecutor {
      * 못한 경우이므로 여기 넣지 않습니다 — 모르는 상태를 자동으로 덮어쓰면 안 됩니다.</p>
      */
     private static final Set<String> COMPENSABLE_REPAIR_REASONS =
-            Set.of("LAST_PARTICIPANT_EXPIRED", "POST_COMMIT_PARTICIPANT_REJECT");
+            Set.of("LAST_PARTICIPANT_EXPIRED", "POST_COMMIT_PARTICIPANT_REJECT", "APPLY_FAILED");
+
+    /** 순서 있는 적용(deploy step)이 실패했을 때의 수동 복구 사유입니다(§13.6). */
+    private static final String REPAIR_REASON_APPLY_FAILED = "APPLY_FAILED";
 
     private final UiCoordinationSession session;
     private final UiCoordinationProperties properties;
@@ -64,6 +68,7 @@ public final class UiOperationExecutor {
     private final UiFinalizedRevisionProvider finalizedRevisionProvider;
     private final UiOperationManifestReader manifestReader;
     private final UiCompensationIssuer compensationIssuer;
+    private final UiOperationApplyDriver applyDriver;
     private final UiCoordinationMetrics metrics;
 
     /**
@@ -80,6 +85,7 @@ public final class UiOperationExecutor {
      * @param finalizedRevisionProvider 마지막 finalized revision 기록/조회 포트
      * @param manifestReader manifest 해석기
      * @param compensationIssuer 보상 operation 발급기(§13.8)
+     * @param applyDriver 순서 있는 적용 발행 전략(§13.6, 없으면 {@link UiOperationApplyDriver#none()})
      * @param metrics 조정 metric
      */
     public UiOperationExecutor(
@@ -94,6 +100,7 @@ public final class UiOperationExecutor {
             final UiFinalizedRevisionProvider finalizedRevisionProvider,
             final UiOperationManifestReader manifestReader,
             final UiCompensationIssuer compensationIssuer,
+            final UiOperationApplyDriver applyDriver,
             final UiCoordinationMetrics metrics
     ) {
         this.session = Objects.requireNonNull(session, "session is null");
@@ -108,6 +115,7 @@ public final class UiOperationExecutor {
                 Objects.requireNonNull(finalizedRevisionProvider, "finalizedRevisionProvider is null");
         this.manifestReader = Objects.requireNonNull(manifestReader, "manifestReader is null");
         this.compensationIssuer = Objects.requireNonNull(compensationIssuer, "compensationIssuer is null");
+        this.applyDriver = Objects.requireNonNull(applyDriver, "applyDriver is null");
         this.metrics = Objects.requireNonNull(metrics, "metrics is null");
     }
 
@@ -310,12 +318,7 @@ public final class UiOperationExecutor {
         if (!"OK".equals(code)) {
             return false;
         }
-        commandPublisher.publishApply(
-                operation.operationId(),
-                manifest,
-                requireRevision(operation),
-                operation.manifestSha256(),
-                deadlineAt(nowEpochMs));
+        publishApply(operation, manifest, nowEpochMs);
         return true;
     }
 
@@ -324,6 +327,28 @@ public final class UiOperationExecutor {
             final UiOperationManifestView manifest,
             final long nowEpochMs
     ) {
+        /*
+         * 순서가 있는 적용은 명령을 전부 내보내기 전에 proof 를 요구하면 안 된다(§13.6). driver 가
+         * 아직 보낼 step 을 들고 있으면 이번 패스는 그 발행만 하고 끝낸다 — proof 판정은 다음 패스다.
+         */
+        final UiOperationApplyDriver.Result driven = driveApply(operation, manifest, nowEpochMs);
+        switch (driven.progress()) {
+            case ADVANCED -> {
+                return true;
+            }
+            case WAITING -> {
+                return false;
+            }
+            case FAILED -> {
+                markRepairRequired(operation, REPAIR_REASON_APPLY_FAILED,
+                        driven.errorCode() + ": " + driven.errorMessage(), nowEpochMs);
+                return true;
+            }
+            default -> {
+                // NOT_MINE / EXHAUSTED — 아래에서 평소대로 proof 를 판정한다.
+            }
+        }
+
         final int missing = ledgerPort.checkApplied(operation.operationId(), true, nowEpochMs);
         if (missing == 0) {
             log.info("UI_OPERATION_ALL_APPLIED. operationId={}", operation.operationId());
@@ -333,6 +358,43 @@ public final class UiOperationExecutor {
             return false;
         }
         return excludeExpiredParticipants(operation, manifest, nowEpochMs);
+    }
+
+    /**
+     * {@code APPLYING} 단계의 명령을 발행합니다.
+     *
+     * <p>순서가 있는 적용(deploy)은 driver 가 대신 발행합니다. driver 가 없거나 이 operation 을 맡지
+     * 않으면 manifest 하나를 그대로 내보내는 기본 발행으로 돌아갑니다.</p>
+     */
+    private void publishApply(
+            final UiOperationView operation,
+            final UiOperationManifestView manifest,
+            final long nowEpochMs
+    ) {
+        if (driveApply(operation, manifest, nowEpochMs).progress()
+                != UiOperationApplyDriver.Progress.NOT_MINE) {
+            return;
+        }
+        commandPublisher.publishApply(
+                operation.operationId(),
+                manifest,
+                requireRevision(operation),
+                operation.manifestSha256(),
+                deadlineAt(nowEpochMs));
+    }
+
+    private UiOperationApplyDriver.Result driveApply(
+            final UiOperationView operation,
+            final UiOperationManifestView manifest,
+            final long nowEpochMs
+    ) {
+        return applyDriver.driveApply(
+                operation.operationId(),
+                manifest,
+                requireRevision(operation),
+                operation.manifestSha256(),
+                deadlineAt(nowEpochMs),
+                nowEpochMs);
     }
 
     /**
@@ -376,12 +438,7 @@ public final class UiOperationExecutor {
         }
         if (!excluded) {
             // 살아 있는 participant 를 기다리는 정상 대기다. APPLY 명령을 다시 밀어 지연을 줄인다.
-            commandPublisher.publishApply(
-                    operation.operationId(),
-                    manifest,
-                    requireRevision(operation),
-                    operation.manifestSha256(),
-                    deadlineAt(nowEpochMs));
+            publishApply(operation, manifest, nowEpochMs);
         }
         return excluded;
     }

@@ -90,6 +90,7 @@ class UiOperationExecutorTest {
                 emptyMembership(), new RecordingPublisher(), finalizer(), UiFinalizedRevisionProvider.absent(),
                 new UiOperationManifestReader(new ObjectMapper()),
                 CompensationIssuerFixture.issuer(ledgerPort, resourceHeadPort()),
+                com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(),
                 new UiCoordinationMetrics(new SimpleMeterRegistry()));
 
         assertEquals(0, executor.advance(OPERATION_ID, 1_000L));
@@ -108,6 +109,7 @@ class UiOperationExecutorTest {
                 emptyMembership(), new RecordingPublisher(), finalizer(), UiFinalizedRevisionProvider.absent(),
                 new UiOperationManifestReader(new ObjectMapper()),
                 CompensationIssuerFixture.issuer(ledgerPort, resourceHeadPort()),
+                com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(),
                 new UiCoordinationMetrics(new SimpleMeterRegistry()));
 
         executor.advance(OPERATION_ID, 1_000L);
@@ -125,6 +127,7 @@ class UiOperationExecutorTest {
                 session(), properties(), ledgerPort, resourceHeadPort(), new RecordingLeasePort(true),
                 emptyMembership(), new RecordingPublisher(), finalizer(), UiFinalizedRevisionProvider.absent(),
                 new UiOperationManifestReader(new ObjectMapper()), issuer,
+                com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(),
                 new UiCoordinationMetrics(new SimpleMeterRegistry()));
         final UiOperationView operation = ledgerPort.readOperation(OPERATION_ID).orElseThrow();
 
@@ -169,6 +172,7 @@ class UiOperationExecutorTest {
                 new RecordingPublisher(), finalizer(), UiFinalizedRevisionProvider.absent(),
                 new UiOperationManifestReader(new ObjectMapper()),
                 CompensationIssuerFixture.issuer(ledgerPort, resourceHeadPort()),
+                com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(),
                 new UiCoordinationMetrics(new SimpleMeterRegistry()));
     }
 

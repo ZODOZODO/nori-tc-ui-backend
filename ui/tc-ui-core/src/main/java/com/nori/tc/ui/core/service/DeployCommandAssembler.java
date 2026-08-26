@@ -120,6 +120,24 @@ public class DeployCommandAssembler {
         commandSupport.publishStepCommand(deployKey, deployEventType, target, step, traceId, actor);
     }
 
+    /**
+     * step 명령을 coordination metadata 와 함께 발행합니다(§13.6).
+     *
+     * @param coordination 실을 coordination metadata(비조정 구성이면 null)
+     */
+    public void publishStepCommand(
+            final long deployKey,
+            final UiCommandEventType deployEventType,
+            final PersistedDeployTarget target,
+            final DeployResolvedStepPlan step,
+            final String traceId,
+            final String actor,
+            final com.nori.tc.ui.core.model.UiCommandCoordination coordination
+    ) {
+        commandSupport.publishStepCommand(
+                deployKey, deployEventType, target, step, traceId, actor, coordination);
+    }
+
     public void publishCommand(
             final long deployKey,
             final com.nori.tc.ui.core.deploy.DeployTargetApp targetApp,

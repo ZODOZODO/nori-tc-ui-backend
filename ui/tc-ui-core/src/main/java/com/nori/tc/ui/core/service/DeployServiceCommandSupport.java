@@ -17,6 +17,7 @@ import com.nori.tc.ui.core.deploy.DeployTargetStatus;
 import com.nori.tc.ui.core.deploy.PersistedDeployTarget;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
 import com.nori.tc.ui.core.exception.UiBadRequestException;
+import com.nori.tc.ui.core.model.UiCommandCoordination;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.model.UiCommandMessage;
 import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
@@ -145,6 +146,28 @@ final class DeployServiceCommandSupport {
             final String traceId,
             final String actor
     ) {
+        publishStepCommand(deployKey, deployEventType, target, step, traceId, actor, null);
+    }
+
+    /**
+     * step 명령을 coordination metadata 와 함께 발행합니다(§13.6).
+     *
+     * <p>조정 구성의 Business 는 coordination metadata 없는 mutation 명령을
+     * {@code COORDINATION_METADATA_REQUIRED} 로 거부합니다(§22.1). 그래서 조정 원장 아래에서 도는
+     * deploy 는 이 값을 반드시 실어야 하고, 비우면 {@code targetApp: BUSINESS} step 이 전부
+     * 실패합니다. Gateway 는 v1 을 관용하므로 증상이 BUSINESS step 에만 나타납니다.</p>
+     *
+     * @param coordination 실을 coordination metadata(비조정 구성이면 null)
+     */
+    void publishStepCommand(
+            final long deployKey,
+            final UiCommandEventType deployEventType,
+            final PersistedDeployTarget target,
+            final DeployResolvedStepPlan step,
+            final String traceId,
+            final String actor,
+            final UiCommandCoordination coordination
+    ) {
         final UiCommandEventType messageEventType = resolveMessageEventType(deployEventType, step.action());
         final JsonNode stepUiMessage = buildStepUiMessage(
                 deployKey,
@@ -167,7 +190,8 @@ final class DeployServiceCommandSupport {
                 stepUiMessage,
                 equipmentProfile,
                 traceId,
-                actor
+                actor,
+                coordination
         );
     }
 
@@ -181,6 +205,27 @@ final class DeployServiceCommandSupport {
             final UiEquipmentProfileSnapshot equipmentProfile,
             final String traceId,
             final String actor
+    ) {
+        publishCommand(deployKey, targetApp, eventType, target, interfaceType, uiMessage,
+                equipmentProfile, traceId, actor, null);
+    }
+
+    /**
+     * deploy 명령을 coordination metadata 와 함께 발행합니다(§13.6).
+     *
+     * @param coordination 실을 coordination metadata(비조정 구성이면 null)
+     */
+    void publishCommand(
+            final long deployKey,
+            final com.nori.tc.ui.core.deploy.DeployTargetApp targetApp,
+            final UiCommandEventType eventType,
+            final PersistedDeployTarget target,
+            final String interfaceType,
+            final JsonNode uiMessage,
+            final UiEquipmentProfileSnapshot equipmentProfile,
+            final String traceId,
+            final String actor,
+            final UiCommandCoordination coordination
     ) {
         final JsonNode normalizedUiMessage = ensureDeployMetadata(
                 deployKey,
@@ -198,7 +243,8 @@ final class DeployServiceCommandSupport {
                 target.planDraft().eqpId(),
                 interfaceType == null ? target.planDraft().interfaceType() : interfaceType,
                 normalizedUiMessage,
-                equipmentProfile
+                equipmentProfile,
+                coordination
         );
 
         if (targetApp == com.nori.tc.ui.core.deploy.DeployTargetApp.GATEWAY) {
