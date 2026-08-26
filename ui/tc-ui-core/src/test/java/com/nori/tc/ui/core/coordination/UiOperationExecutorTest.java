@@ -97,6 +97,24 @@ class UiOperationExecutorTest {
     }
 
     @Test
+    @DisplayName("커밋 후 마지막 participant 가 만료되면 무한 재시도가 아니라 REPAIR_REQUIRED 로 확정한다")
+    void lastParticipantExpiredBecomesRepairRequired() {
+        final RecordingLedgerPort ledgerPort = new RecordingLedgerPort(UiOperationPhase.APPLYING);
+        // 공통 원장은 제외하면 적용을 증명할 session 이 남지 않을 때 LAST_PARTICIPANT 를 돌려준다.
+        ledgerPort.excludeCode = "LAST_PARTICIPANT";
+        final UiOperationExecutor executor = new UiOperationExecutor(
+                session(), properties(), ledgerPort, resourceHeadPort(), new RecordingLeasePort(true),
+                emptyMembership(), new RecordingPublisher(), finalizer(), UiFinalizedRevisionProvider.absent(),
+                new UiOperationManifestReader(new ObjectMapper()),
+                new UiCoordinationMetrics(new SimpleMeterRegistry()));
+
+        executor.advance(OPERATION_ID, 1_000L);
+
+        assertEquals(List.of("LAST_PARTICIPANT_EXPIRED"), ledgerPort.repairReasons,
+                "확정하지 않으면 operation 이 terminal 에 못 가고 그 설비 barrier 가 영구히 닫힌 채 남는다.");
+    }
+
+    @Test
     @DisplayName("commit 이후에는 abort 로 pointer 를 되돌리지 않는다")
     void abortAfterCommitIsRejected() {
         final RecordingLedgerPort ledgerPort = new RecordingLedgerPort(UiOperationPhase.COMMITTED);
@@ -198,7 +216,8 @@ class UiOperationExecutorTest {
 
             @Override
             public boolean expired(final String serviceName, final String sessionId) {
-                return false;
+                // 살아 있는 session 목록에 없으면 heartbeat 가 만료된 것이다.
+                return !sessions.contains(sessionId);
             }
         };
     }
@@ -259,6 +278,8 @@ class UiOperationExecutorTest {
         private final List<String> transitions = new ArrayList<>();
         private final List<String> aborts = new ArrayList<>();
         private final List<List<String>> frozen = new ArrayList<>();
+        private final List<String> repairReasons = new ArrayList<>();
+        private String excludeCode = "NOT_EXPIRED";
 
         private RecordingLedgerPort(final UiOperationPhase phase) {
             this.phase = phase;
@@ -277,6 +298,11 @@ class UiOperationExecutorTest {
                 final Long executorEpoch, final String errorCode, final String errorMsg,
                 final String repairReason, final long nowEpochMs) {
             transitions.add(newPhase.name());
+            if (newState == UiOperationState.REPAIR_REQUIRED) {
+                repairReasons.add(repairReason);
+                state = UiOperationState.REPAIR_REQUIRED;
+                return "OK";
+            }
             return "PHASE_MISMATCH";
         }
 
@@ -290,7 +316,7 @@ class UiOperationExecutorTest {
         @Override
         public String excludeExpiredParticipant(final String operationId, final String serviceName,
                 final String expiredSessionId, final long nowEpochMs) {
-            return "NOT_EXPIRED";
+            return excludeCode;
         }
 
         @Override

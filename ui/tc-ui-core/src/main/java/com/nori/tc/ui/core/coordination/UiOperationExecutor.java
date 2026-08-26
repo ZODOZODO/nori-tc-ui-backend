@@ -40,6 +40,9 @@ public final class UiOperationExecutor {
 
     private static final int MAX_STEPS_PER_PASS = 8;
 
+    /** 공통 원장이 "제외하면 participant 가 남지 않는다" 를 알리는 코드(participant_exclude.lua). */
+    private static final String LEDGER_CODE_LAST_PARTICIPANT = "LAST_PARTICIPANT";
+
     private final UiCoordinationSession session;
     private final UiCoordinationProperties properties;
     private final UiOperationLedgerPort ledgerPort;
@@ -342,6 +345,16 @@ public final class UiOperationExecutor {
                         operation.operationId(), participantId);
                 metrics.incrementParticipantExclusion();
                 excluded = true;
+            } else if (LEDGER_CODE_LAST_PARTICIPANT.equals(code)) {
+                /*
+                 * 고정 집합의 마지막 participant 가 죽었다 — 제외하면 committed revision 의 적용을 증명할
+                 * session 이 남지 않으므로 공통 원장이 제외를 거부한다(participant_exclude.lua 는 이 판정을
+                 * executor 소관으로 명시한다). 계속 재시도하면 operation 이 terminal 에 도달하지 못한 채
+                 * 그 설비의 barrier 가 영구히 닫혀 있고 운영자에게는 아무 신호도 가지 않는다.
+                 */
+                markRepairRequired(operation, "LAST_PARTICIPANT_EXPIRED",
+                        "커밋 후 마지막 participant 가 만료되어 적용을 증명할 session 이 없습니다.", nowEpochMs);
+                return true;
             } else {
                 log.info("UI_OPERATION_PARTICIPANT_EXCLUDE_REJECTED. operationId={}, participantId={}, code={}",
                         operation.operationId(), participantId, code);
