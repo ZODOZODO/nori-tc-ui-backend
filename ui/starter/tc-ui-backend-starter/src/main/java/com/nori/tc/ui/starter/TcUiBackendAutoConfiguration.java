@@ -296,6 +296,20 @@ public class TcUiBackendAutoConfiguration {
     }
 
     /**
+     * liveness group 이 참조하는 fence 전용 contributor 를 등록합니다(§12.7).
+     *
+     * <p>bean 이름에서 {@code HealthIndicator} 접미사를 뗀 {@code coordinationFence} 가 group 설정에
+     * 쓰는 이름입니다({@code management.endpoint.health.group.liveness.include}).</p>
+     *
+     * @param coordinationStatus 조정 상태 표면
+     * @return fence 판정 liveness contributor
+     */
+    @Bean(name = "coordinationFenceHealthIndicator")
+    public HealthIndicator coordinationFenceHealthIndicator(final UiCoordinationStatus coordinationStatus) {
+        return new UiCoordinationFenceHealthIndicator(coordinationStatus);
+    }
+
+    /**
      * 토픽 이름을 startup 요약 출력용 문자열로 정규화합니다.
      *
      * <p>null 또는 공백인 경우 {@code N/A}로 표기하여
