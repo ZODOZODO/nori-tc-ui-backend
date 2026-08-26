@@ -156,6 +156,13 @@ class UiOperationAcceptanceContractTest {
     ) {
         return new UiResourceHeadPort() {
             @Override
+            public IssueResult issueCompensationCandidate(
+                    final String operationId, final String compensatesOperationId,
+                    final List<Candidate> candidates, final long nowEpochMs) {
+                return issueCandidate(operationId, candidates, nowEpochMs);
+            }
+
+            @Override
             public IssueResult issueCandidate(
                     final String operationId, final List<Candidate> candidates, final long nowEpochMs) {
                 ledger.issueCalls++;

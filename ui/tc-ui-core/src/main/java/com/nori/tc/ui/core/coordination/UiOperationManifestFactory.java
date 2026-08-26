@@ -6,6 +6,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -104,6 +105,52 @@ public final class UiOperationManifestFactory {
         if (request.dbCommandJson() != null && !request.dbCommandJson().isBlank()) {
             root.set("dbCommand", objectMapper.readTree(request.dbCommandJson()));
         }
+
+        final String canonical = digestPort.canonicalize(objectMapper.writeValueAsString(root));
+        return new Manifest(canonical, digestPort.sha256Hex(canonical));
+    }
+
+    /**
+     * 실패한 operation 의 manifest 로부터 보상 manifest 를 만듭니다(§13.8).
+     *
+     * <p>목표와 이전 상태를 <b>맞바꾼</b> 문서입니다 — 되돌릴 목표는 원 operation 의 이전 상태이고,
+     * 지금 런타임에 올라가 있는 것은 원 operation 의 목표 상태이므로 §13.7 의 expected old 판정도
+     * 그대로 성립합니다.</p>
+     *
+     * <p>DB 명령은 싣지 않습니다. 보상 대상이 되는 실패는 DB 확정 <b>이전</b> 단계에서만 발생하므로
+     * 되돌릴 DB 변경이 없고, 역명령을 지어내면 확인되지 않은 상태를 덮어쓰게 됩니다.</p>
+     *
+     * @param originalManifestJson 실패한 operation 의 canonical manifest
+     * @param compensatesRevision 되돌릴 대상 revision
+     * @param expectedBaseRevisions resourceKey 별 현재 committed revision
+     * @return 보상 manifest 와 digest
+     * @throws IllegalStateException 이전 상태 descriptor 가 영향 리소스 전부를 덮지 않을 때
+     */
+    public Manifest buildCompensation(
+            final String originalManifestJson,
+            final long compensatesRevision,
+            final Map<String, Long> expectedBaseRevisions
+    ) {
+        final ObjectNode root = (ObjectNode) objectMapper.readTree(
+                Objects.requireNonNull(originalManifestJson, "originalManifestJson is null"));
+        final ObjectNode forward = (ObjectNode) root.get("descriptors");
+        final ObjectNode previous = (ObjectNode) root.get("previousDescriptors");
+
+        final ObjectNode baseRevisions = objectMapper.createObjectNode();
+        for (final Map.Entry<String, Long> entry : expectedBaseRevisions.entrySet()) {
+            if (previous == null || !previous.has(entry.getKey())) {
+                throw new IllegalStateException(
+                        "이전 상태 descriptor 가 없어 보상 manifest 를 만들 수 없습니다. resourceKey=" + entry.getKey());
+            }
+            baseRevisions.put(entry.getKey(), entry.getValue());
+        }
+
+        root.set("descriptors", previous);
+        root.set("previousDescriptors", forward == null ? objectMapper.createObjectNode() : forward);
+        root.set("expectedBaseRevisions", baseRevisions);
+        root.put("compensatesRevision", compensatesRevision);
+        root.remove("dbCommandKind");
+        root.remove("dbCommand");
 
         final String canonical = digestPort.canonicalize(objectMapper.writeValueAsString(root));
         return new Manifest(canonical, digestPort.sha256Hex(canonical));

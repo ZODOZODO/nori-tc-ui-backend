@@ -21,7 +21,11 @@ public interface UiResourceHeadPort {
         /** expected base revision 이 현재 head 와 다릅니다. */
         REVISION_CONFLICT,
         /** 이 operation 이 이미 candidate 를 발급했습니다. */
-        ALREADY_ISSUED
+        ALREADY_ISSUED,
+        /** 보상 대상이 {@code REPAIR_REQUIRED} 가 아니어서 claim 을 인계할 수 없습니다(§13.8). */
+        COMPENSATION_TARGET_NOT_REPAIRABLE,
+        /** 선언한 보상 대상 revision 이 실제 대상과 다릅니다(§13.8). */
+        COMPENSATION_REVISION_MISMATCH
     }
 
     /**
@@ -54,6 +58,21 @@ public interface UiResourceHeadPort {
      * @return 발급 결과
      */
     IssueResult issueCandidate(String operationId, List<Candidate> candidates, long nowEpochMs);
+
+    /**
+     * 보상 operation 의 candidate 를 발급하며 대상 operation 의 리소스 claim 을 인계받습니다(§13.8).
+     *
+     * <p>일반 발급과 달리 {@code blockedByOperationId} 가 남은 리소스를 시작할 수 있습니다 — 대신
+     * barrier 는 <b>닫힌 채로</b> 넘어옵니다. 되돌리는 중인 상태로 처리가 재개되면 안 되기 때문입니다.</p>
+     *
+     * @param operationId 보상 operation
+     * @param compensatesOperationId 보상 대상 operation({@code REPAIR_REQUIRED} 여야 함)
+     * @param candidates 대상 리소스(§18.1 lexicographic 정렬은 호출 측 책임)
+     * @param nowEpochMs 현재 시각
+     * @return 발급 결과
+     */
+    IssueResult issueCompensationCandidate(
+            String operationId, String compensatesOperationId, List<Candidate> candidates, long nowEpochMs);
 
     /**
      * resource head 를 조회합니다.

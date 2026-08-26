@@ -15,6 +15,7 @@ import com.nori.tc.ui.core.coordination.CoordinatedUiEqpMutationCoordinator;
 import com.nori.tc.ui.core.coordination.CoordinatedUiPermissionCatalogGuard;
 import com.nori.tc.ui.core.coordination.CoordinatedUiScenarioCatalogGuard;
 import com.nori.tc.ui.core.coordination.UiCatalogHeadSynchronizer;
+import com.nori.tc.ui.core.coordination.UiCompensationIssuer;
 import com.nori.tc.ui.core.coordination.UiCoordinationMetrics;
 import com.nori.tc.ui.core.coordination.UiCoordinationProperties;
 import com.nori.tc.ui.core.coordination.UiCoordinationRuntime;
@@ -249,6 +250,25 @@ public class UiCoordinationConfiguration {
         return new UiEqpOperationDbFinalizer(persistenceService, objectMapper, descriptorReader);
     }
 
+    /**
+     * 커밋 후 실패를 되돌리는 보상 operation 발급기입니다(§13.8).
+     *
+     * @param ledgerPort operation 원장 포트
+     * @param resourceHeadPort 리소스 head 포트
+     * @param manifestFactory manifest 팩토리
+     * @param manifestReader manifest 해석기
+     * @return 보상 발급기
+     */
+    @Bean
+    public UiCompensationIssuer uiCompensationIssuer(
+            final UiOperationLedgerPort ledgerPort,
+            final UiResourceHeadPort resourceHeadPort,
+            final UiOperationManifestFactory manifestFactory,
+            final UiOperationManifestReader manifestReader
+    ) {
+        return new UiCompensationIssuer(ledgerPort, resourceHeadPort, manifestFactory, manifestReader);
+    }
+
     @Bean
     public UiOperationExecutor uiOperationExecutor(
             final UiCoordinationSession session,
@@ -261,11 +281,12 @@ public class UiCoordinationConfiguration {
             final UiOperationDbFinalizationPort dbFinalizationPort,
             final UiFinalizedRevisionProvider finalizedRevisionProvider,
             final UiOperationManifestReader manifestReader,
+            final UiCompensationIssuer compensationIssuer,
             final UiCoordinationMetrics metrics
     ) {
         return new UiOperationExecutor(session, properties, ledgerPort, resourceHeadPort, leasePort,
                 membershipPort, commandPublisher, dbFinalizationPort, finalizedRevisionProvider,
-                manifestReader, metrics);
+                manifestReader, compensationIssuer, metrics);
     }
 
     @Bean

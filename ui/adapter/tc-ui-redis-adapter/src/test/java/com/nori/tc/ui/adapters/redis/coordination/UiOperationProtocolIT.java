@@ -8,6 +8,7 @@ import com.nori.tc.ui.core.coordination.UiCoordinationProperties;
 import com.nori.tc.ui.core.coordination.UiCoordinationSession;
 import com.nori.tc.ui.core.coordination.UiOperationAcceptanceService;
 import com.nori.tc.ui.core.coordination.UiOperationExecutor;
+import com.nori.tc.ui.core.coordination.UiCompensationIssuer;
 import com.nori.tc.ui.core.coordination.UiOperationManifestFactory;
 import com.nori.tc.ui.core.coordination.UiOperationManifestReader;
 import com.nori.tc.ui.core.coordination.UiOperationQueryService;
@@ -328,6 +329,9 @@ class UiOperationProtocolIT extends AbstractRedisContainerTest {
                 dbFinalizer,
                 UiFinalizedRevisionProvider.absent(),
                 new UiOperationManifestReader(new ObjectMapper()),
+                new UiCompensationIssuer(
+                        ledgerPort, resourceHeadPort, manifestFactory,
+                        new UiOperationManifestReader(new ObjectMapper())),
                 new UiCoordinationMetrics(new SimpleMeterRegistry()));
     }
 

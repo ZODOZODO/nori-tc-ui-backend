@@ -89,6 +89,7 @@ class UiOperationExecutorTest {
                 session(), properties(), ledgerPort, resourceHeadPort(), new RecordingLeasePort(true),
                 emptyMembership(), new RecordingPublisher(), finalizer(), UiFinalizedRevisionProvider.absent(),
                 new UiOperationManifestReader(new ObjectMapper()),
+                CompensationIssuerFixture.issuer(ledgerPort, resourceHeadPort()),
                 new UiCoordinationMetrics(new SimpleMeterRegistry()));
 
         assertEquals(0, executor.advance(OPERATION_ID, 1_000L));
@@ -106,12 +107,36 @@ class UiOperationExecutorTest {
                 session(), properties(), ledgerPort, resourceHeadPort(), new RecordingLeasePort(true),
                 emptyMembership(), new RecordingPublisher(), finalizer(), UiFinalizedRevisionProvider.absent(),
                 new UiOperationManifestReader(new ObjectMapper()),
+                CompensationIssuerFixture.issuer(ledgerPort, resourceHeadPort()),
                 new UiCoordinationMetrics(new SimpleMeterRegistry()));
 
         executor.advance(OPERATION_ID, 1_000L);
 
         assertEquals(List.of("LAST_PARTICIPANT_EXPIRED"), ledgerPort.repairReasons,
                 "확정하지 않으면 operation 이 terminal 에 못 가고 그 설비 barrier 가 영구히 닫힌 채 남는다.");
+    }
+
+    @Test
+    @DisplayName("§13.8 — 커밋 후 participant 사망은 보상을 발급하고, DB 상태 불명은 발급하지 않는다")
+    void compensationIsIssuedOnlyForRecoverableRepairReasons() {
+        final RecordingLedgerPort ledgerPort = new RecordingLedgerPort(UiOperationPhase.APPLYING);
+        final UiCompensationIssuer issuer = org.mockito.Mockito.mock(UiCompensationIssuer.class);
+        final UiOperationExecutor executor = new UiOperationExecutor(
+                session(), properties(), ledgerPort, resourceHeadPort(), new RecordingLeasePort(true),
+                emptyMembership(), new RecordingPublisher(), finalizer(), UiFinalizedRevisionProvider.absent(),
+                new UiOperationManifestReader(new ObjectMapper()), issuer,
+                new UiCoordinationMetrics(new SimpleMeterRegistry()));
+        final UiOperationView operation = ledgerPort.readOperation(OPERATION_ID).orElseThrow();
+
+        executor.markRepairRequired(operation, "LAST_PARTICIPANT_EXPIRED", "죽음", 1_000L);
+        org.mockito.Mockito.verify(issuer).issueFor(operation, 1_000L);
+
+        /*
+         * DB 의 실제 상태를 확정하지 못한 경우다. 이전 상태로 되돌리는 것도 "모르는 상태를 덮어쓰는"
+         * 행위이므로 자동으로 하지 않는다(§13.8 마지막 규칙).
+         */
+        executor.markRepairRequired(operation, "DB_STATE_UNEXPECTED", "불명", 2_000L);
+        org.mockito.Mockito.verify(issuer, org.mockito.Mockito.never()).issueFor(operation, 2_000L);
     }
 
     @Test
@@ -143,6 +168,7 @@ class UiOperationExecutorTest {
                 session, properties(), ledgerPort, resourceHeadPort(), leasePort, membership(),
                 new RecordingPublisher(), finalizer(), UiFinalizedRevisionProvider.absent(),
                 new UiOperationManifestReader(new ObjectMapper()),
+                CompensationIssuerFixture.issuer(ledgerPort, resourceHeadPort()),
                 new UiCoordinationMetrics(new SimpleMeterRegistry()));
     }
 
@@ -161,6 +187,13 @@ class UiOperationExecutorTest {
 
     private static UiResourceHeadPort resourceHeadPort() {
         return new UiResourceHeadPort() {
+            @Override
+            public IssueResult issueCompensationCandidate(
+                    final String operationId, final String compensatesOperationId,
+                    final List<Candidate> candidates, final long nowEpochMs) {
+                return issueCandidate(operationId, candidates, nowEpochMs);
+            }
+
             @Override
             public IssueResult issueCandidate(
                     final String operationId, final List<Candidate> candidates, final long nowEpochMs) {

@@ -222,7 +222,8 @@ class CoordinatedUiEqpMutationCoordinatorTest {
                 fenced, properties, ledger, headPort, leasePort(), membership(), publisher(),
                 (operationId, manifest, revision) -> UiOperationDbFinalizationPort.Outcome.FINALIZED,
                 UiFinalizedRevisionProvider.absent(),
-                new UiOperationManifestReader(objectMapper), metrics);
+                new UiOperationManifestReader(objectMapper),
+                CompensationIssuerFixture.issuer(ledger, headPort), metrics);
 
         return new CoordinatedUiEqpMutationCoordinator(
                 queryPort,
@@ -268,6 +269,13 @@ class CoordinatedUiEqpMutationCoordinatorTest {
 
     private static UiResourceHeadPort headPort() {
         return new UiResourceHeadPort() {
+            @Override
+            public IssueResult issueCompensationCandidate(
+                    final String operationId, final String compensatesOperationId,
+                    final List<Candidate> candidates, final long nowEpochMs) {
+                return issueCandidate(operationId, candidates, nowEpochMs);
+            }
+
             @Override
             public IssueResult issueCandidate(
                     final String operationId, final List<Candidate> candidates, final long nowEpochMs) {

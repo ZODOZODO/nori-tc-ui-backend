@@ -251,19 +251,27 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
 
         final Map<String, UiRuntimeDescriptor> descriptors = new LinkedHashMap<>();
         final Map<String, Long> expectedBaseRevisions = new LinkedHashMap<>();
+        final Map<String, UiRuntimeDescriptor> previousDescriptors = new LinkedHashMap<>();
+        /*
+         * 같은 JAR 을 가리키는 공유 설비가 많을 때 같은 바이트를 설비 수만큼 다시 해시하지 않는다.
+         * 이 캐시는 한 번의 접수 안에서만 산다 — 더 오래 살면 JAR 교체를 못 본다.
+         */
+        final Map<Long, BusinessJarDigestPort.JarLocator> locatorCache = new LinkedHashMap<>();
         for (final String resourceKey : resourceKeys) {
             final String affectedEqpId = UiResourceKeyPlanner.eqpIdOf(resourceKey);
-            descriptors.put(resourceKey, affectedEqpId.equals(eqpId)
-                    ? target
-                    : sharedDescriptor(affectedEqpId, target, businessJarKey));
+            if (affectedEqpId.equals(eqpId)) {
+                descriptors.put(resourceKey, target);
+                if (previousTarget != null) {
+                    previousDescriptors.put(resourceKey, previousTarget);
+                }
+            } else {
+                addSharedDescriptors(
+                        resourceKey, affectedEqpId, target, businessJarKey,
+                        descriptors, previousDescriptors, locatorCache);
+            }
             final UiResourceHeadView head =
                     resourceHeadPort.readHead(UiResourceKeyPlanner.RESOURCE_TYPE_EQUIPMENT, affectedEqpId);
             expectedBaseRevisions.put(resourceKey, head.committedRevision());
-        }
-
-        final Map<String, UiRuntimeDescriptor> previousDescriptors = new LinkedHashMap<>();
-        if (previousTarget != null) {
-            previousDescriptors.put(UiResourceKeyPlanner.RESOURCE_TYPE_EQUIPMENT + ":" + eqpId, previousTarget);
         }
 
         final UiOperationRequest request = new UiOperationRequest(
@@ -299,20 +307,54 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
      * 이름이 서로 다른 JAR 을 가리키게 됩니다. Business reconciler 는 한 modelVersionKey 를 공유하는
      * descriptor 들이 같은 digest 를 선언하도록 요구합니다(§11.1).</p>
      */
-    private UiRuntimeDescriptor sharedDescriptor(
+    private void addSharedDescriptors(
+            final String resourceKey,
             final String affectedEqpId,
             final UiRuntimeDescriptor target,
-            final Long businessJarKey
+            final Long businessJarKey,
+            final Map<String, UiRuntimeDescriptor> descriptors,
+            final Map<String, UiRuntimeDescriptor> previousDescriptors,
+            final Map<Long, BusinessJarDigestPort.JarLocator> locatorCache
     ) {
-        final Optional<EqpManagementSnapshot> snapshot =
-                eqpManageQueryPort.findManageSnapshotByEqpId(affectedEqpId);
-        return descriptorFactory.forSharedModel(
+        final EqpManagementSnapshot snapshot =
+                eqpManageQueryPort.findManageSnapshotByEqpId(affectedEqpId).orElse(null);
+        descriptors.put(resourceKey, descriptorFactory.forSharedModel(
                 affectedEqpId,
-                snapshot.orElse(null),
+                snapshot,
                 target.modelVersionKey(),
                 businessJarKey,
                 target.businessJarFileName(),
-                target.businessJarSha256());
+                target.businessJarSha256()));
+
+        if (snapshot == null) {
+            /*
+             * 이 설비의 변경 전 상태를 모르면 되돌릴 근거가 없다. previousDescriptors 를 비워 두면
+             * 보상 발급기가 "전 리소스를 덮지 못한다" 를 보고 수동 복구로 남긴다(§13.8) — 절반만
+             * 되돌리는 것보다 낫다.
+             */
+            return;
+        }
+        final BusinessJarDigestPort.JarLocator previousJar =
+                target.businessJarSha256() == null ? null : cachedLocatorOf(snapshot.eqp().businessJarKey(), locatorCache);
+        previousDescriptors.put(resourceKey, descriptorFactory.forSharedModel(
+                affectedEqpId,
+                snapshot,
+                snapshot.eqp().modelVersionKey(),
+                snapshot.eqp().businessJarKey(),
+                previousJar != null
+                        ? previousJar.jarFileName()
+                        : (snapshot.businessJar() == null ? null : snapshot.businessJar().jarFileName()),
+                previousJar == null ? null : previousJar.sha256Hex()));
+    }
+
+    private BusinessJarDigestPort.JarLocator cachedLocatorOf(
+            final Long businessJarKey,
+            final Map<Long, BusinessJarDigestPort.JarLocator> cache
+    ) {
+        if (businessJarKey == null) {
+            return null;
+        }
+        return cache.computeIfAbsent(businessJarKey, this::locatorOf);
     }
 
     /**

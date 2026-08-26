@@ -156,12 +156,20 @@ class UiCoordinationRuntimeTest {
                 (operationId, manifest, desiredRevision) ->
                         com.nori.tc.ui.core.coordination.port.UiOperationDbFinalizationPort.Outcome.FINALIZED,
                 com.nori.tc.ui.core.coordination.port.UiFinalizedRevisionProvider.absent(),
-                new UiOperationManifestReader(new tools.jackson.databind.ObjectMapper()), metrics);
+                new UiOperationManifestReader(new tools.jackson.databind.ObjectMapper()),
+                CompensationIssuerFixture.issuer(ledger, headPort()), metrics);
         return new UiOperationReconciler(ledger, executor, properties, metrics);
     }
 
     private static com.nori.tc.ui.core.coordination.port.UiResourceHeadPort headPort() {
         return new com.nori.tc.ui.core.coordination.port.UiResourceHeadPort() {
+            @Override
+            public IssueResult issueCompensationCandidate(
+                    final String operationId, final String compensatesOperationId,
+                    final List<Candidate> candidates, final long nowEpochMs) {
+                return issueCandidate(operationId, candidates, nowEpochMs);
+            }
+
             @Override
             public IssueResult issueCandidate(
                     final String operationId, final List<Candidate> candidates, final long nowEpochMs) {

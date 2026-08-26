@@ -98,6 +98,19 @@ class UiOperationAdminQueryServiceTest {
         private final List<String> requested = new ArrayList<>();
 
         @Override
+
+        public IssueResult issueCompensationCandidate(
+
+                final String operationId, final String compensatesOperationId,
+
+                final List<Candidate> candidates, final long nowEpochMs) {
+
+            throw new UnsupportedOperationException("관리 조회는 보상 candidate 도 발급하지 않는다");
+
+        }
+
+
+        @Override
         public IssueResult issueCandidate(
                 final String operationId, final List<Candidate> candidates, final long nowEpochMs) {
             throw new UnsupportedOperationException("관리 조회는 candidate 를 발급하지 않는다");

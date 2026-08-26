@@ -43,6 +43,16 @@ public final class UiOperationExecutor {
     /** 공통 원장이 "제외하면 participant 가 남지 않는다" 를 알리는 코드(participant_exclude.lua). */
     private static final String LEDGER_CODE_LAST_PARTICIPANT = "LAST_PARTICIPANT";
 
+    /**
+     * 보상으로 되돌릴 수 있는 수동 복구 사유입니다(§13.8).
+     *
+     * <p>두 사유 모두 DB 확정 <b>이전</b> 단계(APPLYING)의 실패라 되돌릴 DB 변경이 없고, 런타임만
+     * 이전 revision 으로 되돌리면 됩니다. {@code DB_STATE_UNEXPECTED} 는 DB 의 실제 상태를 확정하지
+     * 못한 경우이므로 여기 넣지 않습니다 — 모르는 상태를 자동으로 덮어쓰면 안 됩니다.</p>
+     */
+    private static final Set<String> COMPENSABLE_REPAIR_REASONS =
+            Set.of("LAST_PARTICIPANT_EXPIRED", "POST_COMMIT_PARTICIPANT_REJECT");
+
     private final UiCoordinationSession session;
     private final UiCoordinationProperties properties;
     private final UiOperationLedgerPort ledgerPort;
@@ -53,6 +63,7 @@ public final class UiOperationExecutor {
     private final UiOperationDbFinalizationPort dbFinalizationPort;
     private final UiFinalizedRevisionProvider finalizedRevisionProvider;
     private final UiOperationManifestReader manifestReader;
+    private final UiCompensationIssuer compensationIssuer;
     private final UiCoordinationMetrics metrics;
 
     /**
@@ -68,6 +79,7 @@ public final class UiOperationExecutor {
      * @param dbFinalizationPort DB finalization 포트
      * @param finalizedRevisionProvider 마지막 finalized revision 기록/조회 포트
      * @param manifestReader manifest 해석기
+     * @param compensationIssuer 보상 operation 발급기(§13.8)
      * @param metrics 조정 metric
      */
     public UiOperationExecutor(
@@ -81,6 +93,7 @@ public final class UiOperationExecutor {
             final UiOperationDbFinalizationPort dbFinalizationPort,
             final UiFinalizedRevisionProvider finalizedRevisionProvider,
             final UiOperationManifestReader manifestReader,
+            final UiCompensationIssuer compensationIssuer,
             final UiCoordinationMetrics metrics
     ) {
         this.session = Objects.requireNonNull(session, "session is null");
@@ -94,6 +107,7 @@ public final class UiOperationExecutor {
         this.finalizedRevisionProvider =
                 Objects.requireNonNull(finalizedRevisionProvider, "finalizedRevisionProvider is null");
         this.manifestReader = Objects.requireNonNull(manifestReader, "manifestReader is null");
+        this.compensationIssuer = Objects.requireNonNull(compensationIssuer, "compensationIssuer is null");
         this.metrics = Objects.requireNonNull(metrics, "metrics is null");
     }
 
@@ -464,7 +478,11 @@ public final class UiOperationExecutor {
     }
 
     /**
-     * 보상을 증명할 수 없는 상태로 확정하고 리소스 barrier 를 닫힌 채로 둡니다(§7.2/§13.8).
+     * 커밋 후 실패를 확정하고, 되돌릴 수 있는 사유면 보상 operation 을 발급합니다(§7.2/§13.8).
+     *
+     * <p>순서가 계약입니다 — 먼저 {@code REPAIR_REQUIRED} 로 확정한 뒤에 보상을 발급합니다. 공통
+     * 원장은 그 상태의 operation 이 닫아 둔 리소스에 대해서만 claim 인계를 허용하고, 발급이 실패하면
+     * 이미 확정된 수동 복구 신호가 그대로 남습니다.</p>
      *
      * @param operation 대상 operation
      * @param repairReason 수동 복구 사유
@@ -487,6 +505,14 @@ public final class UiOperationExecutor {
         log.error("UI_OPERATION_REPAIR_REQUIRED. operationId={}, repairReason={}, code={}",
                 operation.operationId(), repairReason, code);
         metrics.incrementOperationRepairRequired();
+
+        if (!"OK".equals(code) || !COMPENSABLE_REPAIR_REASONS.contains(repairReason)) {
+            return;
+        }
+        final String compensationId = compensationIssuer.issueFor(operation, nowEpochMs);
+        if (compensationId != null) {
+            metrics.incrementCompensationIssued();
+        }
     }
 
     /**

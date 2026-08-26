@@ -24,6 +24,7 @@ public final class UiCoordinationMetrics {
     private final Counter idempotencyConflict;
     private final Counter replyProofRejected;
     private final Counter finalizedRevisionNotRecorded;
+    private final Counter compensationIssued;
     private final DistributionSummary operationSteps;
     private final AtomicInteger recoveryBacklog = new AtomicInteger();
     private final AtomicLong executorEpoch = new AtomicLong();
@@ -47,6 +48,7 @@ public final class UiCoordinationMetrics {
         this.replyProofRejected = Counter.builder("tc.ui.operation.reply.rejected").register(meterRegistry);
         this.finalizedRevisionNotRecorded =
                 Counter.builder("tc.ui.operation.finalized.revision.not.recorded").register(meterRegistry);
+        this.compensationIssued = Counter.builder("tc.ui.operation.compensation.issued").register(meterRegistry);
         this.operationSteps = DistributionSummary.builder("tc.ui.operation.steps").register(meterRegistry);
         meterRegistry.gauge("tc.ui.operation.recovery.backlog", recoveryBacklog, AtomicInteger::get);
         meterRegistry.gauge("tc.ui.operation.executor.epoch", executorEpoch, AtomicLong::get);
@@ -69,6 +71,11 @@ public final class UiCoordinationMetrics {
     /** FAIL 로 확정된 operation 을 셉니다. */
     public void incrementOperationFail() {
         operationFail.increment();
+    }
+
+    /** 발급된 보상 operation 을 셉니다(§13.8). */
+    public void incrementCompensationIssued() {
+        compensationIssued.increment();
     }
 
     /** 수동 복구가 필요한 operation 을 셉니다. */

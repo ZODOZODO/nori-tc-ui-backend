@@ -35,19 +35,42 @@ public final class RedisUiResourceHeadAdapter implements UiResourceHeadPort {
             final List<Candidate> candidates,
             final long nowEpochMs
     ) {
-        final List<ResourceBarrierRedisStore.ResourceCandidate> mapped = candidates.stream()
+        final List<ResourceBarrierRedisStore.ResourceCandidate> mapped = map(candidates);
+        return resultOf(translating(() -> store.issueCandidate(operationId, mapped, nowEpochMs)));
+    }
+
+    @Override
+    public IssueResult issueCompensationCandidate(
+            final String operationId,
+            final String compensatesOperationId,
+            final List<Candidate> candidates,
+            final long nowEpochMs
+    ) {
+        final List<ResourceBarrierRedisStore.ResourceCandidate> mapped = map(candidates);
+        return resultOf(translating(() -> store.issueCompensationCandidate(
+                operationId, compensatesOperationId, mapped, nowEpochMs)));
+    }
+
+    private static List<ResourceBarrierRedisStore.ResourceCandidate> map(final List<Candidate> candidates) {
+        return candidates.stream()
                 .map(candidate -> new ResourceBarrierRedisStore.ResourceCandidate(
                         candidate.resourceType(),
                         candidate.resourceId(),
                         candidate.expectedBaseRevision(),
                         candidate.descriptorJson()))
                 .toList();
-        final CoordinationOutcome outcome = translating(() -> store.issueCandidate(operationId, mapped, nowEpochMs));
+    }
+
+    private static IssueResult resultOf(final CoordinationOutcome outcome) {
         return switch (outcome.code()) {
             case "OK" -> new IssueResult(IssueCode.OK, parseLong(outcome.value(0)), null);
             case "ALREADY_ISSUED" -> new IssueResult(IssueCode.ALREADY_ISSUED, parseLong(outcome.value(0)), null);
             case "RESOURCE_BUSY" -> new IssueResult(IssueCode.RESOURCE_BUSY, null, emptyToNull(outcome.value(0)));
             case "RESOURCE_BLOCKED" -> new IssueResult(IssueCode.RESOURCE_BLOCKED, null, emptyToNull(outcome.value(0)));
+            case "COMPENSATION_TARGET_NOT_REPAIRABLE" ->
+                    new IssueResult(IssueCode.COMPENSATION_TARGET_NOT_REPAIRABLE, null, emptyToNull(outcome.value(0)));
+            case "COMPENSATION_REVISION_MISMATCH" ->
+                    new IssueResult(IssueCode.COMPENSATION_REVISION_MISMATCH, null, emptyToNull(outcome.value(0)));
             default -> new IssueResult(IssueCode.REVISION_CONFLICT, parseLong(outcome.value(0)), null);
         };
     }
