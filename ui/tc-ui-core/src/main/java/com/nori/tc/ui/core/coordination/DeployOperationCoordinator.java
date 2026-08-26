@@ -26,7 +26,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * deploy target 을 조정 원장 operation 으로 접수합니다(§13.6).
+ * deploy target 과 조정 원장 operation 사이를 잇습니다(§13.6).
  *
  * <p>접수 단위는 target 이 아니라 <b>영향 폐쇄 그룹</b>입니다. {@link UiResourceKeyPlanner} 는 모델
  * 공유 상태를 바꾸는 이벤트에 대해 같은 {@code modelVersionKey} 를 쓰는 전 설비로 영향 집합을
@@ -37,9 +37,9 @@ import java.util.TreeSet;
  * <p>여기서는 DB 도 runtime 도 바꾸지 않고 Kafka 발행도 하지 않습니다(§13.2) — 실행은 executor 가
  * lease 아래에서 수행합니다.</p>
  */
-public final class DeployOperationAcceptanceService {
+public final class DeployOperationCoordinator {
 
-    private static final Logger log = LoggerFactory.getLogger(DeployOperationAcceptanceService.class);
+    private static final Logger log = LoggerFactory.getLogger(DeployOperationCoordinator.class);
 
     /** deploy operation 의 idempotency key 접두사입니다. */
     public static final String DEPLOY_KEY_PREFIX = "DEPLOY:";
@@ -49,24 +49,30 @@ public final class DeployOperationAcceptanceService {
     private final UiResourceHeadPort resourceHeadPort;
     private final UiOperationAcceptanceService acceptanceService;
     private final UiOperationReconciler reconciler;
+    private final UiOperationExecutor executor;
+    private final UiOperationManifestFactory manifestFactory;
     private final ObjectMapper objectMapper;
 
     /**
-     * 접수 서비스를 만듭니다.
+     * coordinator 를 만듭니다.
      *
      * @param resourceKeyPlanner 영향 집합 산출기
      * @param descriptorFactory deploy descriptor 팩토리
      * @param resourceHeadPort 리소스 head 포트
      * @param acceptanceService 공통 접수 서비스
      * @param reconciler operation reconciler
+     * @param executor operation 상태 기계
+     * @param manifestFactory operationId 도출기
      * @param objectMapper DB 확정 명령 직렬화기
      */
-    public DeployOperationAcceptanceService(
+    public DeployOperationCoordinator(
             final UiResourceKeyPlanner resourceKeyPlanner,
             final UiDeployDescriptorFactory descriptorFactory,
             final UiResourceHeadPort resourceHeadPort,
             final UiOperationAcceptanceService acceptanceService,
             final UiOperationReconciler reconciler,
+            final UiOperationExecutor executor,
+            final UiOperationManifestFactory manifestFactory,
             final ObjectMapper objectMapper
     ) {
         this.resourceKeyPlanner = Objects.requireNonNull(resourceKeyPlanner, "resourceKeyPlanner is null");
@@ -74,7 +80,70 @@ public final class DeployOperationAcceptanceService {
         this.resourceHeadPort = Objects.requireNonNull(resourceHeadPort, "resourceHeadPort is null");
         this.acceptanceService = Objects.requireNonNull(acceptanceService, "acceptanceService is null");
         this.reconciler = Objects.requireNonNull(reconciler, "reconciler is null");
+        this.executor = Objects.requireNonNull(executor, "executor is null");
+        this.manifestFactory = Objects.requireNonNull(manifestFactory, "manifestFactory is null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is null");
+    }
+
+    /**
+     * 실행 대상 target 전부를 그룹 단위로 접수합니다.
+     *
+     * @param deployKey deploy 식별자
+     * @param eventType deploy 이벤트 타입
+     * @param dispatchTargets 실행 대상 target
+     * @param actor 요청자
+     * @return 접수된 operationId 목록
+     */
+    public List<String> acceptAll(
+            final long deployKey,
+            final UiCommandEventType eventType,
+            final List<DeployExecutionTarget> dispatchTargets,
+            final String actor
+    ) {
+        return group(eventType, dispatchTargets).stream()
+                .map(operationGroup -> accept(deployKey, eventType, operationGroup, actor).operationId())
+                .toList();
+    }
+
+    /**
+     * 커밋 전 operation 만 취소합니다(§7.2 / Plan D3).
+     *
+     * <p>커밋된 revision 은 되돌리지 않습니다 — 이미 head 가 전진했고 participant 가 적용 중이므로,
+     * 여기서 중단하면 어느 설비가 새 상태이고 어느 설비가 옛 상태인지 아무도 알 수 없습니다. 커밋된
+     * 것은 적용을 끝내거나 §13.8 보상으로만 되돌립니다.</p>
+     *
+     * @param deployKey deploy 식별자
+     * @param eventType deploy 이벤트 타입
+     * @param targets 취소 대상 target
+     * @return 취소 결과
+     */
+    public CancelOutcome cancelBeforeCommit(
+            final long deployKey,
+            final UiCommandEventType eventType,
+            final List<DeployExecutionTarget> targets
+    ) {
+        final List<String> aborted = new ArrayList<>();
+        final List<String> committed = new ArrayList<>();
+        for (final DeployOperationGroup operationGroup : group(eventType, targets)) {
+            final String operationId = manifestFactory.operationIdOf(
+                    executionIdOf(deployKey, operationGroup.representativeTargetKey()));
+            if (executor.abortBeforeCommit(operationId, "DEPLOY_CANCELED",
+                    "사용자 취소 요청으로 접수를 취소했습니다.", System.currentTimeMillis())) {
+                aborted.add(operationId);
+            } else {
+                committed.add(operationId);
+            }
+        }
+        return new CancelOutcome(List.copyOf(aborted), List.copyOf(committed));
+    }
+
+    /**
+     * 취소 시도 결과입니다.
+     *
+     * @param abortedOperationIds 커밋 전이라 취소된 operation
+     * @param committedOperationIds 이미 커밋되어 취소하지 못한 operation
+     */
+    public record CancelOutcome(List<String> abortedOperationIds, List<String> committedOperationIds) {
     }
 
     /**

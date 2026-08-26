@@ -12,6 +12,7 @@ import com.nori.tc.ui.adapters.redis.coordination.RedisUiResourceHeadAdapter;
 import com.nori.tc.ui.adapters.redis.coordination.UiCoordinationContext;
 import com.nori.tc.ui.adapters.kafka.publish.UiOperationCommandKafkaPublisher;
 import com.nori.tc.ui.core.coordination.CoordinatedUiEqpMutationCoordinator;
+import com.nori.tc.ui.core.coordination.DeployOperationCoordinator;
 import com.nori.tc.ui.core.coordination.CoordinatedUiPermissionCatalogGuard;
 import com.nori.tc.ui.core.coordination.CoordinatedUiScenarioCatalogGuard;
 import com.nori.tc.ui.core.coordination.UiCatalogHeadSynchronizer;
@@ -21,6 +22,7 @@ import com.nori.tc.ui.core.coordination.UiCoordinationProperties;
 import com.nori.tc.ui.core.coordination.UiCoordinationRuntime;
 import com.nori.tc.ui.core.coordination.UiCoordinationSession;
 import com.nori.tc.ui.core.coordination.UiCoordinationStatus;
+import com.nori.tc.ui.core.coordination.UiDeployDescriptorFactory;
 import com.nori.tc.ui.core.coordination.UiEqpDescriptorFactory;
 import com.nori.tc.ui.core.coordination.UiEqpMutationCoordinator;
 import com.nori.tc.ui.core.coordination.UiEqpOperationDbFinalizer;
@@ -371,6 +373,42 @@ public class UiCoordinationConfiguration {
     ) {
         return new CoordinatedUiEqpMutationCoordinator(eqpManageQueryPort, businessJarDigestPort, resourceKeyPlanner,
                 descriptorFactory, resourceHeadPort, acceptanceService, reconciler, objectMapper);
+    }
+
+    @Bean
+    public UiDeployDescriptorFactory uiDeployDescriptorFactory() {
+        return new UiDeployDescriptorFactory();
+    }
+
+    /**
+     * deploy target 을 operation 으로 접수하는 coordinator 입니다(§13.6).
+     *
+     * <p>조정 원장이 켜진 구성에만 존재합니다 — {@code DeployService} 가 이 빈을
+     * {@code ObjectProvider} 로 받아, 없으면 기존 target 실행 경로를 그대로 탑니다.</p>
+     *
+     * @param resourceKeyPlanner 영향 집합 산출기
+     * @param descriptorFactory deploy descriptor 팩토리
+     * @param resourceHeadPort 리소스 head 포트
+     * @param acceptanceService 공통 접수 서비스
+     * @param reconciler operation reconciler
+     * @param executor operation 상태 기계
+     * @param manifestFactory operationId 도출기
+     * @param objectMapper 확정 명령 직렬화기
+     * @return deploy operation coordinator
+     */
+    @Bean
+    public DeployOperationCoordinator deployOperationCoordinator(
+            final UiResourceKeyPlanner resourceKeyPlanner,
+            final UiDeployDescriptorFactory descriptorFactory,
+            final UiResourceHeadPort resourceHeadPort,
+            final UiOperationAcceptanceService acceptanceService,
+            final UiOperationReconciler reconciler,
+            final UiOperationExecutor executor,
+            final UiOperationManifestFactory manifestFactory,
+            final ObjectMapper objectMapper
+    ) {
+        return new DeployOperationCoordinator(resourceKeyPlanner, descriptorFactory, resourceHeadPort,
+                acceptanceService, reconciler, executor, manifestFactory, objectMapper);
     }
 
     @Bean

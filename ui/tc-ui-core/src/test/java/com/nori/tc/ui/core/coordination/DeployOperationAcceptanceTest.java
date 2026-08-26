@@ -59,7 +59,7 @@ class DeployOperationAcceptanceTest {
     @DisplayName("폐쇄가 없는 이벤트는 target 마다 별 operation 으로 접수한다")
     void nonSharedEventKeepsOneOperationPerTarget() {
         final RecordingLedger ledger = new RecordingLedger();
-        final DeployOperationAcceptanceService service = service(ledger, List.of());
+        final DeployOperationCoordinator service = service(ledger, List.of());
 
         final List<DeployExecutionTarget> targets = List.of(
                 target(11L, "EQP001", 1_001L, 1_001L, 30L, 30L, DeployTargetApp.GATEWAY),
@@ -91,7 +91,7 @@ class DeployOperationAcceptanceTest {
     void sharedModelTargetsCollapseIntoOneOperation() {
         final RecordingLedger ledger = new RecordingLedger();
         // 두 target 이 모두 modelVersionKey 1_001 을 쓰고, 그 모델을 EQP003 도 공유한다.
-        final DeployOperationAcceptanceService service =
+        final DeployOperationCoordinator service =
                 service(ledger, List.of("EQP001", "EQP002", "EQP003"));
 
         final List<DeployExecutionTarget> targets = List.of(
@@ -109,7 +109,7 @@ class DeployOperationAcceptanceTest {
 
         service.accept(DEPLOY_KEY, UiCommandEventType.EQP_BUSINESS_JARFILE_UPDATE, groups.get(0), "tester");
 
-        assertEquals(List.of(DeployOperationAcceptanceService.executionIdOf(DEPLOY_KEY, 11L)),
+        assertEquals(List.of(DeployOperationCoordinator.executionIdOf(DEPLOY_KEY, 11L)),
                 ledger.idempotencyKeys,
                 "그룹 key 는 최소 target key 로 결정적으로 도출되어야 합니다.");
         assertTrue(ledger.lastManifest.contains("\"deployTargetKeys\":[11,12]"),
@@ -122,7 +122,7 @@ class DeployOperationAcceptanceTest {
     @DisplayName("GATEWAY step 이 하나라도 있으면 Gateway 참여를 요구한다")
     void gatewayStepRequiresGatewayParticipant() {
         final RecordingLedger ledger = new RecordingLedger();
-        final DeployOperationAcceptanceService service = service(ledger, List.of());
+        final DeployOperationCoordinator service = service(ledger, List.of());
         final List<DeployOperationGroup> groups = service.group(
                 UiCommandEventType.EQP_UPDATE,
                 List.of(target(11L, "EQP001", 1_001L, 1_001L, 30L, 30L, DeployTargetApp.GATEWAY)));
@@ -136,7 +136,7 @@ class DeployOperationAcceptanceTest {
     @Test
     @DisplayName("폐쇄로 끌려온 설비가 있는데 target 목표 상태가 갈리면 접수하지 않는다")
     void conflictingDesiredStateWithClosureOnlyEquipmentIsRejected() {
-        final DeployOperationAcceptanceService service =
+        final DeployOperationCoordinator service =
                 service(new RecordingLedger(), List.of("EQP001", "EQP002", "EQP003"));
 
         // 두 target 이 같은 모델을 공유하면서 서로 다른 JAR 을 목표로 한다.
@@ -156,7 +156,7 @@ class DeployOperationAcceptanceTest {
                         + thrown.getMessage());
     }
 
-    private static DeployOperationAcceptanceService service(
+    private static DeployOperationCoordinator service(
             final RecordingLedger ledger,
             final List<String> sharedEqpIds
     ) {
@@ -181,12 +181,14 @@ class DeployOperationAcceptanceTest {
                 new UiOperationManifestReader(objectMapper),
                 CompensationIssuerFixture.issuer(ledger, headPort), com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(), metrics);
 
-        return new DeployOperationAcceptanceService(
+        return new DeployOperationCoordinator(
                 new UiResourceKeyPlanner(eqpQueryPort(sharedEqpIds)),
                 new UiDeployDescriptorFactory(),
                 headPort,
                 new UiOperationAcceptanceService(ledger, headPort, manifestFactory),
                 new UiOperationReconciler(ledger, executor, properties, metrics),
+                executor,
+                manifestFactory,
                 objectMapper);
     }
 

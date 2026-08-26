@@ -1049,7 +1049,9 @@ class DeployServiceTest {
                 eqpCrudPort,
                 deployTraceRecorder,
                 commandAssembler,
-                deployExecutor
+                deployExecutor,
+                // 조정 원장이 꺼진 구성 — coordinator 빈이 없으므로 기존 target 실행 경로를 탄다.
+                org.mockito.Mockito.mock(org.springframework.beans.factory.ObjectProvider.class)
         );
     }
 

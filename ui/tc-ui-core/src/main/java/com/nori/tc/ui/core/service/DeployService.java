@@ -5,6 +5,7 @@ import com.nori.tc.common.runtime.support.ExecutorShutdownResult;
 import com.nori.tc.common.runtime.support.ExecutorShutdownSupport;
 import com.nori.tc.common.runtime.support.RuntimeExecutorFactory;
 import com.nori.tc.common.runtime.support.RuntimeLogSummary;
+import com.nori.tc.ui.core.coordination.DeployOperationCoordinator;
 import com.nori.tc.ui.core.deploy.DeployActiveEqpConflict;
 import com.nori.tc.ui.core.deploy.DeployActionResult;
 import com.nori.tc.ui.core.deploy.DeployCreateResult;
@@ -41,6 +42,7 @@ import com.nori.tc.ui.core.properties.UiDeployProperties;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
@@ -71,6 +73,7 @@ public class DeployService {
     private final DeployTraceRecorder deployTraceRecorder;
     private final DeployCommandAssembler commandAssembler;
     private final DeployExecutor deployExecutor;
+    private final ObjectProvider<DeployOperationCoordinator> operationCoordinatorProvider;
     private final ThreadPoolExecutor targetExecutor;
     private final int targetConcurrency;
     private final AtomicInteger targetExecutorThreadSequence = new AtomicInteger(0);
@@ -82,7 +85,8 @@ public class DeployService {
             final EqpCrudPort eqpCrudPort,
             final DeployTraceRecorder deployTraceRecorder,
             final DeployCommandAssembler commandAssembler,
-            final DeployExecutor deployExecutor
+            final DeployExecutor deployExecutor,
+            final ObjectProvider<DeployOperationCoordinator> operationCoordinatorProvider
     ) {
         final UiDeployProperties validatedDeployProperties =
                 Objects.requireNonNull(deployProperties, "deployProperties is null");
@@ -92,6 +96,8 @@ public class DeployService {
         this.deployTraceRecorder = Objects.requireNonNull(deployTraceRecorder, "deployTraceRecorder is null");
         this.commandAssembler = Objects.requireNonNull(commandAssembler, "commandAssembler is null");
         this.deployExecutor = Objects.requireNonNull(deployExecutor, "deployExecutor is null");
+        this.operationCoordinatorProvider = Objects.requireNonNull(
+                operationCoordinatorProvider, "operationCoordinatorProvider is null");
         this.targetConcurrency = Math.max(1, validatedDeployProperties.targetConcurrency());
         this.targetExecutor = (ThreadPoolExecutor) RuntimeExecutorFactory.defaultFactory().newFixedThreadPool(
                 targetConcurrency,
@@ -458,6 +464,8 @@ public class DeployService {
         }
 
         final String normalizedActor = commandAssembler.normalizeActor(actor);
+        cancelCoordinatedOperations(deployKey);
+
         final OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         final List<String> activeTraceIds = deployStorePort.findActiveTraceIds(deployKey);
 
@@ -552,12 +560,7 @@ public class DeployService {
                 null,
                 null
         );
-        dispatchTargets.forEach(target -> targetExecutor.submit(() -> deployExecutor.executeTarget(
-                deployKey,
-                executionPlan.eventType(),
-                target,
-                commandAssembler.normalizeActor(actor)
-        )));
+        dispatch(deployKey, executionPlan, dispatchTargets, commandAssembler.normalizeActor(actor));
 
         return new DeployActionResult(
                 deployKey,
@@ -570,6 +573,66 @@ public class DeployService {
                         DeployResultSeverity.INFO
                 )
         );
+    }
+
+    /**
+     * 조정 원장 아래에서 도는 deploy 의 취소를 커밋 경계로 처리합니다(Plan D3).
+     *
+     * <p>커밋된 operation 이 하나라도 있으면 <b>아무것도 취소하지 않고</b> 거부합니다. 일부만 취소하면
+     * 같은 deploy 안에서 어떤 target 은 옛 상태, 어떤 target 은 새 상태로 남고 그 사실이 어디에도
+     * 기록되지 않습니다. 커밋된 것은 적용을 끝내거나 §13.8 보상으로만 되돌립니다.</p>
+     */
+    private void cancelCoordinatedOperations(final long deployKey) {
+        final DeployOperationCoordinator coordinator = operationCoordinatorProvider.getIfAvailable();
+        if (coordinator == null) {
+            return;
+        }
+        final DeployExecutionPlan executionPlan = deployStorePort.findDeployExecutionPlan(deployKey)
+                .orElseThrow(() -> new UiNotFoundException(
+                        "취소할 Deploy target 정보를 찾을 수 없습니다. deployKey=" + deployKey));
+        final DeployOperationCoordinator.CancelOutcome outcome = coordinator.cancelBeforeCommit(
+                deployKey, executionPlan.eventType(), executionPlan.targets());
+        if (!outcome.committedOperationIds().isEmpty()) {
+            throw new UiConflictException(
+                    "이미 커밋되어 취소할 수 없는 작업이 있습니다. 적용이 끝날 때까지 기다리거나 보상으로 되돌려야 합니다."
+                            + " deployKey=" + deployKey
+                            + ", committedOperationIds=" + outcome.committedOperationIds());
+        }
+        log.info("Deploy 취소 — 커밋 전 operation 을 중단했습니다. {}",
+                RuntimeLogSummary.kv(
+                        "deployKey", deployKey,
+                        "abortedOperationCount", outcome.abortedOperationIds().size()
+                ));
+    }
+
+    /**
+     * target 실행을 시작합니다.
+     *
+     * <p>조정 원장이 켜진 구성에서는 <b>실행하지 않고 접수만</b> 합니다(§13.2/§13.6). 실행은
+     * operation 상태 기계가 lease 아래에서 수행하고, target {@code COMPLETED} 는 그 operation 이
+     * 모든 applied proof 와 DB 확정을 끝냈을 때만 기록됩니다. 조정이 꺼진 구성은 기존처럼 target 마다
+     * 실행 스레드를 띄웁니다.</p>
+     */
+    private void dispatch(
+            final long deployKey,
+            final DeployExecutionPlan executionPlan,
+            final List<DeployExecutionTarget> dispatchTargets,
+            final String normalizedActor
+    ) {
+        final DeployOperationCoordinator coordinator = operationCoordinatorProvider.getIfAvailable();
+        if (coordinator == null) {
+            dispatchTargets.forEach(target -> targetExecutor.submit(() -> deployExecutor.executeTarget(
+                    deployKey, executionPlan.eventType(), target, normalizedActor)));
+            return;
+        }
+        final List<String> operationIds = coordinator.acceptAll(
+                deployKey, executionPlan.eventType(), dispatchTargets, normalizedActor);
+        log.info("Deploy를 조정 원장 operation 으로 접수했습니다. {}",
+                RuntimeLogSummary.kv(
+                        "deployKey", deployKey,
+                        "targetCount", dispatchTargets.size(),
+                        "operationCount", operationIds.size()
+                ));
     }
 
     /**
