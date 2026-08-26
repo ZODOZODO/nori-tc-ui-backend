@@ -3,6 +3,7 @@ package com.nori.tc.ui.core.coordination.port;
 import com.nori.tc.ui.core.coordination.model.UiOperationPhase;
 import com.nori.tc.ui.core.coordination.model.UiOperationState;
 import com.nori.tc.ui.core.coordination.model.UiOperationView;
+import com.nori.tc.ui.core.coordination.model.UiParticipantProofView;
 
 import java.util.List;
 import java.util.Map;
@@ -203,6 +204,16 @@ public interface UiOperationLedgerPort {
      * @return operation 뷰
      */
     Optional<UiOperationView> readOperation(String operationId);
+
+    /**
+     * 고정된 participant 별 prepare/applied proof 를 조회합니다(§20.3).
+     *
+     * <p>participant 가 고정되기 전이면 빈 목록입니다.</p>
+     *
+     * @param operationId operation 식별자
+     * @return participant proof 목록
+     */
+    List<UiParticipantProofView> readParticipantProofs(String operationId);
 
     /**
      * 불변 manifest 를 조회합니다.

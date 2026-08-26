@@ -27,6 +27,7 @@ import com.nori.tc.ui.core.coordination.UiOperationAcceptanceService;
 import com.nori.tc.ui.core.coordination.UiOperationExecutor;
 import com.nori.tc.ui.core.coordination.UiOperationManifestFactory;
 import com.nori.tc.ui.core.coordination.UiOperationManifestReader;
+import com.nori.tc.ui.core.coordination.UiOperationAdminQueryService;
 import com.nori.tc.ui.core.coordination.UiOperationQueryService;
 import com.nori.tc.ui.core.coordination.UiOperationReconciler;
 import com.nori.tc.ui.core.coordination.UiPermissionCatalogGuard;
@@ -292,6 +293,24 @@ public class UiCoordinationConfiguration {
             final UiCoordinationProperties properties
     ) {
         return new UiOperationQueryService(ledgerPort, asyncResultStorePort, properties);
+    }
+
+    /**
+     * §20.3 운영자 관리 조회 서비스입니다.
+     *
+     * <p>조정 원장이 켜진 구성에만 존재합니다 — 소비하는 컨트롤러는 이 빈을 {@code ObjectProvider} 로
+     * 받아 비활성 구성에서도 기동합니다.</p>
+     *
+     * @param ledgerPort operation 원장 포트
+     * @param resourceHeadPort 리소스 head 포트
+     * @return 관리 조회 서비스
+     */
+    @Bean
+    public UiOperationAdminQueryService uiOperationAdminQueryService(
+            final UiOperationLedgerPort ledgerPort,
+            final UiResourceHeadPort resourceHeadPort
+    ) {
+        return new UiOperationAdminQueryService(ledgerPort, resourceHeadPort);
     }
 
     @Bean
