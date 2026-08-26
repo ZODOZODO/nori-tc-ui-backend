@@ -80,6 +80,14 @@ public record UiOperationRequest(
     /** DB finalization 이 설비를 삭제하는 명령입니다. */
     public static final String DB_COMMAND_DELETE = "DELETE";
 
+    /**
+     * DB finalization 이 deploy target 의 배포 결과를 확정하는 명령입니다(§13.6).
+     *
+     * <p>설비 row 를 만들거나 지우지 않고 배포된 버전(model/param/jar)과 target 완료 표시만
+     * 확정합니다. 한 operation 이 영향 폐쇄 그룹에 속한 여러 target 을 함께 확정합니다.</p>
+     */
+    public static final String DB_COMMAND_DEPLOY_TARGET = "DEPLOY_TARGET";
+
     private static void requireText(final String fieldName, final String value) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(fieldName + " is required");
