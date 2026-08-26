@@ -119,6 +119,11 @@ public final class UiOperationAcceptanceService {
                     UiOperationConflictException.RESOURCE_BUSY,
                     "같은 설비에 대해 다른 작업이 진행 중입니다. conflictingOperationId=" + issued.conflictingOperationId(),
                     issued.conflictingOperationId());
+            case EQUIPMENT_EXECUTING -> new UiOperationConflictException(
+                    UiOperationConflictException.EQUIPMENT_EXECUTING,
+                    "이 설비에 대한 배포가 진행 중입니다. 완료 후 다시 시도하세요. ownerToken="
+                            + issued.conflictingOperationId(),
+                    issued.conflictingOperationId());
             case RESOURCE_BLOCKED -> new UiOperationConflictException(
                     UiOperationConflictException.RESOURCE_BLOCKED,
                     "미종결 작업이 이 설비의 처리를 차단하고 있습니다. blockedByOperationId="

@@ -67,6 +67,8 @@ public final class RedisUiResourceHeadAdapter implements UiResourceHeadPort {
             case "ALREADY_ISSUED" -> new IssueResult(IssueCode.ALREADY_ISSUED, parseLong(outcome.value(0)), null);
             case "RESOURCE_BUSY" -> new IssueResult(IssueCode.RESOURCE_BUSY, null, emptyToNull(outcome.value(0)));
             case "RESOURCE_BLOCKED" -> new IssueResult(IssueCode.RESOURCE_BLOCKED, null, emptyToNull(outcome.value(0)));
+            case "EQUIPMENT_EXECUTING" ->
+                    new IssueResult(IssueCode.EQUIPMENT_EXECUTING, null, emptyToNull(outcome.value(0)));
             case "COMPENSATION_TARGET_NOT_REPAIRABLE" ->
                     new IssueResult(IssueCode.COMPENSATION_TARGET_NOT_REPAIRABLE, null, emptyToNull(outcome.value(0)));
             case "COMPENSATION_REVISION_MISMATCH" ->

@@ -18,6 +18,8 @@ public interface UiResourceHeadPort {
         RESOURCE_BUSY,
         /** 미종결 operation 이 리소스를 차단하고 있습니다(§13.8 REPAIR_REQUIRED 잔존). */
         RESOURCE_BLOCKED,
+        /** deploy target 실행이 같은 설비를 점유하고 있습니다(§13.6 → 409). */
+        EQUIPMENT_EXECUTING,
         /** expected base revision 이 현재 head 와 다릅니다. */
         REVISION_CONFLICT,
         /** 이 operation 이 이미 candidate 를 발급했습니다. */

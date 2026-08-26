@@ -58,15 +58,26 @@ public final class DeployExecutionRedisAdapter implements DeployExecutionCoordin
         Objects.requireNonNull(eqpId, "eqpId is null");
         Objects.requireNonNull(ownerToken, "ownerToken is null");
 
-        final CoordinationOutcome outcome = translating(() -> leaseStore.acquire(
+        /*
+         * §13.6 — direct mutation 이 이 설비를 claim 중이면 lease 를 주지 않는다. 두 경로가 서로 다른
+         * 키로 배타를 잡고 있어, 함께 검사하지 않으면 같은 설비에서 deploy 와 direct mutation 이 동시에
+         * 돈다. 검사는 원자 연산 안에서 수행된다.
+         */
+        final CoordinationOutcome outcome = translating(() -> leaseStore.acquireEquipmentExecution(
                 CoordinationKeys.equipmentExecutionEpochKey(eqpId),
                 CoordinationKeys.equipmentExecutionLeaseKey(eqpId),
+                CoordinationKeys.resourceHeadKey(CoordinationKeys.RESOURCE_TYPE_EQUIPMENT, eqpId),
                 ownerToken,
                 Math.max(1L, ttlMs),
                 "{\"role\":\"deploy-target\"}",
                 System.currentTimeMillis()));
         if ("OK".equals(outcome.code())) {
             return Optional.of(Long.parseLong(outcome.value(0)));
+        }
+        if ("RESOURCE_BUSY".equals(outcome.code())) {
+            log.warn("deploy target lease 미획득 — direct mutation 이 진행 중입니다. eqpId={}, operationId={}",
+                    eqpId, outcome.value(0));
+            return Optional.empty();
         }
         if (log.isDebugEnabled()) {
             log.debug("deploy target lease 미획득. eqpId={}, code={}, owner={}",

@@ -103,6 +103,22 @@ class UiOperationAcceptanceContractTest {
     }
 
     @Test
+    @DisplayName("§13.6 — 같은 설비의 deploy 실행 중이면 409 EQUIPMENT_EXECUTING 이며 REVISION_CONFLICT 로 뭉개지 않는다")
+    void equipmentExecutingIsRejectedWithItsOwnCode() {
+        final RecordingLedger ledger = new RecordingLedger(UiOperationLedgerPort.CreateResult.CREATED);
+
+        final UiOperationConflictException conflict = assertThrows(UiOperationConflictException.class,
+                () -> service(ledger, UiResourceHeadPort.IssueCode.EQUIPMENT_EXECUTING)
+                        .accept(request("KEY-1"), 1_000L));
+
+        /*
+         * 기본 분기로 떨어지면 REVISION_CONFLICT("요청 기준 상태가 바뀌었다")로 나가는데, 그 안내를 보고
+         * 사용자는 새로고침 후 재요청한다 — 배포가 끝날 때까지 계속 실패한다.
+         */
+        assertEquals(UiOperationConflictException.EQUIPMENT_EXECUTING, conflict.errorCode());
+    }
+
+    @Test
     @DisplayName("같은 idempotency key 는 항상 같은 operationId 로 매핑된다")
     void operationIdIsDeterministicPerIdempotencyKey() {
         final UiOperationManifestFactory factory = manifestFactory();

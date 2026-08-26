@@ -25,6 +25,9 @@ public class UiOperationConflictException extends RuntimeException {
     /** 미종결 operation 이 리소스를 차단하고 있는 경우입니다. */
     public static final String RESOURCE_BLOCKED = "RESOURCE_BLOCKED";
 
+    /** deploy target 실행이 같은 설비를 점유하고 있는 경우입니다(§13.6). */
+    public static final String EQUIPMENT_EXECUTING = "EQUIPMENT_EXECUTING";
+
     private final String errorCode;
     private final String conflictingOperationId;
 
