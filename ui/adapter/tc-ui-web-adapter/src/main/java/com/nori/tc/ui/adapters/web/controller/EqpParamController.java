@@ -92,7 +92,7 @@ public class EqpParamController {
         if (optionalState.isEmpty()) {
             log.warn("설비 체크아웃 상태 조회 결과 없음 - 설비 미존재. eqpId={}", eqpId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ApiResponse.error("NOT_FOUND", "설비를 찾을 수 없습니다."));
+                    .body(ApiResponse.error("NOT_FOUND", "설비를 찾을 수 없습니다. eqpId=" + eqpId));
         }
 
         final EqpQueryPort.EqpCheckoutStateView state = optionalState.get();

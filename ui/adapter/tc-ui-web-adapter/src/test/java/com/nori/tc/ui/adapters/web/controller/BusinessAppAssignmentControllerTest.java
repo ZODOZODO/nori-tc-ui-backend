@@ -33,26 +33,27 @@ class BusinessAppAssignmentControllerTest {
     }
 
     @Test
-    void returnsMembersWithOwnedPartitions() throws Exception {
+    void returnsPodsWithOwnedPartitions() throws Exception {
         when(businessAppAssignmentPort.findAllAssignments()).thenReturn(List.of(
-                new BusinessAppAssignmentView("member-a", "10.244.2.80", List.of(0, 1, 2)),
-                new BusinessAppAssignmentView("member-b", null, List.of(3, 4, 5))
+                new BusinessAppAssignmentView("10.244.2.80", List.of("member-a-eqp", "member-a-ui"), List.of(0, 1, 2)),
+                new BusinessAppAssignmentView(null, List.of("member-b"), List.of(3, 4, 5))
         ));
 
         mockMvc.perform(get("/api/eqp/business-app-assignments"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.length()").value(2))
-                .andExpect(jsonPath("$.data[0].memberId").value("member-a"))
                 .andExpect(jsonPath("$.data[0].host").value("10.244.2.80"))
+                .andExpect(jsonPath("$.data[0].memberIds.length()").value(2))
+                .andExpect(jsonPath("$.data[0].memberIds[0]").value("member-a-eqp"))
                 .andExpect(jsonPath("$.data[0].ownedPartitions[0]").value(0))
-                .andExpect(jsonPath("$.data[1].memberId").value("member-b"))
                 .andExpect(jsonPath("$.data[1].host").isEmpty())
+                .andExpect(jsonPath("$.data[1].memberIds[0]").value("member-b"))
                 .andExpect(jsonPath("$.data[1].ownedPartitions[2]").value(5));
     }
 
     @Test
-    void noRunningProcessReturnsEmptyArray() throws Exception {
+    void noRunningPodReturnsEmptyArray() throws Exception {
         when(businessAppAssignmentPort.findAllAssignments()).thenReturn(List.of());
 
         mockMvc.perform(get("/api/eqp/business-app-assignments"))

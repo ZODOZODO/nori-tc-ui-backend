@@ -27,6 +27,7 @@ import com.nori.tc.ui.adapters.web.controller.ModelFlowController;
 import com.nori.tc.ui.adapters.web.controller.ModelMutationController;
 import com.nori.tc.ui.adapters.web.controller.ModelQueryController;
 import com.nori.tc.ui.adapters.web.controller.PermissionController;
+import com.nori.tc.ui.adapters.web.controller.RuntimeInstanceController;
 import com.nori.tc.ui.adapters.web.controller.UserController;
 import com.nori.tc.ui.adapters.web.controller.support.UiApiExceptionHandler;
 import com.nori.tc.ui.adapters.web.controller.support.UiAuthCookieFactory;
@@ -74,6 +75,7 @@ import org.springframework.context.annotation.Import;
         ModelMutationController.class,
         ModelQueryController.class,
         PermissionController.class,
+        RuntimeInstanceController.class,
         UserController.class,
         UiApiExceptionHandler.class,
         UiAuthCookieFactory.class,

@@ -5,7 +5,6 @@ import com.nori.tc.ui.adapters.redis.comm.CommLogRedisQueryAdapter;
 import com.nori.tc.ui.adapters.redis.coordination.DeployExecutionRedisAdapter;
 import com.nori.tc.ui.adapters.redis.dlq.BusinessDlqRedisService;
 import com.nori.tc.ui.adapters.redis.dlq.GatewayDlqRedisService;
-import com.nori.tc.ui.adapters.redis.lease.GatewayShardLeaseRedisAdapter;
 import com.nori.tc.ui.adapters.redis.registry.DeployTracePubSubListener;
 import com.nori.tc.ui.adapters.redis.registry.DeployTraceRedisAdapter;
 import com.nori.tc.ui.adapters.redis.repair.RedisEqpRepairTaskStore;
@@ -28,7 +27,10 @@ import org.springframework.context.annotation.Import;
         DeployTraceRedisAdapter.class,
         BusinessDlqRedisService.class,
         GatewayDlqRedisService.class,
-        GatewayShardLeaseRedisAdapter.class,
+        // GatewayShardLeaseRedisAdapter 는 여기서 직접 등록하지 않는다 — 조정이 켜진 Gateway 는
+        // lease 를 fence epoch hash 로 기록하므로 레거시 raw String 키 조회는 항상 미점유를 낸다.
+        // 조정 on/off 를 배타 조건으로 가르는 두 configuration 이 각자 자기 구현을 등록한다.
+        UiLegacyGatewayShardLeaseConfiguration.class,
         RedisEqpRepairTaskStore.class,
         UiSessionCacheService.class
 })

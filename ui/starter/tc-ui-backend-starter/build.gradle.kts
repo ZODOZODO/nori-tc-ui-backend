@@ -49,6 +49,12 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-actuator")
     implementation(libs.spring.boot.starter.data.redis)
     implementation("com.nori.tc:tc-common-runtime-support:0.0.1-SNAPSHOT")
+    /*
+     * 공유 shard-group 매핑(tc.shard-groups[*]) — 조정 shard lease 조회 빈의 조립 인자입니다.
+     * 조정 어댑터의 빈 등록은 module config 가 아니라 이 starter 의 조정 configuration 이 맡습니다
+     * (UiRedisAdapterModuleConfiguration 주석 참조 — 같은 포트 후보 2 개로 기동이 깨진 사례).
+     */
+    implementation("com.nori.tc:tc-common-shard:0.0.1-SNAPSHOT")
     implementation(project(":ui:tc-ui-core"))
     implementation(project(":ui:adapter:tc-ui-web-adapter"))
     implementation(project(":ui:adapter:tc-ui-kafka-adapter"))

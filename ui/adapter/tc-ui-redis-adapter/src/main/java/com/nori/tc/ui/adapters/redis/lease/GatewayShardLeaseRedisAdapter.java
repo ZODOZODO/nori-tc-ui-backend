@@ -7,9 +7,7 @@ import com.nori.tc.ui.core.port.redis.GatewayShardLeasePort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,8 +23,6 @@ import java.util.Objects;
  * <p>Gateway는 lease 값을 raw String(StringRedisSerializer)으로 기록하므로
  * JSON 직렬화 템플릿이 아닌 {@code businessStringRedisTemplate}으로 읽습니다.</p>
  */
-@Service
-@EnableConfigurationProperties(UiGatewayLeaseProperties.class)
 public class GatewayShardLeaseRedisAdapter implements GatewayShardLeasePort {
 
     private static final Logger log = LoggerFactory.getLogger(GatewayShardLeaseRedisAdapter.class);
