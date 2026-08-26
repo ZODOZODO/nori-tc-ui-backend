@@ -6,6 +6,7 @@ import com.nori.tc.ui.core.coordination.UiOperationQueryService;
 import com.nori.tc.ui.core.coordination.model.UiOperationStatusView;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,15 +41,23 @@ public class AsyncResultController {
 
     private static final Logger log = LoggerFactory.getLogger(AsyncResultController.class);
 
-    private final UiOperationQueryService operationQueryService;
+    private final ObjectProvider<UiOperationQueryService> operationQueryServiceProvider;
 
     /**
      * 필수 의존성을 초기화합니다.
      *
-     * @param operationQueryService operation 조회 서비스
+     * <p>조회 서비스를 {@link ObjectProvider} 로 받습니다 — 그 빈은 조정 원장이 켜진 구성에만
+     * 존재하는데, 컨트롤러가 직접 주입받으면 <b>조정 비활성 구성에서 앱이 기동하지 못합니다</b>
+     * ({@code UnsatisfiedDependencyException}). {@code CoordinationAdminController} 와 같은 이유·같은
+     * 방식입니다.</p>
+     *
+     * @param operationQueryServiceProvider operation 조회 서비스 공급자(비조정 구성이면 비어 있음)
      */
-    public AsyncResultController(final UiOperationQueryService operationQueryService) {
-        this.operationQueryService = Objects.requireNonNull(operationQueryService, "operationQueryService is null");
+    public AsyncResultController(
+            final ObjectProvider<UiOperationQueryService> operationQueryServiceProvider
+    ) {
+        this.operationQueryServiceProvider =
+                Objects.requireNonNull(operationQueryServiceProvider, "operationQueryServiceProvider is null");
     }
 
     /**
@@ -60,6 +69,18 @@ public class AsyncResultController {
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<OperationStatusResponse>> getResult(@PathVariable final String id) {
         log.trace("operation 상태 조회 요청. id={}", id);
+
+        final UiOperationQueryService operationQueryService = operationQueryServiceProvider.getIfAvailable();
+        if (operationQueryService == null) {
+            /*
+             * 조정 원장을 쓰지 않는 구성이라 조회할 operation 원장 자체가 없다. 위 응답 규칙대로
+             * 404 로 환원하지 않는다 — Front 가 "작업이 사라졌다" 로 읽고 재요청해 중복 mutation 을
+             * 만든다.
+             */
+            log.warn("조정 원장이 비활성인 구성에서 operation 조회가 요청됐습니다. id={}", id);
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(ApiResponse.error("COORDINATION_DISABLED", "이 구성은 조정 원장을 사용하지 않습니다."));
+        }
 
         final Optional<UiOperationStatusView> found =
                 operationQueryService.find(id, System.currentTimeMillis());

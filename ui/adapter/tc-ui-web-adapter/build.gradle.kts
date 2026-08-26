@@ -3,6 +3,8 @@
 plugins {
     `java-library`
     alias(libs.plugins.spring.dependency.management)
+    // CoordinationBeanInjectionArchTest 용 archunit-junit5 제공.
+    id("com.nori.tc.archunit-conventions")
 }
 
 group = "com.nori.tc"
