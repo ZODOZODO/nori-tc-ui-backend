@@ -143,6 +143,36 @@ class UiOperationExecutorTest {
     }
 
     @Test
+    @DisplayName("§7.2 — 보상 operation 이 PASS 하면 되돌린 원 operation 을 FAIL + ROLLED_BACK 으로 확정한다")
+    void passedCompensationClosesTheOperationItReverted() {
+        final RecordingLedgerPort ledgerPort = new RecordingLedgerPort(UiOperationPhase.FINALIZING);
+        ledgerPort.compensatesOperationId = "op-failed";
+        final UiOperationExecutor executor = newExecutor(session(), ledgerPort, new RecordingLeasePort(true));
+
+        executor.advance(OPERATION_ID, 1_000L);
+
+        /*
+         * 고정 phase 대역이라 advance 루프가 같은 단계를 반복한다 — 확정이 여러 번 시도되는 것은
+         * 대역의 성질이고, 실제 원장은 같은 보상 완료의 재적용을 멱등으로 받는다
+         * (CompensationClaimHandoverTest). 여기서 고정할 계약은 "닫은 대상이 이것뿐" 이다.
+         */
+        assertEquals(java.util.Set.of("op-failed<-" + OPERATION_ID), java.util.Set.copyOf(ledgerPort.rolledBack),
+                "확정하지 않으면 되돌리기가 끝났는데도 원 operation 이 REPAIR_REQUIRED 로 남아 "
+                        + "운영자가 이미 복구된 설비를 수동 복구 대상으로 본다.");
+    }
+
+    @Test
+    @DisplayName("§7.2 — 보상이 아닌 operation 의 PASS 는 다른 operation 을 건드리지 않는다")
+    void ordinaryPassDoesNotCloseAnythingElse() {
+        final RecordingLedgerPort ledgerPort = new RecordingLedgerPort(UiOperationPhase.FINALIZING);
+        final UiOperationExecutor executor = newExecutor(session(), ledgerPort, new RecordingLeasePort(true));
+
+        executor.advance(OPERATION_ID, 1_000L);
+
+        assertTrue(ledgerPort.rolledBack.isEmpty());
+    }
+
+    @Test
     @DisplayName("commit 이후에는 abort 로 pointer 를 되돌리지 않는다")
     void abortAfterCommitIsRejected() {
         final RecordingLedgerPort ledgerPort = new RecordingLedgerPort(UiOperationPhase.COMMITTED);
@@ -316,6 +346,8 @@ class UiOperationExecutorTest {
         private final List<String> aborts = new ArrayList<>();
         private final List<List<String>> frozen = new ArrayList<>();
         private final List<String> repairReasons = new ArrayList<>();
+        private final List<String> rolledBack = new ArrayList<>();
+        private String compensatesOperationId;
         private String excludeCode = "NOT_EXPIRED";
 
         private RecordingLedgerPort(final UiOperationPhase phase) {
@@ -392,6 +424,13 @@ class UiOperationExecutorTest {
             aborts.add(errorCode);
             return "OK";
         }
+        @Override
+        public String markRolledBack(final String operationId, final String compensationOperationId,
+                final long nowEpochMs) {
+            rolledBack.add(operationId + "<-" + compensationOperationId);
+            return "OK";
+        }
+
 
         @Override
         public String ackProof(final String operationId, final String participantId, final boolean applied,
@@ -405,7 +444,9 @@ class UiOperationExecutorTest {
             return Optional.of(new UiOperationView(
                     operationId, null, "EQP001", "EQP_UPDATE", state, phase,
                     List.of("equipment:EQP001"), List.of("tc-business:pod-a:boot-a"),
-                    "a".repeat(64), 0L, 1L, false, null, null, null, null, 1L, 1L, null));
+                    "a".repeat(64), 0L, 1L, false,
+                    compensatesOperationId == null ? null : 1L, compensatesOperationId,
+                    null, null, null, 1L, 1L, null));
         }
 
         @Override

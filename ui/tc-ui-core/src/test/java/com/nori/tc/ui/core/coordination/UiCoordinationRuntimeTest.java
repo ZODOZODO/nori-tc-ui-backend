@@ -372,6 +372,12 @@ class UiCoordinationRuntimeTest {
             }
 
             @Override
+            public String markRolledBack(final String operationId, final String compensationOperationId,
+                    final long nowEpochMs) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
             public String ackProof(final String operationId, final String participantId, final boolean applied,
                     final long revision, final String digest, final String ownerLeaseKey, final Long ownerEpoch,
                     final String proofJson, final long nowEpochMs) {

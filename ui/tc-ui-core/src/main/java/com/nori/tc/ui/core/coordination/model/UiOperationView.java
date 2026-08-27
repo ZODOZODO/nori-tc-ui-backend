@@ -21,6 +21,7 @@ import java.util.Objects;
  * @param desiredRevision 발급된 desired revision(미발급이면 null)
  * @param dbFinalized DB finalization proof 존재 여부
  * @param compensatesRevision 보상 대상 revision(없으면 null)
+ * @param compensatesOperationId 이 operation 이 되돌리는 원 operation(보상이 아니면 null)
  * @param errorCode terminal error code
  * @param errorMsg terminal error message
  * @param repairReason 수동 복구 사유
@@ -42,6 +43,7 @@ public record UiOperationView(
         Long desiredRevision,
         boolean dbFinalized,
         Long compensatesRevision,
+        String compensatesOperationId,
         String errorCode,
         String errorMsg,
         String repairReason,

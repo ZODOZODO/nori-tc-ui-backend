@@ -120,7 +120,7 @@ class AsyncResultControllerTest {
     void terminalFailureReturnsOk() throws Exception {
         when(ledgerPort.readOperation("op-2")).thenReturn(Optional.of(new UiOperationView(
                 "op-2", null, "PHOTO_001", "EQP_UPDATE", UiOperationState.FAIL, UiOperationPhase.ABORTED,
-                List.of("equipment:PHOTO_001"), List.of(), "a".repeat(64), 0L, 7L, false, null,
+                List.of("equipment:PHOTO_001"), List.of(), "a".repeat(64), 0L, 7L, false, null, null,
                 "START_FAILED", "설비 시작에 실패했습니다.", null, NOW, NOW, NOW)));
 
         mockMvc.perform(get("/api/async/op-2"))
@@ -190,7 +190,7 @@ class AsyncResultControllerTest {
     ) {
         return new UiOperationView(
                 operationId, null, "PHOTO_001", "EQP_UPDATE", state, phase,
-                List.of("equipment:PHOTO_001"), List.of(), "a".repeat(64), 0L, 7L, false, null,
+                List.of("equipment:PHOTO_001"), List.of(), "a".repeat(64), 0L, 7L, false, null, null,
                 null, null, null, updatedAtEpochMs, updatedAtEpochMs, null);
     }
 }

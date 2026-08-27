@@ -177,6 +177,16 @@ public final class RedisUiOperationLedgerAdapter implements UiOperationLedgerPor
     }
 
     @Override
+    public String markRolledBack(
+            final String operationId,
+            final String compensationOperationId,
+            final long nowEpochMs
+    ) {
+        return translating(() ->
+                store.markRolledBack(operationId, compensationOperationId, nowEpochMs).code());
+    }
+
+    @Override
     public String ackProof(
             final String operationId,
             final String participantId,
@@ -246,6 +256,7 @@ public final class RedisUiOperationLedgerAdapter implements UiOperationLedgerPor
                 record.desiredRevision(),
                 record.dbFinalized(),
                 record.compensatesRevision(),
+                record.compensatesOperationId(),
                 record.errorCode(),
                 record.errorMsg(),
                 record.repairReason(),

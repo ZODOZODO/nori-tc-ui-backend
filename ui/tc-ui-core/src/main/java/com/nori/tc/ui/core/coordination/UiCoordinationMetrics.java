@@ -25,6 +25,7 @@ public final class UiCoordinationMetrics {
     private final Counter replyProofRejected;
     private final Counter finalizedRevisionNotRecorded;
     private final Counter compensationIssued;
+    private final Counter operationRolledBack;
     private final DistributionSummary operationSteps;
     private final AtomicInteger recoveryBacklog = new AtomicInteger();
     private final AtomicLong executorEpoch = new AtomicLong();
@@ -49,6 +50,7 @@ public final class UiCoordinationMetrics {
         this.finalizedRevisionNotRecorded =
                 Counter.builder("tc.ui.operation.finalized.revision.not.recorded").register(meterRegistry);
         this.compensationIssued = Counter.builder("tc.ui.operation.compensation.issued").register(meterRegistry);
+        this.operationRolledBack = Counter.builder("tc.ui.operation.rolled.back").register(meterRegistry);
         this.operationSteps = DistributionSummary.builder("tc.ui.operation.steps").register(meterRegistry);
         meterRegistry.gauge("tc.ui.operation.recovery.backlog", recoveryBacklog, AtomicInteger::get);
         meterRegistry.gauge("tc.ui.operation.executor.epoch", executorEpoch, AtomicLong::get);
@@ -76,6 +78,11 @@ public final class UiCoordinationMetrics {
     /** 발급된 보상 operation 을 셉니다(§13.8). */
     public void incrementCompensationIssued() {
         compensationIssued.increment();
+    }
+
+    /** 보상 완료로 되돌려진(FAIL + ROLLED_BACK) operation 을 셉니다(§7.2). */
+    public void incrementOperationRolledBack() {
+        operationRolledBack.increment();
     }
 
     /** 수동 복구가 필요한 operation 을 셉니다. */

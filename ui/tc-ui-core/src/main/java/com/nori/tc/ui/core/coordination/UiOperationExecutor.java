@@ -475,10 +475,39 @@ public final class UiOperationExecutor {
             log.info("UI_OPERATION_PASS. operationId={}, desiredRevision={}",
                     operation.operationId(), desiredRevision);
             metrics.incrementOperationPass();
+            closeCompensatedOperation(operation, nowEpochMs);
             return true;
         }
         log.warn("UI_OPERATION_BARRIER_OPEN_REJECTED. operationId={}, code={}", operation.operationId(), opened);
         return false;
+    }
+
+    /**
+     * 방금 PASS 한 operation 이 보상이면 되돌린 원 operation 을 확정합니다(§7.2).
+     *
+     * <p>§7.2 는 "compensation revision 의 장벽이 열리고 DB 가 이전 상태로 복원된 경우 operation 을
+     * {@code FAIL} 과 {@code ROLLED_BACK} phase 로 확정" 하라고 요구합니다. 그 조건이 성립하는 지점이
+     * 바로 여기 — 보상 operation 의 barrier open + terminal PASS 직후입니다.</p>
+     *
+     * <p>확정에 실패해도 예외를 던지지 않습니다. 원 operation 은 그대로 {@code REPAIR_REQUIRED} 로
+     * 남고, 그것이 §7.2 의 "보상 완료를 증명할 수 없으면 REPAIR_REQUIRED" 와 같은 결과입니다. 여기서
+     * 던지면 이미 성공한 보상까지 실패로 되돌아갑니다.</p>
+     */
+    private void closeCompensatedOperation(final UiOperationView operation, final long nowEpochMs) {
+        final String compensated = operation.compensatesOperationId();
+        if (compensated == null) {
+            return;
+        }
+        final String code = ledgerPort.markRolledBack(compensated, operation.operationId(), nowEpochMs);
+        if ("OK".equals(code)) {
+            log.warn("UI_OPERATION_ROLLED_BACK. operationId={}, compensationId={}, compensatesRevision={}",
+                    compensated, operation.operationId(), operation.compensatesRevision());
+            metrics.incrementOperationRolledBack();
+            return;
+        }
+        log.error("UI_OPERATION_ROLLBACK_NOT_CONFIRMED. operationId={}, compensationId={}, code={} — "
+                        + "수동 복구 신호를 그대로 둡니다.",
+                compensated, operation.operationId(), code);
     }
 
     private void recordFinalizedRevisions(final UiOperationManifestView manifest, final long desiredRevision) {

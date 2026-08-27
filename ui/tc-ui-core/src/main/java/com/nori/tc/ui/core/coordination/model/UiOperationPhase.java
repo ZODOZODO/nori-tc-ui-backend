@@ -38,6 +38,9 @@ public enum UiOperationPhase {
     /** commit 전 실패로 candidate 를 폐기한 상태입니다. */
     ABORTED,
 
+    /** 보상 revision 의 장벽이 열리고 DB 가 이전 상태로 복원되어 FAIL 로 확정된 상태입니다(§7.2). */
+    ROLLED_BACK,
+
     /** 원장 값이 이 버전에서 해석되지 않는 경우입니다. */
     UNKNOWN
 }

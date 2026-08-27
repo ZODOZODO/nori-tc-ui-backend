@@ -174,6 +174,19 @@ public interface UiOperationLedgerPort {
     String abort(String operationId, List<String> resourceHeadKeys, String errorCode, String errorMsg, long nowEpochMs);
 
     /**
+     * 보상이 완료된 원 operation 을 {@code FAIL} + {@code ROLLED_BACK} 으로 확정합니다(§7.2).
+     *
+     * <p>보상이 아직 PASS 가 아니거나 다른 대상을 선언했으면 확정하지 않고 코드로 알립니다 — 그때 원
+     * operation 은 {@code REPAIR_REQUIRED} 로 남습니다.</p>
+     *
+     * @param operationId 되돌려진 원 operation
+     * @param compensationOperationId 완료된 보상 operation
+     * @param nowEpochMs 현재 시각
+     * @return 결과 코드
+     */
+    String markRolledBack(String operationId, String compensationOperationId, long nowEpochMs);
+
+    /**
      * participant proof 를 기록합니다(§13.5 reply ingress).
      *
      * @param operationId operation 식별자

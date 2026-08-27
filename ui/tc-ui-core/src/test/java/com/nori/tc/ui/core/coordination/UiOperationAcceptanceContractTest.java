@@ -294,6 +294,12 @@ class UiOperationAcceptanceContractTest {
             aborts.add(errorCode);
             return "OK";
         }
+        @Override
+        public String markRolledBack(final String operationId, final String compensationOperationId,
+                final long nowEpochMs) {
+            return "OK";
+        }
+
 
         @Override
         public String ackProof(final String operationId, final String participantId, final boolean applied,

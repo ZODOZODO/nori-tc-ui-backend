@@ -55,7 +55,7 @@ class CoordinationAdminControllerTest {
                         OPERATION_ID, "exec-1", "CLN_001", "EQP_UPDATE",
                         UiOperationState.PENDING, UiOperationPhase.APPLYING,
                         List.of("equipment:CLN_001"), List.of("tc-business:pod-1:sess-1"),
-                        "digest", 0L, 3L, false, null, null, null, null, 1L, 2L, null),
+                        "digest", 0L, 3L, false, null, null, null, null, null, 1L, 2L, null),
                 List.of(new UiResourceHeadView("equipment:CLN_001", 3L, 0L, OPERATION_ID, OPERATION_ID)),
                 List.of(new UiParticipantProofView(
                         "tc-business:pod-1:sess-1", 3L, "digest", null, null, 7L)),

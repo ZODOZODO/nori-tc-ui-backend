@@ -188,7 +188,7 @@ class UiOperationQueryAndContractTest {
     ) {
         return new UiOperationView(
                 "op-1", null, "EQP001", "EQP_UPDATE", state, phase,
-                List.of("equipment:EQP001"), List.of(), "a".repeat(64), 0L, 7L, false, null,
+                List.of("equipment:EQP001"), List.of(), "a".repeat(64), 0L, 7L, false, null, null,
                 null, null, null, updatedAt, updatedAt, state == UiOperationState.PENDING ? null : updatedAt);
     }
 }

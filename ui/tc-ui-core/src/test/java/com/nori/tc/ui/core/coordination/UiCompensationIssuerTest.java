@@ -80,7 +80,7 @@ class UiCompensationIssuerTest {
                 FAILED_ID, null, "EQP001", "EQP_MODEL_UPDATE",
                 UiOperationState.REPAIR_REQUIRED, UiOperationPhase.COMPENSATING,
                 List.of("equipment:EQP001", "equipment:EQP002"), List.of(),
-                "digest", 0L, COMMITTED_REVISION, false, null,
+                "digest", 0L, COMMITTED_REVISION, false, null, null,
                 "REPAIR_REQUIRED", "커밋 후 실패", "LAST_PARTICIPANT_EXPIRED", 1L, 2L, 3L);
 
         assertNull(issuer(ledger).issueFor(failed, 100L));
@@ -98,7 +98,7 @@ class UiCompensationIssuerTest {
                 FAILED_ID, null, "EQP001", "EQP_MODEL_UPDATE",
                 UiOperationState.REPAIR_REQUIRED, UiOperationPhase.COMPENSATING,
                 List.of("equipment:EQP001"), List.of(),
-                "digest", 0L, COMMITTED_REVISION, false, compensatesRevision,
+                "digest", 0L, COMMITTED_REVISION, false, compensatesRevision, null,
                 "REPAIR_REQUIRED", "커밋 후 실패", "LAST_PARTICIPANT_EXPIRED", 1L, 2L, 3L);
     }
 
@@ -234,6 +234,12 @@ class UiCompensationIssuerTest {
                 final String errorMsg, final long nowEpochMs) {
             return "OK";
         }
+        @Override
+        public String markRolledBack(final String operationId, final String compensationOperationId,
+                final long nowEpochMs) {
+            return "OK";
+        }
+
 
         @Override
         public String ackProof(

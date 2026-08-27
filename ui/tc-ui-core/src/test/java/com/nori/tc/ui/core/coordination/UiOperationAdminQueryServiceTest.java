@@ -75,7 +75,7 @@ class UiOperationAdminQueryServiceTest {
                 OPERATION_ID, "exec-1", "CLN_001", "EQP_UPDATE",
                 UiOperationState.PASS, UiOperationPhase.BARRIER_OPEN,
                 resourceKeys, List.of("tc-business:pod-1:sess-1"),
-                "digest", 0L, 3L, true, null, null, null, null, 1L, 2L, 3L);
+                "digest", 0L, 3L, true, null, null, null, null, null, 1L, 2L, 3L);
     }
 
     /**

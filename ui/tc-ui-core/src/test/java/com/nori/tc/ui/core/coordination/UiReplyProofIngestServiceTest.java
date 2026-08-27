@@ -312,6 +312,12 @@ class UiReplyProofIngestServiceTest {
             aborts.add(errorCode);
             return "OK";
         }
+        @Override
+        public String markRolledBack(final String operationId, final String compensationOperationId,
+                final long nowEpochMs) {
+            return "OK";
+        }
+
 
         @Override
         public String ackProof(final String operationId, final String participantId, final boolean applied,
@@ -325,7 +331,7 @@ class UiReplyProofIngestServiceTest {
         public Optional<UiOperationView> readOperation(final String operationId) {
             return Optional.of(new UiOperationView(
                     operationId, null, "EQP001", "EQP_UPDATE", UiOperationState.PENDING, phase,
-                    List.of("equipment:EQP001"), List.of(SESSION), DIGEST, 0L, 7L, false, null,
+                    List.of("equipment:EQP001"), List.of(SESSION), DIGEST, 0L, 7L, false, null, null,
                     null, null, null, 1L, 1L, null));
         }
 
