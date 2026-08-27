@@ -1,5 +1,6 @@
 package com.nori.tc.ui.adapters.kafka.publish;
 
+import com.nori.tc.ui.core.coordination.UiRuntimeDescriptorReader;
 import com.nori.tc.ui.core.coordination.model.UiOperationManifestView;
 import com.nori.tc.ui.core.coordination.port.UiOperationCommandPublisher;
 import com.nori.tc.ui.core.model.UiCommandCoordination;
@@ -31,19 +32,23 @@ public final class UiOperationCommandKafkaPublisher implements UiOperationComman
 
     private final UiGatewayEventPublishPort gatewayPublishPort;
     private final UiBusinessEventPublishPort businessPublishPort;
+    private final UiRuntimeDescriptorReader descriptorReader;
 
     /**
      * publisher 를 만듭니다.
      *
      * @param gatewayPublishPort gateway 이벤트 발행 포트
      * @param businessPublishPort business 이벤트 발행 포트
+     * @param descriptorReader manifest descriptor 해석기(gateway 라우팅 partition 출처)
      */
     public UiOperationCommandKafkaPublisher(
             final UiGatewayEventPublishPort gatewayPublishPort,
-            final UiBusinessEventPublishPort businessPublishPort
+            final UiBusinessEventPublishPort businessPublishPort,
+            final UiRuntimeDescriptorReader descriptorReader
     ) {
         this.gatewayPublishPort = Objects.requireNonNull(gatewayPublishPort, "gatewayPublishPort is null");
         this.businessPublishPort = Objects.requireNonNull(businessPublishPort, "businessPublishPort is null");
+        this.descriptorReader = Objects.requireNonNull(descriptorReader, "descriptorReader is null");
     }
 
     @Override
@@ -104,10 +109,33 @@ public final class UiOperationCommandKafkaPublisher implements UiOperationComman
 
         businessPublishPort.publish(message);
         if (manifest.requiresGatewayParticipant()) {
-            gatewayPublishPort.publish(message);
+            publishToGateway(message, manifest);
         }
         log.info("UI_OPERATION_COMMAND_PUBLISHED. operationId={}, phase={}, gatewayParticipant={}, revision={}",
                 operationId, phase, manifest.requiresGatewayParticipant(), desiredRevision);
+    }
+
+    /**
+     * Gateway 명령을 manifest 가 고정한 partition 으로 보냅니다.
+     *
+     * <p>기본 발행 경로는 {@code tc_eqp.route_partition} 을 조회해 partition 을 정하는데, 조정 프로토콜에서
+     * 그 행은 commit 이후 DB 확정 단계에 쓰인다. 그래서 EQP_CREATE 의 PREPARE 는 아직 행이 없고,
+     * EQP_DELETE 의 APPLY 는 이미 행이 지워져 조회가 비고 발행이 거부된다 — operation 은 참여 증적을
+     * 영원히 기다린다. manifest descriptor 의 {@code routePartition} 은 그 operation 이 의도한 값이며
+     * 원장에 고정돼 있으므로(§13.1/§13.4) 라우팅 출처로 이쪽이 옳다.</p>
+     *
+     * <p>descriptor 에 값이 없으면(변경 대상이 아니면 null 이다) 종전의 DB 조회 경로를 그대로 쓴다.</p>
+     */
+    private void publishToGateway(final UiCommandMessage message, final UiOperationManifestView manifest) {
+        final String descriptorJson = manifest.descriptorJsonByResourceKey().get(primaryResourceKey(manifest));
+        final Integer routePartition = descriptorJson == null
+                ? null
+                : descriptorReader.read(descriptorJson).routePartition();
+        if (routePartition == null) {
+            gatewayPublishPort.publish(message);
+            return;
+        }
+        gatewayPublishPort.publishToPartition(message, routePartition);
     }
 
     private static String primaryResourceKey(final UiOperationManifestView manifest) {

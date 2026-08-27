@@ -307,9 +307,10 @@ public class UiCoordinationConfiguration {
     @Bean
     public UiOperationCommandPublisher uiOperationCommandPublisher(
             final UiGatewayEventPublishPort gatewayPublishPort,
-            final UiBusinessEventPublishPort businessPublishPort
+            final UiBusinessEventPublishPort businessPublishPort,
+            final UiRuntimeDescriptorReader descriptorReader
     ) {
-        return new UiOperationCommandKafkaPublisher(gatewayPublishPort, businessPublishPort);
+        return new UiOperationCommandKafkaPublisher(gatewayPublishPort, businessPublishPort, descriptorReader);
     }
 
     /**

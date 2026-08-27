@@ -1,6 +1,8 @@
 package com.nori.tc.ui.adapters.kafka.publish;
 
+import tools.jackson.databind.ObjectMapper;
 import com.nori.tc.messaging.kafka.contract.KafkaUiTaskMessage;
+import com.nori.tc.ui.core.coordination.UiRuntimeDescriptorReader;
 import com.nori.tc.ui.core.coordination.model.UiOperationManifestView;
 import com.nori.tc.ui.core.model.UiCommandCoordination;
 import com.nori.tc.ui.core.model.UiCommandMessage;
@@ -28,7 +30,7 @@ class UiOperationCommandKafkaPublisherTest {
         final RecordingPublisher gateway = new RecordingPublisher();
         final RecordingPublisher business = new RecordingPublisher();
 
-        new UiOperationCommandKafkaPublisher(gateway, business)
+        newPublisher(gateway, business)
                 .publishPrepare("op-1", manifest(false), 7L, "a".repeat(64), "2026-08-25T00:00:00Z");
 
         assertEquals(1, business.messages.size());
@@ -42,7 +44,7 @@ class UiOperationCommandKafkaPublisherTest {
         final RecordingPublisher gateway = new RecordingPublisher();
         final RecordingPublisher business = new RecordingPublisher();
 
-        new UiOperationCommandKafkaPublisher(gateway, business)
+        newPublisher(gateway, business)
                 .publishApply("op-1", manifest(true), 7L, "a".repeat(64), "2026-08-25T00:00:00Z");
 
         assertEquals(1, gateway.messages.size());
@@ -55,7 +57,7 @@ class UiOperationCommandKafkaPublisherTest {
         final RecordingPublisher gateway = new RecordingPublisher();
         final RecordingPublisher business = new RecordingPublisher();
         final UiOperationCommandKafkaPublisher publisher =
-                new UiOperationCommandKafkaPublisher(gateway, business);
+                newPublisher(gateway, business);
 
         publisher.publishPrepare("op-1", manifest(true), 7L, "a".repeat(64), "deadline");
         publisher.publishApply("op-1", manifest(true), 7L, "a".repeat(64), "deadline");
@@ -96,6 +98,51 @@ class UiOperationCommandKafkaPublisherTest {
         assertTrue(!metadata.isCoordinationV2());
     }
 
+    @Test
+    @DisplayName("manifest 가 routePartition 을 담고 있으면 그 partition 으로 Gateway 에 발행한다")
+    void gatewayIsRoutedByManifestPartition() {
+        final RecordingPublisher gateway = new RecordingPublisher();
+        final RecordingPublisher business = new RecordingPublisher();
+
+        newPublisher(gateway, business)
+                .publishPrepare("op-1", createManifest(0), 1L, "a".repeat(64), "deadline");
+
+        assertEquals(List.of(0), gateway.partitions,
+                "EQP_CREATE 는 tc_eqp 행이 아직 없어 DB lookup 발행 경로로는 Gateway 에 도달하지 못합니다.");
+        assertTrue(gateway.messages.isEmpty(), "manifest 에 partition 이 있으면 DB lookup 경로를 타면 안 됩니다.");
+    }
+
+    @Test
+    @DisplayName("manifest 에 routePartition 이 없으면 DB lookup 발행 경로를 쓴다")
+    void gatewayFallsBackToLookupWhenManifestHasNoPartition() {
+        final RecordingPublisher gateway = new RecordingPublisher();
+        final RecordingPublisher business = new RecordingPublisher();
+
+        newPublisher(gateway, business)
+                .publishApply("op-1", manifest(true), 7L, "a".repeat(64), "deadline");
+
+        assertEquals(1, gateway.messages.size());
+        assertTrue(gateway.partitions.isEmpty());
+    }
+
+    private static UiOperationCommandKafkaPublisher newPublisher(
+            final RecordingPublisher gateway,
+            final RecordingPublisher business
+    ) {
+        return new UiOperationCommandKafkaPublisher(
+                gateway, business, new UiRuntimeDescriptorReader(new ObjectMapper()));
+    }
+
+    private static UiOperationManifestView createManifest(final int routePartition) {
+        return new UiOperationManifestView(
+                "EQP_CREATE", "EQP001", "tester", "exec-1", "SOCKET", true,
+                List.of("equipment:EQP001"),
+                Map.of("equipment:EQP001",
+                        "{\"eqpId\":\"EQP001\",\"routePartition\":" + routePartition + "}"),
+                Map.of("equipment:EQP001", 0L),
+                null, null, Map.of(), null, null);
+    }
+
     private static UiOperationManifestView manifest(final boolean requiresGateway) {
         return new UiOperationManifestView(
                 "EQP_UPDATE", "EQP001", "tester", "exec-1", "SOCKET", requiresGateway,
@@ -110,10 +157,16 @@ class UiOperationCommandKafkaPublisherTest {
             implements UiGatewayEventPublishPort, UiBusinessEventPublishPort {
 
         private final List<UiCommandMessage> messages = new ArrayList<>();
+        private final List<Integer> partitions = new ArrayList<>();
 
         @Override
         public void publish(final UiCommandMessage message) {
             messages.add(message);
+        }
+
+        @Override
+        public void publishToPartition(final UiCommandMessage message, final int partition) {
+            partitions.add(partition);
         }
     }
 }
