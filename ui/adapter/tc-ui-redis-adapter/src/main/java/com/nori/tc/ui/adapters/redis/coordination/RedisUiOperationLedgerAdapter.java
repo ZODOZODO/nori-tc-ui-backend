@@ -1,5 +1,6 @@
 package com.nori.tc.ui.adapters.redis.coordination;
 
+import com.nori.tc.common.coordination.CoordinationKeys;
 import com.nori.tc.common.coordination.store.CoordinationOutcome;
 import com.nori.tc.common.coordination.store.OperationLedgerRedisStore;
 import com.nori.tc.common.coordination.types.OperationPhase;
@@ -193,11 +194,19 @@ public final class RedisUiOperationLedgerAdapter implements UiOperationLedgerPor
             final boolean applied,
             final long revision,
             final String digest,
-            final String ownerLeaseKey,
+            final String ownerShardId,
             final Long ownerEpoch,
             final String proofJson,
             final long nowEpochMs
     ) {
+        /*
+         * ownerEpoch 를 넘기면 스크립트가 이 lease hash 의 sessionId+epoch 와 대조한다(§13.5 stale epoch
+         * reply 거부). shard id 없이 ownerEpoch 만 넘기면 store 가 lease 자리에 operation key 를 채우고
+         * 그 hash 에는 sessionId 필드가 없으므로 모든 proof 가 STALE_FENCED 로 거부된다.
+         */
+        final String ownerLeaseKey = ownerShardId == null
+                ? null
+                : CoordinationKeys.gatewayShardLeaseKey(ownerShardId);
         final CoordinationOutcome outcome = translating(() -> applied
                 ? store.ackApplied(operationId, participantId, revision, digest, ownerLeaseKey, ownerEpoch,
                         proofJson, nowEpochMs)

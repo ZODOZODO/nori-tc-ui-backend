@@ -179,7 +179,8 @@ class DeployOperationAcceptanceTest {
                         com.nori.tc.ui.core.coordination.port.UiOperationDbFinalizationPort.Outcome.FINALIZED,
                 com.nori.tc.ui.core.coordination.port.UiFinalizedRevisionProvider.absent(),
                 new UiOperationManifestReader(objectMapper),
-                CompensationIssuerFixture.issuer(ledger, headPort), com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(), metrics);
+                CompensationIssuerFixture.issuer(ledger, headPort), com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(),
+                com.nori.tc.ui.core.coordination.port.UiGatewayParticipantResolver.none(), metrics);
 
         return new DeployOperationCoordinator(
                 new UiResourceKeyPlanner(eqpQueryPort(sharedEqpIds)),

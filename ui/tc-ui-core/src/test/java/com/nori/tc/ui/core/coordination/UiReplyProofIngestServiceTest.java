@@ -6,6 +6,7 @@ import com.nori.tc.ui.core.coordination.model.UiOperationView;
 import com.nori.tc.ui.core.coordination.port.UiOperationLedgerPort;
 import com.nori.tc.ui.core.model.UiCommandReply;
 import com.nori.tc.ui.core.model.UiCommandReplyProof;
+import com.nori.tc.ui.core.port.redis.GatewayShardLeasePort;
 import com.nori.tc.ui.domain.task.UiTaskStatus;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
@@ -89,6 +90,37 @@ class UiReplyProofIngestServiceTest {
         assertEquals(List.of("PLC_SPEC_INVALID"), ledger.aborts);
     }
 
+    /**
+     * §13.5 — owner epoch 검증은 <b>그 session 이 소유한 shard 의 lease</b> 를 대상으로 해야 한다.
+     *
+     * <p>대조 대상을 정하지 않고 epoch 만 넘기면 원장 스크립트가 lease 아닌 키를 읽어 Gateway 의 모든
+     * proof 가 {@code STALE_FENCED} 로 거부된다 — 조정 경로에서 Gateway 참여가 통째로 불가능해진다.</p>
+     */
+    @Test
+    @DisplayName("owner epoch 를 실은 응답은 그 session 이 소유한 shard 를 검증 대상으로 넘긴다")
+    void ownerEpochProofCarriesTheOwnedShardForVerification() {
+        final RecordingLedger ledger = new RecordingLedger(UiOperationPhase.APPLYING);
+
+        assertTrue(service(ledger).ingest(reply(new UiCommandReplyProof(
+                OPERATION_ID, UiCommandReplyProof.STATE_APPLIED, SESSION, 3L, 7L, 7L, DIGEST)), 1_000L));
+        assertEquals(List.of("group-1"), ledger.ackedOwnerShardIds,
+                "검증 대상 shard 를 넘기지 않으면 owner epoch 검증이 항상 실패한다");
+    }
+
+    /**
+     * 반대 방향 — 소유 shard 가 없는 session 의 owner epoch 응답은 stale 이므로 기록하지 않는다.
+     */
+    @Test
+    @DisplayName("shard 를 소유하지 않은 session 의 owner epoch 응답은 기록하지 않는다")
+    void ownerEpochProofFromSessionWithoutShardIsRejected() {
+        final RecordingLedger ledger = new RecordingLedger(UiOperationPhase.APPLYING);
+
+        assertFalse(service(ledger, shardLeasePort("tc-gateway:other-pod:boot-b")).ingest(
+                reply(new UiCommandReplyProof(
+                        OPERATION_ID, UiCommandReplyProof.STATE_APPLIED, SESSION, 3L, 7L, 7L, DIGEST)), 1_000L));
+        assertTrue(ledger.acks.isEmpty());
+    }
+
     @Test
     @DisplayName("proof 없는 v1 응답은 조용히 무시된다")
     void v1ReplyWithoutProofIsIgnored() {
@@ -102,6 +134,13 @@ class UiReplyProofIngestServiceTest {
     }
 
     private UiReplyProofIngestService service(final RecordingLedger ledger) {
+        return service(ledger, shardLeasePort(SESSION));
+    }
+
+    private UiReplyProofIngestService service(
+            final RecordingLedger ledger,
+            final GatewayShardLeasePort shardLeasePort
+    ) {
         final UiCoordinationMetrics metrics = new UiCoordinationMetrics(new SimpleMeterRegistry());
         final UiOperationExecutor executor = new UiOperationExecutor(
                 session(), new UiCoordinationProperties(), ledger, headPort(), leasePort(), membership(),
@@ -110,8 +149,19 @@ class UiReplyProofIngestServiceTest {
                 com.nori.tc.ui.core.coordination.port.UiFinalizedRevisionProvider.absent(),
                 new UiOperationManifestReader(new tools.jackson.databind.ObjectMapper()),
                 CompensationIssuerFixture.issuer(ledger, headPort()),
-                com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(), metrics);
-        return new UiReplyProofIngestService(ledger, executor, metrics);
+                com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(),
+                com.nori.tc.ui.core.coordination.port.UiGatewayParticipantResolver.none(), metrics);
+        return new UiReplyProofIngestService(ledger, executor, metrics, shardLeasePort);
+    }
+
+    /**
+     * group-1 을 지정한 session 이 소유한 shard lease 조회원입니다.
+     *
+     * @param ownerSessionId group-1 소유 session(소유자 없음을 만들려면 null)
+     */
+    private static GatewayShardLeasePort shardLeasePort(final String ownerSessionId) {
+        return () -> List.of(new GatewayShardLeasePort.GatewayShardLeaseView(
+                "group-1", List.of(0, 1, 2), ownerSessionId));
     }
 
     private static UiCommandReply reply(final UiCommandReplyProof proof) {
@@ -244,6 +294,7 @@ class UiReplyProofIngestServiceTest {
         private final UiOperationPhase phase;
         private final List<String> acks = new ArrayList<>();
         private final List<String> aborts = new ArrayList<>();
+        private final List<String> ackedOwnerShardIds = new ArrayList<>();
 
         private RecordingLedger(final UiOperationPhase phase) {
             this.phase = phase;
@@ -321,9 +372,10 @@ class UiReplyProofIngestServiceTest {
 
         @Override
         public String ackProof(final String operationId, final String participantId, final boolean applied,
-                final long revision, final String digest, final String ownerLeaseKey, final Long ownerEpoch,
+                final long revision, final String digest, final String ownerShardId, final Long ownerEpoch,
                 final String proofJson, final long nowEpochMs) {
             acks.add(applied ? "applied" : "prepared");
+            ackedOwnerShardIds.add(ownerShardId);
             return "OK";
         }
 

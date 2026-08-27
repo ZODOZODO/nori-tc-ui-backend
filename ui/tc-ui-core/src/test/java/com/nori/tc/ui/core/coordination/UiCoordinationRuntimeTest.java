@@ -158,7 +158,8 @@ class UiCoordinationRuntimeTest {
                 com.nori.tc.ui.core.coordination.port.UiFinalizedRevisionProvider.absent(),
                 new UiOperationManifestReader(new tools.jackson.databind.ObjectMapper()),
                 CompensationIssuerFixture.issuer(ledger, headPort()),
-                com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(), metrics);
+                com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(),
+                com.nori.tc.ui.core.coordination.port.UiGatewayParticipantResolver.none(), metrics);
         return new UiOperationReconciler(ledger, executor, properties, metrics);
     }
 

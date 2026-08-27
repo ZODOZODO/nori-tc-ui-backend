@@ -14,17 +14,22 @@ import com.nori.tc.ui.core.coordination.port.UiOperationLedgerPort;
 import com.nori.tc.ui.core.coordination.port.UiResourceHeadPort;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
+import com.nori.tc.ui.core.exception.UiBadRequestException;
 import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.core.model.PagedResponse;
 import com.nori.tc.ui.core.model.UiPageRequest;
 import com.nori.tc.ui.core.port.db.BusinessJarDigestPort;
 import com.nori.tc.ui.core.port.db.EqpManageQueryPort;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
+import com.nori.tc.ui.core.port.db.ModelCrudPort;
+import com.nori.tc.ui.core.service.EqpManagementCommandValidator;
 import com.nori.tc.ui.core.coordination.model.UiMembershipState;
 import com.nori.tc.ui.core.coordination.port.UiCoordinationMembershipPort;
+import com.nori.tc.ui.domain.common.model.UiModelStatus;
 import com.nori.tc.ui.domain.common.model.UiProtocolType;
 import com.nori.tc.ui.domain.eqp.UiEqp;
 import com.nori.tc.ui.domain.eqp.UiEqpParam;
+import com.nori.tc.ui.domain.model.UiModel;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -45,6 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -64,8 +70,11 @@ class CoordinatedUiEqpMutationCoordinatorTest {
     @DisplayName("설비 생성은 Gateway 참여를 요구하고 tombstone 이 아닌 descriptor 를 만든다")
     void createRequiresGatewayParticipant() {
         final RecordingLedger ledger = new RecordingLedger();
+        // 생성 대상은 아직 없어야 한다 — 검증기가 중복 등록을 409 로 거부합니다.
+        final EqpManageQueryPort absentPort = mock(EqpManageQueryPort.class);
+        when(absentPort.findManageSnapshotByEqpId(anyString())).thenReturn(Optional.empty());
         final UiOperationAcceptance acceptance =
-                coordinator(ledger, List.of()).create(createCommand(), "KEY-1");
+                coordinator(ledger, List.of(), absentPort).create(createCommand(), "KEY-1");
 
         assertTrue(acceptance.created());
         assertEquals(UiOperationState.PENDING, acceptance.state());
@@ -94,6 +103,60 @@ class CoordinatedUiEqpMutationCoordinatorTest {
 
         assertTrue(ledger.lastManifest.contains("\"requiresGatewayParticipant\":true"));
         assertTrue(ledger.lastManifest.contains("\"routePartition\":3"));
+    }
+
+    @Test
+    @DisplayName("§12.4 — 접속 파라미터가 바뀌면 Gateway 참여를 요구한다")
+    void connectionParameterChangeRequiresGatewayParticipant() {
+        final RecordingLedger ledger = new RecordingLedger();
+        coordinator(ledger, List.of()).update(
+                EQP_ID,
+                new EqpManagementCommand.Update(
+                        "tester", 1L, "PASSIVE", false, 0, "10.0.0.9", 6000,
+                        1_001L, "V1", 30L, 20L, null, null, socketSettings(), null),
+                "KEY-1");
+
+        /*
+         * descriptor 는 공유 상태(모델/JAR/route)만 담고 IP/포트/연결모드는 담지 않는다. descriptor 만
+         * 보고 판정하면 IP 가 바뀐 operation 이 Gateway 없이 commit 되어, Gateway 는 옛 IP 로 계속
+         * 통신하고 DB/Business 만 새 IP 를 갖는다.
+         */
+        assertTrue(ledger.lastManifest.contains("\"requiresGatewayParticipant\":true"),
+                "manifest=" + ledger.lastManifest);
+    }
+
+    @Test
+    @DisplayName("§12.4 — 연결 모드가 바뀌면 Gateway 참여를 요구한다")
+    void connectionModeChangeRequiresGatewayParticipant() {
+        final RecordingLedger ledger = new RecordingLedger();
+        coordinator(ledger, List.of()).update(
+                EQP_ID,
+                new EqpManagementCommand.Update(
+                        "tester", 1L, "ACTIVE", false, 0, "10.0.0.1", 6000,
+                        1_001L, "V1", 30L, 20L, null, null, socketSettings(), null),
+                "KEY-1");
+
+        assertTrue(ledger.lastManifest.contains("\"requiresGatewayParticipant\":true"),
+                "manifest=" + ledger.lastManifest);
+    }
+
+    @Test
+    @DisplayName("§12.4 — PLC 설비의 model 변경은 디코드 스펙 재적재가 필요하므로 Gateway 참여를 요구한다")
+    void plcModelChangeRequiresGatewayParticipant() {
+        final RecordingLedger ledger = new RecordingLedger();
+        final EqpManageQueryPort plcPort = mock(EqpManageQueryPort.class);
+        when(plcPort.findManageSnapshotByEqpId(anyString())).thenReturn(Optional.of(plcSnapshot()));
+
+        coordinator(ledger, List.of(), plcPort).update(
+                EQP_ID,
+                new EqpManagementCommand.Update(
+                        "tester", 1L, "PASSIVE", false, 0, "10.0.0.1", 6000,
+                        2_002L, "V1", 30L, 20L, null, null, null, plcSettings()),
+                "KEY-1");
+
+        assertTrue(ledger.lastManifest.contains("\"requiresGatewayParticipant\":true"),
+                "PLC 디코드 스펙은 모델에서 오므로 Gateway 가 스펙을 다시 적재해야 합니다. manifest="
+                        + ledger.lastManifest);
     }
 
     @Test
@@ -172,6 +235,45 @@ class CoordinatedUiEqpMutationCoordinatorTest {
     }
 
     @Test
+    @DisplayName("§13.2 — 잘못된 입력은 원장 operation 을 만들기 전에 400 으로 거부한다")
+    void invalidCommandIsRejectedBeforeAcceptance() {
+        final RecordingLedger ledger = new RecordingLedger();
+        final CoordinatedUiEqpMutationCoordinator coordinator = coordinator(ledger, List.of());
+
+        /*
+         * SOCKET 설비인데 socketSettings 가 없는 요청이다. 즉시 적용 경로는 이것을 400 으로 거부한다
+         * (EqpDirectScenarioService -> EqpManagementCommandValidator). 조정 경로가 검증을 건너뛰면
+         * 이 요청이 operation 으로 접수되어 리소스 claim 을 잡고, 오류는 participant 거부나 DB 확정
+         * 단계에서야 드러난다 — 같은 입력이 구성에 따라 다른 결론에 이른다.
+         */
+        assertThrows(UiBadRequestException.class, () -> coordinator.update(
+                EQP_ID,
+                new EqpManagementCommand.Update(
+                        "tester", 1L, "PASSIVE", false, 0, "10.0.0.1", 6000,
+                        1_001L, "V1", 30L, 20L, null, null, null, null),
+                "KEY-1"));
+        assertTrue(ledger.creates.isEmpty(), "검증 실패 요청으로 operation 을 만들면 안 됩니다.");
+    }
+
+    @Test
+    @DisplayName("§13.2 — PoC 범위를 벗어난 PLC 입력도 접수 전에 거부한다")
+    void outOfScopePlcSettingsAreRejectedBeforeAcceptance() {
+        final RecordingLedger ledger = new RecordingLedger();
+        final EqpManageQueryPort plcPort = mock(EqpManageQueryPort.class);
+        when(plcPort.findManageSnapshotByEqpId(anyString())).thenReturn(Optional.of(plcSnapshot()));
+        final CoordinatedUiEqpMutationCoordinator coordinator = coordinator(ledger, List.of(), plcPort);
+
+        assertThrows(UiBadRequestException.class, () -> coordinator.update(
+                EQP_ID,
+                new EqpManagementCommand.Update(
+                        "tester", 1L, "PASSIVE", false, 0, "10.0.0.1", 6000,
+                        1_001L, "V1", 30L, 20L, null, null, null,
+                        new EqpManagementCommand.PlcSettings("MODBUS_TCP", "SERIAL", 1, 1000, 3)),
+                "KEY-1"));
+        assertTrue(ledger.creates.isEmpty());
+    }
+
+    @Test
     @DisplayName("없는 설비의 수정/삭제는 접수 전에 404 로 거부한다")
     void missingEquipmentIsRejectedBeforeAcceptance() {
         final RecordingLedger ledger = new RecordingLedger();
@@ -223,7 +325,8 @@ class CoordinatedUiEqpMutationCoordinatorTest {
                 (operationId, manifest, revision) -> UiOperationDbFinalizationPort.Outcome.FINALIZED,
                 UiFinalizedRevisionProvider.absent(),
                 new UiOperationManifestReader(objectMapper),
-                CompensationIssuerFixture.issuer(ledger, headPort), com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(), metrics);
+                CompensationIssuerFixture.issuer(ledger, headPort), com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(),
+                com.nori.tc.ui.core.coordination.port.UiGatewayParticipantResolver.none(), metrics);
 
         return new CoordinatedUiEqpMutationCoordinator(
                 queryPort,
@@ -233,7 +336,20 @@ class CoordinatedUiEqpMutationCoordinatorTest {
                 headPort,
                 new UiOperationAcceptanceService(ledger, headPort, manifestFactory),
                 new UiOperationReconciler(ledger, executor, properties, metrics),
+                new EqpManagementCommandValidator(modelCrudPort()),
                 objectMapper);
+    }
+
+    /**
+     * 검증기가 조회하는 모델 대역입니다 — SOCKET / OPERATE 로 fixture 설비와 정합합니다.
+     */
+    private static ModelCrudPort modelCrudPort() {
+        final ModelCrudPort port = mock(ModelCrudPort.class);
+        when(port.findByModelVersionKey(anyLong())).thenAnswer(invocation -> Optional.of(new UiModel(
+                invocation.getArgument(0), 1L, "MODEL", null, "V1",
+                UiProtocolType.SOCKET, UiModelStatus.OPERATE, null, null,
+                OffsetDateTime.now(), OffsetDateTime.now(), "tester", "tester")));
+        return port;
     }
 
     /** business jar key 20 = 새 JAR, 21 = 옛 JAR. digest 는 key 를 그대로 반영해 뒤바뀜을 드러낸다. */
@@ -245,7 +361,7 @@ class CoordinatedUiEqpMutationCoordinatorTest {
     private static EqpManagementCommand.Create createCommand() {
         return new EqpManagementCommand.Create(
                 "tester", EQP_ID, 1L, UiProtocolType.SOCKET, "PASSIVE", false, 0,
-                "10.0.0.1", 6000, 1_001L, "V1", 30L, 20L, null, null, null, null);
+                "10.0.0.1", 6000, 1_001L, "V1", 30L, 20L, null, null, socketSettings(), null);
     }
 
     private static EqpManagementCommand.Update updateCommand(
@@ -255,12 +371,33 @@ class CoordinatedUiEqpMutationCoordinatorTest {
     ) {
         return new EqpManagementCommand.Update(
                 "tester", 1L, "PASSIVE", false, routePartition, "10.0.0.1", 6000,
-                modelVersionKey, "V1", 30L, businessJarRef, null, null, null, null);
+                modelVersionKey, "V1", 30L, businessJarRef, null, null, socketSettings(), null);
+    }
+
+    /** SOCKET 설비의 필수 입력입니다 — 검증기가 인터페이스별 설정 부재를 400 으로 거부합니다. */
+    private static EqpManagementCommand.SocketSettings socketSettings() {
+        return new EqpManagementCommand.SocketSettings(
+                "FIXED_LENGTH", "UTF-8", false, 0, 3000, 3000, 4096, false);
+    }
+
+    /** PLC 설비의 필수 입력입니다 — PoC 범위는 MODBUS_TCP + TCP 뿐입니다. */
+    private static EqpManagementCommand.PlcSettings plcSettings() {
+        return new EqpManagementCommand.PlcSettings("MODBUS_TCP", "TCP", 1, 1000, 3);
     }
 
     private static EqpManagementSnapshot snapshot() {
         final UiEqp eqp = new UiEqp(
                 1L, EQP_ID, 1L, UiProtocolType.SOCKET, "PASSIVE", false, 0,
+                "10.0.0.1", 6000, 1_001L, "V1", 30L, 20L, true,
+                OffsetDateTime.now(), OffsetDateTime.now(), "tester", "tester");
+        return new EqpManagementSnapshot(
+                eqp, null, null, null, null, null, null, null, List.of(), List.of(), List.of(), null, null);
+    }
+
+    /** PLC 인터페이스 설비 스냅샷입니다 — 모델이 디코드 스펙의 출처가 되는 유일한 인터페이스입니다. */
+    private static EqpManagementSnapshot plcSnapshot() {
+        final UiEqp eqp = new UiEqp(
+                1L, EQP_ID, 1L, UiProtocolType.PLC, "PASSIVE", false, 0,
                 "10.0.0.1", 6000, 1_001L, "V1", 30L, 20L, true,
                 OffsetDateTime.now(), OffsetDateTime.now(), "tester", "tester");
         return new EqpManagementSnapshot(

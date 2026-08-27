@@ -11,6 +11,9 @@ import com.nori.tc.ui.core.exception.UiNotFoundException;
 import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.port.db.BusinessJarDigestPort;
 import com.nori.tc.ui.core.port.db.EqpManageQueryPort;
+import com.nori.tc.ui.core.service.EqpManagementCommandValidator;
+import com.nori.tc.ui.domain.common.model.UiProtocolType;
+import com.nori.tc.ui.domain.eqp.UiEqp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tools.jackson.databind.ObjectMapper;
@@ -41,6 +44,7 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
     private final UiResourceHeadPort resourceHeadPort;
     private final UiOperationAcceptanceService acceptanceService;
     private final UiOperationReconciler reconciler;
+    private final EqpManagementCommandValidator commandValidator;
     private final ObjectMapper objectMapper;
 
     /**
@@ -53,6 +57,7 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
      * @param resourceHeadPort 리소스 head 포트
      * @param acceptanceService 접수 서비스
      * @param reconciler operation reconciler
+     * @param commandValidator 입력·모델 바인딩 검증기
      * @param objectMapper DB 확정 명령 직렬화기
      */
     public CoordinatedUiEqpMutationCoordinator(
@@ -63,8 +68,10 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
             final UiResourceHeadPort resourceHeadPort,
             final UiOperationAcceptanceService acceptanceService,
             final UiOperationReconciler reconciler,
+            final EqpManagementCommandValidator commandValidator,
             final ObjectMapper objectMapper
     ) {
+        this.commandValidator = Objects.requireNonNull(commandValidator, "commandValidator is null");
         this.eqpManageQueryPort = Objects.requireNonNull(eqpManageQueryPort, "eqpManageQueryPort is null");
         this.businessJarDigestPort = Objects.requireNonNull(businessJarDigestPort, "businessJarDigestPort is null");
         this.resourceKeyPlanner = Objects.requireNonNull(resourceKeyPlanner, "resourceKeyPlanner is null");
@@ -85,6 +92,18 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
             final EqpManagementCommand.Create command,
             final String idempotencyKey
     ) {
+        /*
+         * §13.2 — validation 은 원장 operation 을 만들기 <b>전에</b> 끝낸다. 접수한 뒤에 발견되는 입력
+         * 오류는 리소스 claim 을 잡은 operation 을 실패시키고 보상까지 끌고 가지만, 여기서 걸리면
+         * 400 으로 끝난다. 즉시 적용 경로({@code EqpDirectScenarioService})와 같은 검증기를 같은
+         * 순서로 호출해 구성에 따라 통과 기준이 달라지지 않게 한다.
+         */
+        commandValidator.validateCreateCommand(command);
+        commandValidator.validateModelBinding(
+                command.interfaceType(), command.isDev(), command.modelVersionKey());
+        commandValidator.validateCreateTargetAbsent(
+                eqpManageQueryPort.findManageSnapshotByEqpId(command.eqpId()), command.eqpId());
+
         final UiRuntimeDescriptor target = descriptorFactory.forTarget(
                 command.eqpId(),
                 null,
@@ -102,12 +121,18 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
                 command.actor(),
                 interfaceTypeOf(command.interfaceType() == null ? null : command.interfaceType().name()),
                 target,
-                null,
+                /*
+                 * §16.1 — 생성의 "이전 상태" 는 tombstone(존재하지 않음)이다. 비워 두면 보상 manifest 를
+                 * 만들 수 없어(previousDescriptors 부재) 커밋 후 실패가 임시 행을 남긴 채 수동 복구로만
+                 * 끝난다. tombstone 을 남기면 보상이 그 행을 지우고 삭제 tombstone 을 커밋한다.
+                 */
+                descriptorFactory.forDelete(command.eqpId(), null),
                 Set.of(command.modelVersionKey()),
                 command.businessJarRef(),
                 UiOperationRequest.DB_COMMAND_CREATE,
                 objectMapper.writeValueAsString(command),
-                idempotencyKey);
+                idempotencyKey,
+                requiresGatewayParticipant(target));
     }
 
     @Override
@@ -116,7 +141,15 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
             final EqpManagementCommand.Update command,
             final String idempotencyKey
     ) {
+        commandValidator.validateEqpId(eqpId);
         final EqpManagementSnapshot before = requireSnapshot(eqpId);
+        /*
+         * §13.2 — 즉시 적용 경로와 같은 검증을 접수 전에 수행한다. 다만 즉시 적용 경로의
+         * "STARTED 설비의 routePartition 변경 거부" 는 여기로 옮기지 않는다 — 조정 프로토콜은 그
+         * 이동을 old owner release / new owner bind 로 나눠 안전하게 수행하는 것이 §12.5 의 내용이고,
+         * 거부하면 그 절차를 쓸 수 없다.
+         */
+        commandValidator.validateUpdateCommand(command, before);
         final boolean modelChanged = command.modelVersionKey() != before.eqp().modelVersionKey();
         final boolean jarChanged = command.businessJarRef() != null
                 && !command.businessJarRef().equals(before.eqp().businessJarKey());
@@ -176,11 +209,13 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
                 command.businessJarRef(),
                 UiOperationRequest.DB_COMMAND_UPDATE,
                 objectMapper.writeValueAsString(command),
-                idempotencyKey);
+                idempotencyKey,
+                requiresGatewayParticipant(target) || changesGatewayRuntime(before, command, modelChanged));
     }
 
     @Override
     public UiOperationAcceptance delete(final String eqpId, final String idempotencyKey) {
+        commandValidator.validateEqpId(eqpId);
         final EqpManagementSnapshot before = requireSnapshot(eqpId);
         final UiRuntimeDescriptor tombstone = descriptorFactory.forDelete(eqpId, before);
         return accept(
@@ -194,7 +229,8 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
                 before.eqp().businessJarKey(),
                 UiOperationRequest.DB_COMMAND_DELETE,
                 "{}",
-                idempotencyKey);
+                idempotencyKey,
+                requiresGatewayParticipant(tombstone));
     }
 
     /**
@@ -244,7 +280,8 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
             final Long businessJarKey,
             final String dbCommandKind,
             final String dbCommandJson,
-            final String idempotencyKey
+            final String idempotencyKey,
+            final boolean requiresGatewayParticipant
     ) {
         final List<String> resourceKeys =
                 resourceKeyPlanner.plan(eventType, eqpId, affectedModelVersionKeys);
@@ -285,7 +322,7 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
                 expectedBaseRevisions,
                 null,
                 null,
-                requiresGatewayParticipant(target),
+                requiresGatewayParticipant,
                 interfaceType,
                 previousDescriptors,
                 dbCommandKind,
@@ -369,6 +406,62 @@ public final class CoordinatedUiEqpMutationCoordinator implements UiEqpMutationC
                 || descriptor.gatewayDesiredState() != null
                 || descriptor.plcEnabledPollGroups() != null
                 || descriptor.deleted();
+    }
+
+    /**
+     * 수정 명령이 Gateway 런타임이 읽는 값을 바꾸는지 판정합니다(§12.4).
+     *
+     * <p>descriptor 만 보면 판정할 수 없습니다 — descriptor 는 <b>공유 상태</b>(모델/JAR/route)만 담고
+     * 접속 파라미터(IP/포트/연결모드/socketType/HSMS deviceId/PLC 튜닝)는 담지 않습니다. 그 값들은
+     * Gateway 의 {@code EquipmentContextProfile} 로 그대로 들어가므로, 바뀌었는데 Gateway 를 참여자로
+     * 두지 않으면 Gateway 는 옛 접속 파라미터로 계속 통신하고 DB/Business 만 새 값으로 확정됩니다 —
+     * 이 SPEC 이 없애려는 무음 불일치가 정확히 그것입니다.</p>
+     *
+     * <p>반대로 model 파라미터만 바뀌는 non-PLC 변경은 여기 걸리지 않습니다. Gateway 가 모델을 읽는
+     * 곳은 PLC 디코드 스펙뿐이므로({@code PlcEquipmentSpecReloader} / {@code PlcSpecBootstrap} 의
+     * {@code info.modelKey()}) SECS/SOCKET 설비의 모델 변경은 Gateway 에 할 일을 만들지 않습니다.</p>
+     *
+     * @param before 변경 전 스냅샷
+     * @param command 수정 명령
+     * @param modelChanged modelVersionKey 변경 여부
+     * @return Gateway 참여가 필요하면 true
+     */
+    private static boolean changesGatewayRuntime(
+            final EqpManagementSnapshot before,
+            final EqpManagementCommand.Update command,
+            final boolean modelChanged
+    ) {
+        final UiEqp eqp = before.eqp();
+        if (!Objects.equals(eqp.eqpIp(), command.eqpIp())
+                || !Objects.equals(eqp.eqpPort(), command.eqpPort())
+                || !Objects.equals(eqp.commMode(), command.commMode())) {
+            return true;
+        }
+        if (command.socketSettings() != null && before.socket() != null
+                && !Objects.equals(
+                        before.socket().socketProtocolType(), command.socketSettings().socketProtocolType())) {
+            return true;
+        }
+        if (command.hsmsSettings() != null && before.hsms() != null
+                && !Objects.equals(before.hsms().deviceId(), command.hsmsSettings().deviceId())) {
+            return true;
+        }
+        if (command.plcSettings() != null && before.plc() != null && changesPlcTuning(before, command.plcSettings())) {
+            return true;
+        }
+        // PLC 디코드 스펙은 모델에서 오므로 모델이 바뀌면 Gateway 가 스펙을 다시 적재해야 한다.
+        return modelChanged && eqp.commInterface() == UiProtocolType.PLC;
+    }
+
+    private static boolean changesPlcTuning(
+            final EqpManagementSnapshot before,
+            final EqpManagementCommand.PlcSettings settings
+    ) {
+        return !Objects.equals(before.plc().plcProtocol(), settings.plcProtocol())
+                || !Objects.equals(before.plc().transport(), settings.transport())
+                || !Objects.equals(before.plc().unitId(), settings.unitId())
+                || !Objects.equals(before.plc().pollTimeoutMs(), settings.pollTimeoutMs())
+                || !Objects.equals(before.plc().reconnectMaxRetries(), settings.reconnectMaxRetries());
     }
 
     private EqpManagementSnapshot requireSnapshot(final String eqpId) {

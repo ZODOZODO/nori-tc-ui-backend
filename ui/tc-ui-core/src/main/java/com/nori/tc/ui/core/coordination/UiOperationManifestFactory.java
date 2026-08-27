@@ -2,6 +2,7 @@ package com.nori.tc.ui.core.coordination;
 
 import com.nori.tc.ui.core.coordination.model.UiOperationRequest;
 import com.nori.tc.ui.core.coordination.port.UiCoordinationDigestPort;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
@@ -117,8 +118,10 @@ public final class UiOperationManifestFactory {
      * 지금 런타임에 올라가 있는 것은 원 operation 의 목표 상태이므로 §13.7 의 expected old 판정도
      * 그대로 성립합니다.</p>
      *
-     * <p>DB 명령은 싣지 않습니다. 보상 대상이 되는 실패는 DB 확정 <b>이전</b> 단계에서만 발생하므로
-     * 되돌릴 DB 변경이 없고, 역명령을 지어내면 확인되지 않은 상태를 덮어쓰게 됩니다.</p>
+     * <p>DB 명령은 원칙적으로 싣지 않습니다. 보상 대상이 되는 실패는 DB 확정 <b>이전</b> 단계에서만
+     * 발생하므로 되돌릴 DB 변경이 없고, 역명령을 지어내면 확인되지 않은 상태를 덮어쓰게 됩니다.
+     * 예외는 <b>목표가 tombstone 인 보상</b> 하나입니다 — 설비 생성은 §16.1 에 따라 PREPARE 전에 임시
+     * 행을 만들므로 그 행을 지우는 {@code DELETE} 를 실어야 "임시 DB 상태 제거" 가 증명됩니다.</p>
      *
      * @param originalManifestJson 실패한 operation 의 canonical manifest
      * @param compensatesRevision 되돌릴 대상 revision
@@ -151,9 +154,36 @@ public final class UiOperationManifestFactory {
         root.put("compensatesRevision", compensatesRevision);
         root.remove("dbCommandKind");
         root.remove("dbCommand");
+        if (revertsToTombstone(previous, root)) {
+            /*
+             * §16.1 — 설비 생성의 보상은 되돌릴 DB 변경이 있다. 생성 operation 은 PREPARE 전에 임시
+             * 행을 만들므로(§16.1 2번째 규칙) 보상이 그 행을 지워야 "임시 DB 상태가 제거되었음" 이
+             * 성립한다. 목표가 tombstone 인 보상에만 붙이므로 다른 종류의 역명령을 지어내지 않는다.
+             */
+            root.put("dbCommandKind", UiOperationRequest.DB_COMMAND_DELETE);
+            root.set("dbCommand", objectMapper.createObjectNode());
+        }
 
         final String canonical = digestPort.canonicalize(objectMapper.writeValueAsString(root));
         return new Manifest(canonical, digestPort.sha256Hex(canonical));
+    }
+
+    /**
+     * 보상 목표가 대상 설비의 tombstone 인지 판정합니다.
+     *
+     * <p>대상 설비({@code eqpId})의 descriptor 만 봅니다 — 영향 집합에 끌려온 공유 설비의 descriptor 는
+     * 삭제 대상이 아닙니다.</p>
+     */
+    private static boolean revertsToTombstone(final ObjectNode compensationTargets, final ObjectNode root) {
+        if (compensationTargets == null) {
+            return false;
+        }
+        final String eqpId = root.path("eqpId").asString(null);
+        if (eqpId == null) {
+            return false;
+        }
+        final JsonNode descriptor = compensationTargets.get("equipment:" + eqpId);
+        return descriptor != null && descriptor.path("deleted").asBoolean(false);
     }
 
     /**

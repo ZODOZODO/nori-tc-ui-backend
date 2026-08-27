@@ -5,6 +5,7 @@ import com.nori.tc.ui.core.coordination.model.UiOperationView;
 import com.nori.tc.ui.core.coordination.port.UiOperationLedgerPort;
 import com.nori.tc.ui.core.model.UiCommandReply;
 import com.nori.tc.ui.core.model.UiCommandReplyProof;
+import com.nori.tc.ui.core.port.redis.GatewayShardLeasePort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,6 +31,7 @@ public final class UiReplyProofIngestService {
     private final UiOperationLedgerPort ledgerPort;
     private final UiOperationExecutor executor;
     private final UiCoordinationMetrics metrics;
+    private final GatewayShardLeasePort shardLeasePort;
 
     /**
      * ingest 서비스를 만듭니다.
@@ -37,15 +39,35 @@ public final class UiReplyProofIngestService {
      * @param ledgerPort operation ledger 포트
      * @param executor operation executor
      * @param metrics 조정 metric
+     * @param shardLeasePort shard lease 점유 현황 조회 포트(owner epoch 검증 대상 shard 해석)
      */
     public UiReplyProofIngestService(
             final UiOperationLedgerPort ledgerPort,
             final UiOperationExecutor executor,
-            final UiCoordinationMetrics metrics
+            final UiCoordinationMetrics metrics,
+            final GatewayShardLeasePort shardLeasePort
     ) {
         this.ledgerPort = Objects.requireNonNull(ledgerPort, "ledgerPort is null");
         this.executor = Objects.requireNonNull(executor, "executor is null");
         this.metrics = Objects.requireNonNull(metrics, "metrics is null");
+        this.shardLeasePort = Objects.requireNonNull(shardLeasePort, "shardLeasePort is null");
+    }
+
+    /**
+     * 이 session 이 <b>지금</b> 소유한 shard id 를 반환합니다(§13.5).
+     *
+     * <p>owner epoch 를 실은 응답은 그 epoch 이 현재 lease 와 같아야 proof 가 됩니다. 그 대조 대상은
+     * 응답한 session 이 소유한 shard 의 lease 이므로, 여기서 shard 를 못 찾으면 그 session 은 이미
+     * 소유를 잃은 것입니다 — stale 응답이라 기록하지 않습니다.</p>
+     *
+     * @param sessionId 응답한 participant session
+     * @return 소유 shard id. 소유하지 않으면 empty
+     */
+    private Optional<String> ownedShardIdOf(final String sessionId) {
+        return shardLeasePort.findAllLeases().stream()
+                .filter(lease -> sessionId.equals(lease.ownerInstanceId()))
+                .map(GatewayShardLeasePort.GatewayShardLeaseView::groupId)
+                .findFirst();
     }
 
     /**
@@ -94,13 +116,31 @@ public final class UiReplyProofIngestService {
         }
 
         final boolean applied = proof.claimsApplied() && appliedPhase(operation.phase());
+        /*
+         * owner epoch 를 실은 응답(§10.2 — Gateway 응답은 필수)은 그 epoch 이 현재 shard lease 와 같아야
+         * proof 가 된다. 대조할 shard 를 여기서 정해 넘기지 않으면 원장 스크립트가 lease 아닌 키를 읽어
+         * 모든 Gateway proof 를 STALE_FENCED 로 거부한다.
+         */
+        final String ownerShardId;
+        if (proof.ownerEpoch() == null) {
+            ownerShardId = null;
+        } else {
+            final Optional<String> owned = ownedShardIdOf(proof.serviceSessionId());
+            if (owned.isEmpty()) {
+                log.warn("UI_REPLY_PROOF_OWNER_SHARD_UNRESOLVED. operationId={}, sessionId={}, ownerEpoch={}",
+                        proof.operationId(), proof.serviceSessionId(), proof.ownerEpoch());
+                metrics.incrementReplyProofRejected();
+                return false;
+            }
+            ownerShardId = owned.get();
+        }
         final String code = ledgerPort.ackProof(
                 proof.operationId(),
                 proof.serviceSessionId(),
                 applied,
                 proof.desiredRevision(),
                 proof.payloadSha256(),
-                null,
+                ownerShardId,
                 proof.ownerEpoch(),
                 "{}",
                 nowEpochMs);

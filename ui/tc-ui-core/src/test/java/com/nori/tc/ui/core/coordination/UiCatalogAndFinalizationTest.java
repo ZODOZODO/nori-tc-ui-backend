@@ -187,7 +187,98 @@ class UiCatalogAndFinalizationTest {
                 finalizer(crudPort).finalizeToTarget("op-1", noDbCommand, 7L));
     }
 
+    @Test
+    @DisplayName("§16.1 — 설비 생성은 PREPARE 전에 임시 행을 만든다")
+    void createIsStagedBeforePrepare() {
+        final EqpCrudPort crudPort = mock(EqpCrudPort.class);
+        when(crudPort.findSnapshotByEqpId(EQP_ID)).thenReturn(Optional.empty());
+
+        /*
+         * Gateway 는 equipmentProfile.eqpKey 를 양수로 요구하고 적용 단계에서 tc_eqp_state_hist 에
+         * 이력을 남긴다 — 그 테이블은 tc_eqp(eqp_key) 를 참조하므로 행이 없으면 참조 무결성으로
+         * 실패한다. 즉 행을 만들지 않으면 조정 경로의 설비 생성은 PASS 에 도달할 수 없다.
+         */
+        assertEquals(UiOperationDbFinalizationPort.Outcome.FINALIZED,
+                finalizer(crudPort).stageBeforePrepare("op-1", createManifest()));
+        verify(crudPort).create(any());
+    }
+
+    @Test
+    @DisplayName("§16.1 — 이미 준비된 임시 행은 다시 만들지 않는다")
+    void stagingIsIdempotent() {
+        final EqpCrudPort crudPort = mock(EqpCrudPort.class);
+        when(crudPort.findSnapshotByEqpId(EQP_ID)).thenReturn(Optional.of(snapshot(1_002L, 0, 20L)));
+
+        assertEquals(UiOperationDbFinalizationPort.Outcome.ALREADY_AT_TARGET,
+                finalizer(crudPort).stageBeforePrepare("op-1", createManifest()));
+        verify(crudPort, never()).create(any());
+    }
+
+    @Test
+    @DisplayName("§16.1 — 목표와 다른 행이 이미 있으면 준비하지 않고 어긋남을 보고한다")
+    void stagingRefusesToTouchADifferentRow() {
+        final EqpCrudPort crudPort = mock(EqpCrudPort.class);
+        when(crudPort.findSnapshotByEqpId(EQP_ID)).thenReturn(Optional.of(snapshot(9_999L, 0, 20L)));
+
+        assertEquals(UiOperationDbFinalizationPort.Outcome.UNEXPECTED_STATE,
+                finalizer(crudPort).stageBeforePrepare("op-1", createManifest()));
+        verify(crudPort, never()).create(any());
+    }
+
+    @Test
+    @DisplayName("§16.1 — abort 는 준비했던 임시 행을 제거한다")
+    void abortRemovesTheStagedRow() {
+        final EqpCrudPort crudPort = mock(EqpCrudPort.class);
+        when(crudPort.findSnapshotByEqpId(EQP_ID)).thenReturn(Optional.of(snapshot(1_002L, 0, 20L)));
+
+        finalizer(crudPort).unstageAfterAbort("op-1", createManifest());
+
+        verify(crudPort).delete(EQP_ID);
+    }
+
+    @Test
+    @DisplayName("§16.1 — 목표와 다른 행은 abort 에서도 지우지 않는다")
+    void abortLeavesForeignRowsAlone() {
+        final EqpCrudPort crudPort = mock(EqpCrudPort.class);
+        when(crudPort.findSnapshotByEqpId(EQP_ID)).thenReturn(Optional.of(snapshot(9_999L, 0, 20L)));
+
+        finalizer(crudPort).unstageAfterAbort("op-1", createManifest());
+
+        verify(crudPort, never()).delete(anyString());
+    }
+
+    @Test
+    @DisplayName("수정 operation 에는 준비 단계가 없다")
+    void updateHasNoStagingStep() {
+        final EqpCrudPort crudPort = mock(EqpCrudPort.class);
+
+        assertEquals(UiOperationDbFinalizationPort.Outcome.ALREADY_AT_TARGET,
+                finalizer(crudPort).stageBeforePrepare("op-1", manifest(1_002L, 1_001L)));
+        verify(crudPort, never()).create(any());
+        verify(crudPort, never()).findSnapshotByEqpId(anyString());
+    }
+
     // ------------------------------------------------------------------ fixture
+
+    /** 설비 생성 operation 의 manifest 입니다 — descriptor 의 목표는 snapshot(1_002L, 0, 20L) 과 같습니다. */
+    private static UiOperationManifestView createManifest() {
+        return new UiOperationManifestView(
+                "EQP_CREATE", EQP_ID, "tester", null, "SOCKET", true,
+                List.of(RESOURCE_KEY),
+                Map.of(RESOURCE_KEY, descriptorJson(1_002L)),
+                Map.of(RESOURCE_KEY, 0L),
+                null, null,
+                Map.of(RESOURCE_KEY, "{\"schemaVersion\":2,\"eqpId\":\"" + EQP_ID + "\",\"deleted\":true}"),
+                UiOperationRequest.DB_COMMAND_CREATE,
+                createCommandJson());
+    }
+
+    private static String createCommandJson() {
+        return "{\"actor\":\"tester\",\"eqpId\":\"" + EQP_ID + "\",\"lineKey\":1,\"interfaceType\":\"SOCKET\","
+                + "\"commMode\":\"PASSIVE\",\"isDev\":false,\"routePartition\":0,\"eqpIp\":\"10.0.0.1\","
+                + "\"eqpPort\":6000,\"modelVersionKey\":1002,\"appliedParamVersion\":\"V1\","
+                + "\"gatewayJarRef\":30,\"businessJarRef\":20}";
+    }
 
     private static UiEqpOperationDbFinalizer finalizer(final EqpCrudPort crudPort) {
         final ObjectMapper objectMapper = new ObjectMapper();

@@ -30,10 +30,15 @@ import com.nori.tc.ui.core.coordination.port.UiOperationCommandPublisher;
 import com.nori.tc.ui.core.port.db.BusinessJarDigestPort;
 import com.nori.tc.ui.core.port.db.EqpManageQueryPort;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
+import com.nori.tc.ui.core.port.messaging.UiGatewayEqpRoutePartitionLookupPort;
 import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
 import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
 import com.nori.tc.ui.core.port.redis.AsyncResultStorePort;
+import com.nori.tc.ui.core.port.db.DeployStorePort;
 import com.nori.tc.ui.core.port.redis.DeployExecutionCoordinationPort;
+import com.nori.tc.ui.core.service.DeployCommandAssembler;
+import com.nori.tc.ui.core.service.EqpDirectScenarioLocalMutationCoordinator;
+import com.nori.tc.ui.core.service.EqpManagementCommandValidator;
 import com.nori.tc.ui.core.service.EqpPersistenceService;
 import com.nori.tc.ui.core.service.UiDeployOperationDbFinalizer;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -146,6 +151,17 @@ class UiCoordinationConfigurationContextTest {
             return UiFinalizedRevisionProvider.absent();
         }
 
+        /**
+         * route_partition 조회는 실 앱에서 db-adapter({@code UiEqpRoutePartitionDbAdapter})가 제공합니다.
+         *
+         * <p>조정 그래프는 이 포트를 Gateway 참여자 판정에 씁니다(§11.3) — 모듈 경계 때문에 여기서는
+         * 대역을 넣고, 판정 동작은 {@code UiGatewayRouteOwnerResolverTest} 가 고정합니다.</p>
+         */
+        @Bean
+        UiGatewayEqpRoutePartitionLookupPort uiGatewayEqpRoutePartitionLookupPort() {
+            return UiGatewayEqpRoutePartitionLookupPort.noop();
+        }
+
         @Bean
         UiCoordinationContext uiCoordinationContext() {
             /*
@@ -244,6 +260,38 @@ class UiCoordinationConfigurationContextTest {
         @Bean
         EqpPersistenceService eqpPersistenceService() {
             return Mockito.mock(EqpPersistenceService.class);
+        }
+
+        /**
+         * Gateway 명령 payload 조립에 쓰는 core service 협력자 대역입니다.
+         *
+         * <p>운영에서는 {@code UiCoreServiceModuleConfiguration} 의 {@code @Import} 가 등록합니다 —
+         * 동작은 {@code UiCoordinatedGatewayProfileFactoryTest} 가 고정합니다.</p>
+         */
+        @Bean
+        EqpDirectScenarioLocalMutationCoordinator eqpDirectScenarioLocalMutationCoordinator() {
+            return Mockito.mock(EqpDirectScenarioLocalMutationCoordinator.class);
+        }
+
+        @Bean
+        DeployCommandAssembler deployCommandAssembler() {
+            return Mockito.mock(DeployCommandAssembler.class);
+        }
+
+        @Bean
+        DeployStorePort deployStorePort() {
+            return Mockito.mock(DeployStorePort.class);
+        }
+
+        /**
+         * 접수 전 입력 검증기 대역입니다(§13.2).
+         *
+         * <p>운영에서는 {@code UiCoreServiceModuleConfiguration} 의 {@code @Import} 가 등록합니다 —
+         * 검증 동작은 {@code CoordinatedUiEqpMutationCoordinatorTest} 가 고정합니다.</p>
+         */
+        @Bean
+        EqpManagementCommandValidator eqpManagementCommandValidator() {
+            return Mockito.mock(EqpManagementCommandValidator.class);
         }
 
         @Bean

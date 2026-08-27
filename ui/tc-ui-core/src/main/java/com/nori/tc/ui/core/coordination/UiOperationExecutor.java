@@ -8,6 +8,7 @@ import com.nori.tc.ui.core.coordination.model.UiOperationView;
 import com.nori.tc.ui.core.coordination.port.UiCoordinationMembershipPort;
 import com.nori.tc.ui.core.coordination.port.UiExecutorLeasePort;
 import com.nori.tc.ui.core.coordination.port.UiFinalizedRevisionProvider;
+import com.nori.tc.ui.core.coordination.port.UiGatewayParticipantResolver;
 import com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver;
 import com.nori.tc.ui.core.coordination.port.UiOperationCommandPublisher;
 import com.nori.tc.ui.core.coordination.port.UiOperationDbFinalizationPort;
@@ -69,6 +70,7 @@ public final class UiOperationExecutor {
     private final UiOperationManifestReader manifestReader;
     private final UiCompensationIssuer compensationIssuer;
     private final UiOperationApplyDriver applyDriver;
+    private final UiGatewayParticipantResolver gatewayParticipantResolver;
     private final UiCoordinationMetrics metrics;
 
     /**
@@ -86,6 +88,7 @@ public final class UiOperationExecutor {
      * @param manifestReader manifest 해석기
      * @param compensationIssuer 보상 operation 발급기(§13.8)
      * @param applyDriver 순서 있는 적용 발행 전략(§13.6, 없으면 {@link UiOperationApplyDriver#none()})
+     * @param gatewayParticipantResolver Gateway 참여자(route partition 소유 session) 판정기
      * @param metrics 조정 metric
      */
     public UiOperationExecutor(
@@ -101,6 +104,7 @@ public final class UiOperationExecutor {
             final UiOperationManifestReader manifestReader,
             final UiCompensationIssuer compensationIssuer,
             final UiOperationApplyDriver applyDriver,
+            final UiGatewayParticipantResolver gatewayParticipantResolver,
             final UiCoordinationMetrics metrics
     ) {
         this.session = Objects.requireNonNull(session, "session is null");
@@ -116,6 +120,8 @@ public final class UiOperationExecutor {
         this.manifestReader = Objects.requireNonNull(manifestReader, "manifestReader is null");
         this.compensationIssuer = Objects.requireNonNull(compensationIssuer, "compensationIssuer is null");
         this.applyDriver = Objects.requireNonNull(applyDriver, "applyDriver is null");
+        this.gatewayParticipantResolver =
+                Objects.requireNonNull(gatewayParticipantResolver, "gatewayParticipantResolver is null");
         this.metrics = Objects.requireNonNull(metrics, "metrics is null");
     }
 
@@ -191,6 +197,18 @@ public final class UiOperationExecutor {
             final UiOperationManifestView manifest,
             final long nowEpochMs
     ) {
+        /*
+         * §16.1 — 설비 생성은 행이 생긴 뒤에만 Gateway 적용이 가능하다(eqpKey 양수 요구 +
+         * tc_eqp_state_hist 의 참조 무결성). 그래서 PREPARE 명령을 내보내기 전에 임시 행을 만든다.
+         * 목표와 다른 행이 이미 있으면 접수 자체가 어긋난 것이므로 커밋 전 abort 로 끝낸다.
+         */
+        if (dbFinalizationPort.stageBeforePrepare(operation.operationId(), manifest)
+                == UiOperationDbFinalizationPort.Outcome.UNEXPECTED_STATE) {
+            abortBeforeCommit(operation.operationId(), "DB_STAGE_UNEXPECTED",
+                    "생성 대상 설비가 이미 다른 상태로 존재합니다.", nowEpochMs);
+            return true;
+        }
+
         final List<String> participants = computeParticipants(manifest);
         if (participants.isEmpty()) {
             log.warn("UI_OPERATION_NO_PARTICIPANT. operationId={} — 처리 가능한 session 이 없어 대기합니다.",
@@ -214,10 +232,52 @@ public final class UiOperationExecutor {
             return false;
         }
 
-        publishPrepare(operation, manifest, nowEpochMs);
+        try {
+            publishPrepare(operation, manifest, nowEpochMs);
+        } catch (final RuntimeException ex) {
+            /*
+             * 전이는 이미 PREPARING 이고 PREPARING 분기는 participant refreeze 때만 재발행한다 —
+             * 되돌리지 않으면 이 operation 의 PREPARE 는 아무도 다시 발행하지 않고 리소스 claim 을
+             * 쥔 채 영구히 남는다(P9 §5.2 실측 2 건). prepared proof 는 ACCEPTED 에서도 기록되므로
+             * 이미 명령을 받은 participant 의 증적은 잃지 않는다(participant_ack.lua).
+             */
+            rollbackPhase(operation, UiOperationPhase.PREPARING, UiOperationPhase.ACCEPTED,
+                    "UI_OPERATION_PREPARE_PUBLISH_FAILED", nowEpochMs, ex);
+            throw ex;
+        }
         log.info("UI_OPERATION_PREPARING. operationId={}, participants={}, desiredRevision={}",
                 operation.operationId(), participants, operation.desiredRevision());
         return true;
+    }
+
+    /**
+     * 명령 발행이 실패한 phase 를 이전 phase 로 되돌려 다음 패스가 같은 단계를 다시 수행하게 합니다.
+     *
+     * <p>되돌리기가 거부되면(다른 Pod 가 이미 전진시켰거나 terminal) 그 사실만 남깁니다 — 여기서
+     * 추가로 강제하면 앞서 나간 상태를 덮어씁니다.</p>
+     *
+     * @param operation 대상 operation
+     * @param from 현재 phase
+     * @param to 되돌릴 phase
+     * @param logCode 운영 로그 코드
+     * @param nowEpochMs 현재 시각
+     * @param cause 발행 실패 원인
+     */
+    private void rollbackPhase(
+            final UiOperationView operation,
+            final UiOperationPhase from,
+            final UiOperationPhase to,
+            final String logCode,
+            final long nowEpochMs,
+            final RuntimeException cause
+    ) {
+        final String code = ledgerPort.transition(
+                operation.operationId(),
+                EnumSet.of(from),
+                to,
+                null, null, null, null, null, null, nowEpochMs);
+        log.error("{}. operationId={}, from={}, to={}, rollbackCode={} — 다음 패스가 다시 발행합니다.",
+                logCode, operation.operationId(), from, to, code, cause);
     }
 
     private void publishPrepare(
@@ -318,7 +378,18 @@ public final class UiOperationExecutor {
         if (!"OK".equals(code)) {
             return false;
         }
-        publishApply(operation, manifest, nowEpochMs);
+        try {
+            publishApply(operation, manifest, nowEpochMs);
+        } catch (final RuntimeException ex) {
+            /*
+             * APPLYING 분기(checkApplied)는 driver 의 step 만 재발행하고 manifest 하나짜리 기본 APPLY 는
+             * 재발행하지 않는다 — 되돌리지 않으면 participant 가 명령을 못 받은 채 applied proof 를
+             * 영원히 기다린다. applied proof 는 COMMITTED 에서도 기록된다(participant_ack.lua).
+             */
+            rollbackPhase(operation, UiOperationPhase.APPLYING, UiOperationPhase.COMMITTED,
+                    "UI_OPERATION_APPLY_PUBLISH_FAILED", nowEpochMs, ex);
+            throw ex;
+        }
         return true;
     }
 
@@ -555,6 +626,11 @@ public final class UiOperationExecutor {
         final UiOperationManifestView manifest = loadManifest(operationId);
         final String code = ledgerPort.abort(operationId, headKeys(manifest), errorCode, errorMsg, nowEpochMs);
         if ("OK".equals(code)) {
+            /*
+             * §16.1 — abort 를 확정한 뒤에 임시 DB 상태를 제거한다. 순서가 뒤집히면 제거는 했는데
+             * abort 가 거부되는 창이 생기고, 그 operation 은 없는 행을 목표로 계속 전진한다.
+             */
+            dbFinalizationPort.unstageAfterAbort(operationId, manifest);
             log.info("UI_OPERATION_ABORTED. operationId={}, errorCode={}", operationId, errorCode);
             metrics.incrementOperationFail();
             return true;
@@ -606,18 +682,44 @@ public final class UiOperationExecutor {
      *
      * <p>반드시 상태·protocolVersion 을 필터한 조회를 씁니다 — 무필터 조회를 쓰면 JOINING/FENCED/구 Pod 가
      * 고정 집합에 들어가 §11.3 과 §22.1 이 함께 깨집니다.</p>
+     *
+     * <p>Gateway 는 <b>소유자 하나</b>만 넣습니다. Gateway 는 UI 명령 토픽을 고정 partition assign 으로
+     * 구독하므로(U11) 한 설비의 명령은 그 route partition 을 소유한 Pod 에만 도달합니다. 살아 있는 Gateway
+     * 전부를 넣으면 나머지 Pod 은 받지도 못한 명령의 증적을 요구받고 barrier 는 영구히 닫히지 않습니다.</p>
+     *
+     * <p>소유자를 특정하지 못하면 <b>빈 집합</b>을 돌려 대기합니다 — Business 만으로 고정하면 Gateway
+     * 메모리가 뒤처진 채 operation 이 PASS 합니다(fail-closed).</p>
      */
     private List<String> computeParticipants(final UiOperationManifestView manifest) {
         final Set<String> participants = new LinkedHashSet<>(membershipPort.activeSyncedSessionIds(
                 properties.getBusinessServiceName(),
                 properties.getProtocolVersion(),
                 properties.getParticipantScanLimit()));
-        if (manifest.requiresGatewayParticipant()) {
-            participants.addAll(membershipPort.activeSyncedSessionIds(
-                    properties.getGatewayServiceName(),
-                    properties.getProtocolVersion(),
-                    properties.getParticipantScanLimit()));
+        if (!manifest.requiresGatewayParticipant()) {
+            return List.copyOf(participants);
         }
+
+        final Optional<String> owner = gatewayParticipantResolver.ownerSessionId(manifest);
+        if (owner.isEmpty()) {
+            log.warn("UI_OPERATION_GATEWAY_OWNER_UNRESOLVED. eqpId={}, eventType={}"
+                            + " — route partition 소유 Gateway 를 특정하지 못해 대기합니다.",
+                    manifest.eqpId(), manifest.eventType());
+            return List.of();
+        }
+        final List<String> gatewaySessions = membershipPort.activeSyncedSessionIds(
+                properties.getGatewayServiceName(),
+                properties.getProtocolVersion(),
+                properties.getParticipantScanLimit());
+        if (!gatewaySessions.contains(owner.get())) {
+            /*
+             * lease 소유 토큰이 membership session 과 형식이 다른 경우(조정을 쓰지 않는 Gateway 가
+             * 레거시 키로 lease 를 잡은 상태)다. 그 문자열을 고정하면 아무도 증적을 쓸 수 없다.
+             */
+            log.warn("UI_OPERATION_GATEWAY_OWNER_NOT_SYNCED. eqpId={}, owner={}, activeSynced={}",
+                    manifest.eqpId(), owner.get(), gatewaySessions);
+            return List.of();
+        }
+        participants.add(owner.get());
         return List.copyOf(participants);
     }
 

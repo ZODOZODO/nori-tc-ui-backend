@@ -87,7 +87,37 @@ class UiCompensationIssuerTest {
         assertTrue(ledger.created.isEmpty());
     }
 
+    @Test
+    @DisplayName("§16.1 — 설비 생성의 보상은 임시 행을 지우는 DELETE 를 싣는다")
+    void createCompensationCarriesDeleteCommand() {
+        final RecordingLedger ledger = new RecordingLedger(createManifest());
+
+        final String compensationId = issuer(ledger).issueFor(failedOperation(null), 100L);
+
+        assertNotNull(compensationId);
+        final JsonNode manifest = new ObjectMapper().readTree(ledger.lastManifestJson);
+        assertTrue(manifest.path("descriptors").path("equipment:EQP001").path("deleted").asBoolean(false),
+                "생성의 이전 상태는 tombstone(존재하지 않음)이다");
+        /*
+         * 생성 operation 은 §16.1 에 따라 PREPARE 전에 임시 행을 만든다. 보상이 그 행을 지우지 않으면
+         * 아무도 쓰지 못하는 설비 행이 남고, 같은 eqpId 재요청은 중복 등록으로 거부된다.
+         */
+        assertEquals("DELETE", manifest.path("dbCommandKind").asString());
+        assertTrue(manifest.path("dbCommand").isObject());
+    }
+
     // ------------------------------------------------------------------ fixture
+
+    /** 설비 생성 operation 의 원 manifest 입니다 — 이전 상태가 tombstone 입니다. */
+    private static String createManifest() {
+        return """
+                {"schemaVersion":2,"eventType":"EQP_CREATE","eqpId":"EQP001",\
+                "requiresGatewayParticipant":true,"resourceKeys":["equipment:EQP001"],\
+                "descriptors":{"equipment:EQP001":{"eqpId":"EQP001","modelVersionKey":"model-2"}},\
+                "expectedBaseRevisions":{"equipment:EQP001":6},\
+                "previousDescriptors":{"equipment:EQP001":{"eqpId":"EQP001","deleted":true}},\
+                "dbCommandKind":"CREATE","dbCommand":{"actor":"tester"}}""";
+    }
 
     private static UiCompensationIssuer issuer(final RecordingLedger ledger) {
         return CompensationIssuerFixture.issuer(ledger, headPort());

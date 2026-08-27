@@ -38,9 +38,30 @@ public final class UiOperationDbFinalizationRouter implements UiOperationDbFinal
             final UiOperationManifestView manifest,
             final long desiredRevision
     ) {
-        if (UiOperationRequest.DB_COMMAND_DEPLOY_TARGET.equals(manifest.dbCommandKind())) {
+        if (isDeploy(manifest)) {
             return deployFinalizer.finalizeToTarget(operationId, manifest, desiredRevision);
         }
         return eqpFinalizer.finalizeToTarget(operationId, manifest, desiredRevision);
+    }
+
+    @Override
+    public Outcome stageBeforePrepare(final String operationId, final UiOperationManifestView manifest) {
+        if (isDeploy(manifest)) {
+            return deployFinalizer.stageBeforePrepare(operationId, manifest);
+        }
+        return eqpFinalizer.stageBeforePrepare(operationId, manifest);
+    }
+
+    @Override
+    public void unstageAfterAbort(final String operationId, final UiOperationManifestView manifest) {
+        if (isDeploy(manifest)) {
+            deployFinalizer.unstageAfterAbort(operationId, manifest);
+            return;
+        }
+        eqpFinalizer.unstageAfterAbort(operationId, manifest);
+    }
+
+    private static boolean isDeploy(final UiOperationManifestView manifest) {
+        return UiOperationRequest.DB_COMMAND_DEPLOY_TARGET.equals(manifest.dbCommandKind());
     }
 }

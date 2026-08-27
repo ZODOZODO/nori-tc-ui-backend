@@ -32,6 +32,7 @@ import com.nori.tc.ui.core.coordination.UiDeployDescriptorFactory;
 import com.nori.tc.ui.core.coordination.UiEqpDescriptorFactory;
 import com.nori.tc.ui.core.coordination.UiEqpMutationCoordinator;
 import com.nori.tc.ui.core.coordination.UiEqpOperationDbFinalizer;
+import com.nori.tc.ui.core.coordination.UiGatewayRouteOwnerResolver;
 import com.nori.tc.ui.core.coordination.UiOperationDbFinalizationRouter;
 import com.nori.tc.ui.core.coordination.UiOperationAcceptanceService;
 import com.nori.tc.ui.core.coordination.UiOperationExecutor;
@@ -52,21 +53,29 @@ import com.nori.tc.ui.core.coordination.port.UiCoordinationMembershipPort;
 import com.nori.tc.ui.core.coordination.port.UiCoordinationProbePort;
 import com.nori.tc.ui.core.coordination.port.UiExecutorLeasePort;
 import com.nori.tc.ui.core.coordination.port.UiFinalizedRevisionProvider;
+import com.nori.tc.ui.core.coordination.port.UiGatewayCommandProfileFactory;
+import com.nori.tc.ui.core.coordination.port.UiGatewayParticipantResolver;
 import com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver;
 import com.nori.tc.ui.core.coordination.port.UiOperationCommandPublisher;
 import com.nori.tc.ui.core.coordination.port.UiOperationDbFinalizationPort;
 import com.nori.tc.ui.core.coordination.port.UiOperationLedgerPort;
 import com.nori.tc.ui.core.coordination.port.UiResourceHeadPort;
 import com.nori.tc.ui.core.port.db.BusinessJarDigestPort;
+import com.nori.tc.ui.core.port.db.DeployStorePort;
 import com.nori.tc.ui.core.port.db.EqpManageQueryPort;
 import com.nori.tc.ui.core.port.db.EqpQueryPort;
 import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
+import com.nori.tc.ui.core.port.messaging.UiGatewayEqpRoutePartitionLookupPort;
 import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
 import com.nori.tc.ui.core.port.redis.AsyncResultStorePort;
 import com.nori.tc.ui.core.port.redis.DeployExecutionCoordinationPort;
 import com.nori.tc.ui.core.port.redis.GatewayShardLeasePort;
 import com.nori.tc.ui.core.port.redis.RuntimeInstanceQueryPort;
+import com.nori.tc.ui.core.service.DeployCommandAssembler;
+import com.nori.tc.ui.core.service.EqpDirectScenarioLocalMutationCoordinator;
+import com.nori.tc.ui.core.service.EqpManagementCommandValidator;
 import com.nori.tc.ui.core.service.EqpPersistenceService;
+import com.nori.tc.ui.core.service.UiCoordinatedGatewayProfileFactory;
 import com.nori.tc.ui.core.service.UiDeployOperationDbFinalizer;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -304,13 +313,37 @@ public class UiCoordinationConfiguration {
         return new UiOperationAcceptanceService(ledgerPort, resourceHeadPort, manifestFactory);
     }
 
+    /**
+     * Gateway 명령 payload(설비 profile) 팩토리를 등록합니다(§12.3/§12.4).
+     *
+     * @param eqpManageQueryPort 변경 전 설비 스냅샷 조회 포트
+     * @param localMutationCoordinator 목표 스냅샷 in-memory 합성기
+     * @param commandSupport Gateway 계약 profile 조립기
+     * @param deployStorePort deploy 실행 계획 조회 포트
+     * @param objectMapper manifest DB 명령 파서
+     * @return profile 팩토리
+     */
+    @Bean
+    public UiGatewayCommandProfileFactory uiGatewayCommandProfileFactory(
+            final EqpManageQueryPort eqpManageQueryPort,
+            final EqpDirectScenarioLocalMutationCoordinator localMutationCoordinator,
+            final DeployCommandAssembler commandAssembler,
+            final DeployStorePort deployStorePort,
+            final ObjectMapper objectMapper
+    ) {
+        return new UiCoordinatedGatewayProfileFactory(
+                eqpManageQueryPort, localMutationCoordinator, commandAssembler, deployStorePort, objectMapper);
+    }
+
     @Bean
     public UiOperationCommandPublisher uiOperationCommandPublisher(
             final UiGatewayEventPublishPort gatewayPublishPort,
             final UiBusinessEventPublishPort businessPublishPort,
-            final UiRuntimeDescriptorReader descriptorReader
+            final UiRuntimeDescriptorReader descriptorReader,
+            final UiGatewayCommandProfileFactory gatewayProfileFactory
     ) {
-        return new UiOperationCommandKafkaPublisher(gatewayPublishPort, businessPublishPort, descriptorReader);
+        return new UiOperationCommandKafkaPublisher(
+                gatewayPublishPort, businessPublishPort, descriptorReader, gatewayProfileFactory);
     }
 
     /**
@@ -357,6 +390,23 @@ public class UiCoordinationConfiguration {
         return new UiCompensationIssuer(ledgerPort, resourceHeadPort, manifestFactory, manifestReader);
     }
 
+    /**
+     * Gateway 참여자(route partition 소유 session) 판정기를 등록합니다(§11.3/§12.2).
+     *
+     * @param descriptorReader manifest descriptor 해석기
+     * @param routePartitionLookupPort eqpId -> route_partition 조회 포트
+     * @param shardLeasePort shard group lease 점유 현황 조회 포트
+     * @return Gateway 참여자 판정기
+     */
+    @Bean
+    public UiGatewayParticipantResolver uiGatewayParticipantResolver(
+            final UiRuntimeDescriptorReader descriptorReader,
+            final UiGatewayEqpRoutePartitionLookupPort routePartitionLookupPort,
+            final GatewayShardLeasePort shardLeasePort
+    ) {
+        return new UiGatewayRouteOwnerResolver(descriptorReader, routePartitionLookupPort, shardLeasePort);
+    }
+
     @Bean
     public UiOperationExecutor uiOperationExecutor(
             final UiCoordinationSession session,
@@ -371,12 +421,14 @@ public class UiCoordinationConfiguration {
             final UiOperationManifestReader manifestReader,
             final UiCompensationIssuer compensationIssuer,
             final ObjectProvider<UiOperationApplyDriver> applyDriverProvider,
+            final UiGatewayParticipantResolver gatewayParticipantResolver,
             final UiCoordinationMetrics metrics
     ) {
         return new UiOperationExecutor(session, properties, ledgerPort, resourceHeadPort, leasePort,
                 membershipPort, commandPublisher, dbFinalizationPort, finalizedRevisionProvider,
                 manifestReader, compensationIssuer,
-                applyDriverProvider.getIfAvailable(UiOperationApplyDriver::none), metrics);
+                applyDriverProvider.getIfAvailable(UiOperationApplyDriver::none),
+                gatewayParticipantResolver, metrics);
     }
 
     @Bean
@@ -393,9 +445,10 @@ public class UiCoordinationConfiguration {
     public UiReplyProofIngestService uiReplyProofIngestService(
             final UiOperationLedgerPort ledgerPort,
             final UiOperationExecutor executor,
-            final UiCoordinationMetrics metrics
+            final UiCoordinationMetrics metrics,
+            final GatewayShardLeasePort shardLeasePort
     ) {
-        return new UiReplyProofIngestService(ledgerPort, executor, metrics);
+        return new UiReplyProofIngestService(ledgerPort, executor, metrics, shardLeasePort);
     }
 
     @Bean
@@ -434,10 +487,11 @@ public class UiCoordinationConfiguration {
             final UiResourceHeadPort resourceHeadPort,
             final UiOperationAcceptanceService acceptanceService,
             final UiOperationReconciler reconciler,
+            final EqpManagementCommandValidator commandValidator,
             final ObjectMapper objectMapper
     ) {
         return new CoordinatedUiEqpMutationCoordinator(eqpManageQueryPort, businessJarDigestPort, resourceKeyPlanner,
-                descriptorFactory, resourceHeadPort, acceptanceService, reconciler, objectMapper);
+                descriptorFactory, resourceHeadPort, acceptanceService, reconciler, commandValidator, objectMapper);
     }
 
     @Bean

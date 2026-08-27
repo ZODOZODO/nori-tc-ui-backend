@@ -225,4 +225,11 @@ public class DeployCommandAssembler {
     public UiEquipmentProfileSnapshot parseEquipmentProfile(final JsonNode equipmentProfileNode) {
         return commandSupport.parseEquipmentProfile(equipmentProfileNode);
     }
+
+    public UiEquipmentProfileSnapshot injectPlcGroupsIfPresent(
+            final UiEquipmentProfileSnapshot profile,
+            final PersistedDeployTarget target
+    ) {
+        return commandSupport.injectPlcGroupsIfPresent(profile, target);
+    }
 }

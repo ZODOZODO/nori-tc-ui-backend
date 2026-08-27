@@ -194,7 +194,7 @@ public interface UiOperationLedgerPort {
      * @param applied {@code true} 면 applied proof, {@code false} 면 prepared proof
      * @param revision proof revision
      * @param digest proof digest
-     * @param ownerLeaseKey owner epoch 검증 대상 lease key(불요면 null)
+     * @param ownerShardId owner epoch 검증 대상 shard id(검증 불요면 null)
      * @param ownerEpoch owner epoch(불요면 null)
      * @param proofJson 부가 proof JSON
      * @param nowEpochMs 현재 시각
@@ -206,7 +206,7 @@ public interface UiOperationLedgerPort {
             boolean applied,
             long revision,
             String digest,
-            String ownerLeaseKey,
+            String ownerShardId,
             Long ownerEpoch,
             String proofJson,
             long nowEpochMs);

@@ -77,6 +77,65 @@ public final class UiEqpOperationDbFinalizer implements UiOperationDbFinalizatio
         };
     }
 
+    /**
+     * 설비 생성 operation 의 임시 행을 PREPARE 전에 만듭니다(§16.1).
+     *
+     * <p>Gateway 는 {@code equipmentProfile.eqpKey} 를 양수로 요구하고
+     * ({@code GatewayUiRuntimeControlSupport}) 적용 단계에서 {@code tc_eqp_state_hist} 에 이력을
+     * append 합니다 — 그 테이블은 {@code tc_eqp(eqp_key)} 를 참조하므로 행이 없으면 참조 무결성으로
+     * 실패합니다. 즉 설비 생성은 <b>행이 생긴 뒤에만</b> Gateway 적용이 가능합니다.</p>
+     *
+     * <p>이 행은 아직 노출된 설비가 아닙니다. 원장의 비terminal barrier 가 열리기 전이므로 Gateway 의
+     * 부팅 overlay 정책이 이 설비를 active 로 적재하지 않고, 실패 시 abort/보상 경로가 행을 제거합니다.</p>
+     */
+    @Override
+    public Outcome stageBeforePrepare(final String operationId, final UiOperationManifestView manifest) {
+        if (!UiOperationRequest.DB_COMMAND_CREATE.equals(manifest.dbCommandKind())) {
+            return Outcome.ALREADY_AT_TARGET;
+        }
+        final Optional<EqpManagementSnapshot> current =
+                persistenceService.findSnapshotByEqpId(manifest.eqpId());
+        if (current.isPresent()) {
+            if (matchesTarget(current.get().eqp(), manifest)) {
+                return Outcome.ALREADY_AT_TARGET;
+            }
+            log.error("UI_DB_STAGE_UNEXPECTED. operationId={}, eqpId={} — 생성 대상 설비가 이미 다른 상태로 존재합니다.",
+                    operationId, manifest.eqpId());
+            return Outcome.UNEXPECTED_STATE;
+        }
+        persistenceService.create(
+                objectMapper.readValue(manifest.dbCommandJson(), EqpManagementCommand.Create.class));
+        log.info("UI_DB_STAGED_CREATE. operationId={}, eqpId={} — barrier 가 열릴 때까지 노출되지 않는 임시 행입니다.",
+                operationId, manifest.eqpId());
+        return Outcome.FINALIZED;
+    }
+
+    /**
+     * commit 전 abort 로 끝난 생성 operation 의 임시 행을 제거합니다(§16.1).
+     *
+     * <p>목표 상태와 다른 행은 건드리지 않습니다 — 그 행은 이 operation 이 만든 것이 아니고, 지우면
+     * 다른 주체의 설비를 삭제하게 됩니다.</p>
+     */
+    @Override
+    public void unstageAfterAbort(final String operationId, final UiOperationManifestView manifest) {
+        if (!UiOperationRequest.DB_COMMAND_CREATE.equals(manifest.dbCommandKind())) {
+            return;
+        }
+        final Optional<EqpManagementSnapshot> current =
+                persistenceService.findSnapshotByEqpId(manifest.eqpId());
+        if (current.isEmpty()) {
+            return;
+        }
+        if (!matchesTarget(current.get().eqp(), manifest)) {
+            log.error("UI_DB_UNSTAGE_SKIPPED. operationId={}, eqpId={} — 목표 상태와 다른 행이라 제거하지 않습니다.",
+                    operationId, manifest.eqpId());
+            return;
+        }
+        persistenceService.delete(manifest.eqpId());
+        log.warn("UI_DB_UNSTAGED_CREATE. operationId={}, eqpId={} — abort 로 임시 행을 제거했습니다.",
+                operationId, manifest.eqpId());
+    }
+
     private Outcome finalizeCreate(
             final String operationId,
             final UiOperationManifestView manifest,

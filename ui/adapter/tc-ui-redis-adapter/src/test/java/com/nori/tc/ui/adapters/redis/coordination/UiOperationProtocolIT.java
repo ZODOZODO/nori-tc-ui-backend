@@ -333,6 +333,7 @@ class UiOperationProtocolIT extends AbstractRedisContainerTest {
                         ledgerPort, resourceHeadPort, manifestFactory,
                         new UiOperationManifestReader(new ObjectMapper())),
                 com.nori.tc.ui.core.coordination.port.UiOperationApplyDriver.none(),
+                com.nori.tc.ui.core.coordination.port.UiGatewayParticipantResolver.none(),
                 new UiCoordinationMetrics(new SimpleMeterRegistry()));
     }
 
