@@ -1,5 +1,6 @@
 package com.nori.tc.ui.adapters.kafka.publish;
 
+import com.nori.tc.ui.core.coordination.UiGatewayRoutePlan;
 import com.nori.tc.ui.core.coordination.UiRuntimeDescriptorReader;
 import com.nori.tc.ui.core.coordination.model.UiOperationManifestView;
 import com.nori.tc.ui.core.coordination.port.UiGatewayCommandProfileFactory;
@@ -9,6 +10,7 @@ import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.model.UiCommandMessage;
 import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
+import com.nori.tc.ui.core.port.messaging.UiGatewayEqpRoutePartitionLookupPort;
 import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,6 +74,7 @@ public final class UiOperationCommandKafkaPublisher implements UiOperationComman
     private final UiBusinessEventPublishPort businessPublishPort;
     private final UiRuntimeDescriptorReader descriptorReader;
     private final UiGatewayCommandProfileFactory gatewayProfileFactory;
+    private final UiGatewayEqpRoutePartitionLookupPort routePartitionLookupPort;
 
     /**
      * publisher 를 만듭니다.
@@ -80,18 +83,22 @@ public final class UiOperationCommandKafkaPublisher implements UiOperationComman
      * @param businessPublishPort business 이벤트 발행 포트
      * @param descriptorReader manifest descriptor 해석기(gateway 라우팅 partition 출처)
      * @param gatewayProfileFactory gateway 명령 payload(설비 profile) 팩토리
+     * @param routePartitionLookupPort eqpId -&gt; route_partition 조회 포트(descriptor 에 값이 없을 때)
      */
     public UiOperationCommandKafkaPublisher(
             final UiGatewayEventPublishPort gatewayPublishPort,
             final UiBusinessEventPublishPort businessPublishPort,
             final UiRuntimeDescriptorReader descriptorReader,
-            final UiGatewayCommandProfileFactory gatewayProfileFactory
+            final UiGatewayCommandProfileFactory gatewayProfileFactory,
+            final UiGatewayEqpRoutePartitionLookupPort routePartitionLookupPort
     ) {
         this.gatewayPublishPort = Objects.requireNonNull(gatewayPublishPort, "gatewayPublishPort is null");
         this.businessPublishPort = Objects.requireNonNull(businessPublishPort, "businessPublishPort is null");
         this.descriptorReader = Objects.requireNonNull(descriptorReader, "descriptorReader is null");
         this.gatewayProfileFactory =
                 Objects.requireNonNull(gatewayProfileFactory, "gatewayProfileFactory is null");
+        this.routePartitionLookupPort =
+                Objects.requireNonNull(routePartitionLookupPort, "routePartitionLookupPort is null");
     }
 
     @Override
@@ -150,10 +157,12 @@ public final class UiOperationCommandKafkaPublisher implements UiOperationComman
              * 거부하고 DB 에서 대신 읽지도 않는다. 조정 경로의 DB 확정은 commit 이후이므로 목표 상태의
              * 유일한 출처가 원장 manifest 다.
              */
+            final UiGatewayRoutePlan plan =
+                    UiGatewayRoutePlan.of(manifest, descriptorReader, routePartitionLookupPort);
             publishToGateway(
                     command(wireEventTypeOf(manifest, GATEWAY_COMMAND_EVENT_TYPES), traceId, manifest,
-                            gatewayUiMessage(manifest), gatewayProfileFactory.profileFor(manifest), coordination),
-                    manifest);
+                            gatewayUiMessage(plan), gatewayProfileFactory.profileFor(manifest), coordination),
+                    plan);
         }
         log.info("UI_OPERATION_COMMAND_PUBLISHED. operationId={}, phase={}, gatewayParticipant={}, revision={}",
                 operationId, phase, manifest.requiresGatewayParticipant(), desiredRevision);
@@ -189,21 +198,15 @@ public final class UiOperationCommandKafkaPublisher implements UiOperationComman
      * <p>이전 상태가 tombstone 인 생성 operation 은 옛 partition 이 없으므로 담지 않습니다 — 없는 값을
      * 지어내면 Gateway 가 있지도 않은 이동을 기다립니다.</p>
      *
-     * @param manifest 원장에 고정된 manifest
+     * @param plan 이 operation 의 라우팅 계획
      * @return uiMessage 노드(옛 partition 을 모르면 null)
      */
-    private JsonNode gatewayUiMessage(final UiOperationManifestView manifest) {
-        final String previousJson =
-                manifest.previousDescriptorJsonByResourceKey().get(primaryResourceKey(manifest));
-        if (previousJson == null) {
-            return null;
-        }
-        final UiRuntimeDescriptorReader.DescriptorFields previous = descriptorReader.read(previousJson);
-        if (previous.deleted() || previous.routePartition() == null) {
+    private static JsonNode gatewayUiMessage(final UiGatewayRoutePlan plan) {
+        if (plan.previous() == null) {
             return null;
         }
         final ObjectNode uiMessage = JsonNodeFactory.instance.objectNode();
-        uiMessage.putObject("gatewayProfile").put("oldRoutePartition", previous.routePartition().intValue());
+        uiMessage.putObject("gatewayProfile").put("oldRoutePartition", plan.previous().intValue());
         return uiMessage;
     }
 
@@ -246,18 +249,22 @@ public final class UiOperationCommandKafkaPublisher implements UiOperationComman
      * 영원히 기다린다. manifest descriptor 의 {@code routePartition} 은 그 operation 이 의도한 값이며
      * 원장에 고정돼 있으므로(§13.1/§13.4) 라우팅 출처로 이쪽이 옳다.</p>
      *
-     * <p>descriptor 에 값이 없으면(변경 대상이 아니면 null 이다) 종전의 DB 조회 경로를 그대로 쓴다.</p>
+     * <p>어느 출처에도 partition 이 없으면 종전의 기본 발행 경로를 그대로 쓴다.</p>
+     *
+     * <p>이동(§12.5)은 <b>양쪽 partition 으로 각각</b> 보낸다. Gateway 는 고정 partition assign 으로
+     * 구독하므로 목표 partition 으로만 보내면 옛 owner 는 그 메시지를 받지 못하고, 따라서 release 를
+     * 수행할 수도 proof 를 낼 수도 없다 — 새 owner 는 release 를 기다리다 abort 된다(운영 실측).
+     * 같은 메시지를 받은 두 Pod 는 각자의 ownedPartitions 로 자기 역할(release / bind)을 스스로 정한다.</p>
      */
-    private void publishToGateway(final UiCommandMessage message, final UiOperationManifestView manifest) {
-        final String descriptorJson = manifest.descriptorJsonByResourceKey().get(primaryResourceKey(manifest));
-        final Integer routePartition = descriptorJson == null
-                ? null
-                : descriptorReader.read(descriptorJson).routePartition();
-        if (routePartition == null) {
+    private void publishToGateway(final UiCommandMessage message, final UiGatewayRoutePlan plan) {
+        if (plan.target() == null) {
             gatewayPublishPort.publish(message);
             return;
         }
-        gatewayPublishPort.publishToPartition(message, routePartition);
+        if (plan.isMove()) {
+            gatewayPublishPort.publishToPartition(message, plan.previous());
+        }
+        gatewayPublishPort.publishToPartition(message, plan.target());
     }
 
     private static String primaryResourceKey(final UiOperationManifestView manifest) {

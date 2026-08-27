@@ -340,10 +340,12 @@ public class UiCoordinationConfiguration {
             final UiGatewayEventPublishPort gatewayPublishPort,
             final UiBusinessEventPublishPort businessPublishPort,
             final UiRuntimeDescriptorReader descriptorReader,
-            final UiGatewayCommandProfileFactory gatewayProfileFactory
+            final UiGatewayCommandProfileFactory gatewayProfileFactory,
+            final UiGatewayEqpRoutePartitionLookupPort routePartitionLookupPort
     ) {
         return new UiOperationCommandKafkaPublisher(
-                gatewayPublishPort, businessPublishPort, descriptorReader, gatewayProfileFactory);
+                gatewayPublishPort, businessPublishPort, descriptorReader, gatewayProfileFactory,
+                routePartitionLookupPort);
     }
 
     /**

@@ -699,8 +699,12 @@ public final class UiOperationExecutor {
             return List.copyOf(participants);
         }
 
-        final Optional<String> owner = gatewayParticipantResolver.ownerSessionId(manifest);
-        if (owner.isEmpty()) {
+        /*
+         * 이동(§12.5)은 owner 가 2 개다 — 옛 owner 가 release 하고 새 owner 가 bind 하므로 둘 다 증적을
+         * 낸다. 하나라도 특정 못하면 resolver 가 빈 목록을 낸다(fail-closed).
+         */
+        final List<String> owners = gatewayParticipantResolver.ownerSessionIds(manifest);
+        if (owners.isEmpty()) {
             log.warn("UI_OPERATION_GATEWAY_OWNER_UNRESOLVED. eqpId={}, eventType={}"
                             + " — route partition 소유 Gateway 를 특정하지 못해 대기합니다.",
                     manifest.eqpId(), manifest.eventType());
@@ -710,16 +714,18 @@ public final class UiOperationExecutor {
                 properties.getGatewayServiceName(),
                 properties.getProtocolVersion(),
                 properties.getParticipantScanLimit());
-        if (!gatewaySessions.contains(owner.get())) {
-            /*
-             * lease 소유 토큰이 membership session 과 형식이 다른 경우(조정을 쓰지 않는 Gateway 가
-             * 레거시 키로 lease 를 잡은 상태)다. 그 문자열을 고정하면 아무도 증적을 쓸 수 없다.
-             */
-            log.warn("UI_OPERATION_GATEWAY_OWNER_NOT_SYNCED. eqpId={}, owner={}, activeSynced={}",
-                    manifest.eqpId(), owner.get(), gatewaySessions);
-            return List.of();
+        for (final String owner : owners) {
+            if (!gatewaySessions.contains(owner)) {
+                /*
+                 * lease 소유 토큰이 membership session 과 형식이 다른 경우(조정을 쓰지 않는 Gateway 가
+                 * 레거시 키로 lease 를 잡은 상태)다. 그 문자열을 고정하면 아무도 증적을 쓸 수 없다.
+                 */
+                log.warn("UI_OPERATION_GATEWAY_OWNER_NOT_SYNCED. eqpId={}, owner={}, activeSynced={}",
+                        manifest.eqpId(), owner, gatewaySessions);
+                return List.of();
+            }
         }
-        participants.add(owner.get());
+        participants.addAll(owners);
         return List.copyOf(participants);
     }
 

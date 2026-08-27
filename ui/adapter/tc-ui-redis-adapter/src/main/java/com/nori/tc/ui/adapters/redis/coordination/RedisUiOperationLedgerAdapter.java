@@ -174,7 +174,11 @@ public final class RedisUiOperationLedgerAdapter implements UiOperationLedgerPor
             final String errorMsg,
             final long nowEpochMs
     ) {
-        return translating(() -> store.abort(operationId, resourceHeadKeys, errorCode, errorMsg, nowEpochMs).code());
+        final List<String> descriptorKeyPrefixes = resourceHeadKeys.stream()
+                .map(CoordinationKeys::resourceRevisionKeyPrefixOf)
+                .toList();
+        return translating(() -> store.abort(
+                operationId, resourceHeadKeys, descriptorKeyPrefixes, errorCode, errorMsg, nowEpochMs).code());
     }
 
     @Override

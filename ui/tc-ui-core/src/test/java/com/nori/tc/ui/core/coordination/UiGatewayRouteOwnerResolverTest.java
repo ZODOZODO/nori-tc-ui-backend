@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class UiGatewayRouteOwnerResolverTest {
 
+    private static final String OWNER_GROUP_1 = "tc-gateway:pod-g1:boot-1";
     private static final String OWNER_GROUP_2 = "tc-gateway:pod-g2:boot-2";
 
     @Test
@@ -33,7 +34,7 @@ class UiGatewayRouteOwnerResolverTest {
                 },
                 leases());
 
-        assertEquals(Optional.of(OWNER_GROUP_2), resolver.ownerSessionId(manifest(4)));
+        assertEquals(List.of(OWNER_GROUP_2), resolver.ownerSessionIds(manifest(4)));
     }
 
     @Test
@@ -41,7 +42,68 @@ class UiGatewayRouteOwnerResolverTest {
     void fallsBackToDatabasePartition() {
         final UiGatewayRouteOwnerResolver resolver = resolver(eqpId -> Optional.of(1), leases());
 
-        assertEquals(Optional.of("tc-gateway:pod-g1:boot-1"), resolver.ownerSessionId(manifest(null)));
+        assertEquals(List.of(OWNER_GROUP_1), resolver.ownerSessionIds(manifest(null)));
+    }
+
+    @Test
+    @DisplayName("route partition 이동은 옛 owner 와 새 owner 를 모두 참여자로 낸다(§12.5)")
+    void routeMoveIncludesBothOwners() {
+        final UiGatewayRouteOwnerResolver resolver = resolver(
+                UiGatewayEqpRoutePartitionLookupPort.noop(), leases());
+
+        /*
+         * 새 owner 만 고정하면 옛 owner 에게 release 명령이 가지 않아 아무도 release 하지 못하고,
+         * 새 owner 는 release proof 를 기다리다 EQP_ROUTE_MOVE_NOT_RELEASED 로 abort 된다(운영 실측).
+         */
+        assertEquals(List.of(OWNER_GROUP_1, OWNER_GROUP_2),
+                resolver.ownerSessionIds(movingManifest(0, 4)),
+                "옛 owner(release) → 새 owner(bind) 순으로 둘 다 참여자여야 한다.");
+    }
+
+    @Test
+    @DisplayName("같은 shard group 안에서 partition 만 바뀌면 참여자는 하나다")
+    void intraGroupMoveHasSingleOwner() {
+        final UiGatewayRouteOwnerResolver resolver = resolver(
+                UiGatewayEqpRoutePartitionLookupPort.noop(), leases());
+
+        assertEquals(List.of(OWNER_GROUP_2), resolver.ownerSessionIds(movingManifest(3, 4)),
+                "같은 Pod 이 양쪽을 소유하면 release/bind 가 한 Pod 안에서 끝난다.");
+    }
+
+    @Test
+    @DisplayName("이동의 옛 owner 를 특정할 수 없으면 아무도 참여자로 내지 않는다")
+    void unresolvablePreviousOwnerYieldsNoParticipant() {
+        final UiGatewayRouteOwnerResolver resolver = resolver(
+                UiGatewayEqpRoutePartitionLookupPort.noop(),
+                List.of(new GatewayShardLeasePort.GatewayShardLeaseView(
+                        "group-2", List.of(3, 4, 5), OWNER_GROUP_2)));
+
+        /*
+         * 새 owner 만 내면 release 없는 bind 를 허용하게 되어 double ownership 이 열린다.
+         * 특정 불가는 fail-closed 로 대기해야 한다.
+         */
+        assertTrue(resolver.ownerSessionIds(movingManifest(0, 4)).isEmpty(),
+                "옛 owner 미특정 상태로 이동을 진행시키면 double ownership 이 열린다.");
+    }
+
+    @Test
+    @DisplayName("이전 상태가 tombstone 이면 이동이 아니다 — 새 owner 하나만 낸다")
+    void tombstonePreviousIsNotAMove() {
+        final UiGatewayRouteOwnerResolver resolver = resolver(
+                UiGatewayEqpRoutePartitionLookupPort.noop(), leases());
+
+        final UiOperationManifestView created = new UiOperationManifestView(
+                "EQP_CREATE", "EQP001", "tester", null, "SOCKET", true,
+                List.of("equipment:EQP001"),
+                Map.of("equipment:EQP001", "{\"schemaVersion\":2,\"eqpId\":\"EQP001\",\"routePartition\":4}"),
+                Map.of("equipment:EQP001", 0L),
+                null, null,
+                Map.of("equipment:EQP001",
+                        "{\"schemaVersion\":2,\"eqpId\":\"EQP001\",\"deleted\":true,\"routePartition\":0}"),
+                null, null);
+
+        assertEquals(List.of(OWNER_GROUP_2), resolver.ownerSessionIds(created),
+                "생성은 옛 owner 가 없다 — 없는 owner 를 기다리면 아무도 release 할 수 없다.");
     }
 
     @Test
@@ -51,7 +113,7 @@ class UiGatewayRouteOwnerResolverTest {
                 UiGatewayEqpRoutePartitionLookupPort.noop(),
                 List.of(new GatewayShardLeasePort.GatewayShardLeaseView("group-2", List.of(3, 4, 5), null)));
 
-        assertTrue(resolver.ownerSessionId(manifest(4)).isEmpty(),
+        assertTrue(resolver.ownerSessionIds(manifest(4)).isEmpty(),
                 "미점유 group 의 설비를 소유자 없이 진행시키면 Gateway 증적 없는 PASS 가 된다.");
     }
 
@@ -61,7 +123,7 @@ class UiGatewayRouteOwnerResolverTest {
         final UiGatewayRouteOwnerResolver resolver =
                 resolver(UiGatewayEqpRoutePartitionLookupPort.noop(), leases());
 
-        assertTrue(resolver.ownerSessionId(manifest(99)).isEmpty());
+        assertTrue(resolver.ownerSessionIds(manifest(99)).isEmpty());
     }
 
     @Test
@@ -70,7 +132,7 @@ class UiGatewayRouteOwnerResolverTest {
         final UiGatewayRouteOwnerResolver resolver =
                 resolver(UiGatewayEqpRoutePartitionLookupPort.noop(), leases());
 
-        assertTrue(resolver.ownerSessionId(manifest(null)).isEmpty());
+        assertTrue(resolver.ownerSessionIds(manifest(null)).isEmpty());
     }
 
     private static UiGatewayRouteOwnerResolver resolver(
@@ -84,7 +146,7 @@ class UiGatewayRouteOwnerResolverTest {
     private static List<GatewayShardLeasePort.GatewayShardLeaseView> leases() {
         return List.of(
                 new GatewayShardLeasePort.GatewayShardLeaseView(
-                        "group-1", List.of(0, 1, 2), "tc-gateway:pod-g1:boot-1"),
+                        "group-1", List.of(0, 1, 2), OWNER_GROUP_1),
                 new GatewayShardLeasePort.GatewayShardLeaseView(
                         "group-2", List.of(3, 4, 5), OWNER_GROUP_2));
     }
@@ -102,5 +164,21 @@ class UiGatewayRouteOwnerResolverTest {
                 Map.of("equipment:EQP001", descriptorJson),
                 Map.of("equipment:EQP001", 0L),
                 null, null, Map.of(), null, null);
+    }
+
+    /**
+     * 옛 partition 에서 새 partition 으로 옮기는 manifest 를 만듭니다.
+     */
+    private static UiOperationManifestView movingManifest(final int previous, final int target) {
+        return new UiOperationManifestView(
+                "EQP_UPDATE", "EQP001", "tester", null, "SOCKET", true,
+                List.of("equipment:EQP001"),
+                Map.of("equipment:EQP001",
+                        "{\"schemaVersion\":2,\"eqpId\":\"EQP001\",\"routePartition\":" + target + "}"),
+                Map.of("equipment:EQP001", 1L),
+                null, null,
+                Map.of("equipment:EQP001",
+                        "{\"schemaVersion\":2,\"eqpId\":\"EQP001\",\"routePartition\":" + previous + "}"),
+                null, null);
     }
 }

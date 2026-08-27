@@ -10,6 +10,7 @@ import com.nori.tc.ui.core.model.UiCommandEventType;
 import com.nori.tc.ui.core.model.UiCommandMessage;
 import com.nori.tc.ui.core.model.UiEquipmentProfileSnapshot;
 import com.nori.tc.ui.core.port.messaging.UiBusinessEventPublishPort;
+import com.nori.tc.ui.core.port.messaging.UiGatewayEqpRoutePartitionLookupPort;
 import com.nori.tc.ui.core.port.messaging.UiGatewayEventPublishPort;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -246,7 +247,8 @@ class UiOperationCommandKafkaPublisherTest {
             final UiGatewayCommandProfileFactory profileFactory
     ) {
         return new UiOperationCommandKafkaPublisher(
-                gateway, business, new UiRuntimeDescriptorReader(new ObjectMapper()), profileFactory);
+                gateway, business, new UiRuntimeDescriptorReader(new ObjectMapper()), profileFactory,
+                UiGatewayEqpRoutePartitionLookupPort.noop());
     }
 
     /** Business JAR 만 바뀌는데 Gateway 참여도 필요한 operation 의 manifest 입니다. */
@@ -258,19 +260,42 @@ class UiOperationCommandKafkaPublisherTest {
      * 않고 bind 해 double ownership 이 열린다.</p>
      */
     @Test
-    @DisplayName("gateway 명령은 이전 상태의 routePartition 을 uiMessage 에 싣는다")
+    @DisplayName("route 이동 명령은 옛/새 partition 양쪽으로 발행되고 oldRoutePartition 을 싣는다")
     void gatewayCommandCarriesPreviousRoutePartition() {
         final RecordingPublisher gateway = new RecordingPublisher();
 
         newPublisher(gateway, new RecordingPublisher())
                 .publishApply("op-1", movingManifest(2, 5), 7L, "a".repeat(64), "deadline");
 
-        assertEquals(List.of(5), gateway.partitions, "발행 partition 은 목표 partition 이다");
+        /*
+         * Gateway 는 고정 partition assign 으로 구독한다. 목표 partition 으로만 보내면 옛 owner 는
+         * 메시지를 아예 받지 못해 release 도 proof 도 못 하고, 새 owner 는 release 를 기다리다
+         * EQP_ROUTE_MOVE_NOT_RELEASED 로 abort 된다(운영 실측).
+         */
+        assertEquals(List.of(2, 5), gateway.partitions,
+                "이동은 옛 partition(release) 과 새 partition(bind) 양쪽으로 발행해야 한다");
         assertEquals(
                 2,
                 gateway.partitionedMessages.get(0).uiMessage()
                         .path("gatewayProfile").path("oldRoutePartition").asInt(),
                 "옛 routePartition 이 실려야 Gateway 가 이동 순서를 강제할 수 있다");
+        assertEquals(
+                2,
+                gateway.partitionedMessages.get(1).uiMessage()
+                        .path("gatewayProfile").path("oldRoutePartition").asInt(),
+                "같은 메시지를 양쪽이 받아 각자 역할(release / bind)을 정한다");
+    }
+
+    @Test
+    @DisplayName("이동이 아니면 목표 partition 하나로만 발행한다")
+    void nonMoveCommandPublishesOnce() {
+        final RecordingPublisher gateway = new RecordingPublisher();
+
+        newPublisher(gateway, new RecordingPublisher())
+                .publishApply("op-1", movingManifest(5, 5), 7L, "a".repeat(64), "deadline");
+
+        assertEquals(List.of(5), gateway.partitions,
+                "옛/새 partition 이 같으면 중복 발행할 이유가 없다");
     }
 
     /**

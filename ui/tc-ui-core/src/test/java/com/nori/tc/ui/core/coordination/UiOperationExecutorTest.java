@@ -120,7 +120,7 @@ class UiOperationExecutorTest {
                 ledgerPort,
                 membership(List.of("tc-business:pod-a:boot-a",
                         "tc-gateway:pod-g1:boot-1", "tc-gateway:pod-g2:boot-2", "tc-gateway:pod-g3:boot-3")),
-                manifest -> Optional.of("tc-gateway:pod-g2:boot-2"));
+                manifest -> List.of("tc-gateway:pod-g2:boot-2"));
 
         executor.advance(OPERATION_ID, 1_000L);
 
@@ -155,7 +155,7 @@ class UiOperationExecutorTest {
                 ledgerPort,
                 membership(List.of("tc-business:pod-a:boot-a", "tc-gateway:pod-g1:boot-1")),
                 // 레거시 lease 스키마의 소유 토큰은 session 식별자가 아니다(§12.2).
-                manifest -> Optional.of("tc-gateway-5bdc8cdc4d-g8zs5-c7e1699b"));
+                manifest -> List.of("tc-gateway-5bdc8cdc4d-g8zs5-c7e1699b"));
 
         executor.advance(OPERATION_ID, 1_000L);
 
