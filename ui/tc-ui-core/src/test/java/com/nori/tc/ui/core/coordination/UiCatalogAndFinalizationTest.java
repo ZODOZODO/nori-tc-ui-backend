@@ -80,6 +80,47 @@ class UiCatalogAndFinalizationTest {
         assertThrows(UiCatalogNotSyncedException.class, () -> stale.requireInSync("digest-1"));
     }
 
+    @Test
+    @DisplayName("다른 Pod 이 scenario head 를 옮기면 이 Pod 의 inSync 가 즉시 false 가 된다")
+    void scenarioGuardSeesHeadMovedByAnotherPod() {
+        final InMemoryCatalogHeadPort port = new InMemoryCatalogHeadPort();
+        final UiCatalogHeadSynchronizer synchronizer = new UiCatalogHeadSynchronizer(port, "scenario");
+        final CoordinatedUiScenarioCatalogGuard guard = new CoordinatedUiScenarioCatalogGuard(synchronizer);
+        guard.onCatalogApplied("digest-1");
+        assertTrue(guard.inSync(), "자기 digest 로 head 를 커밋한 직후는 일치해야 합니다.");
+
+        // 다른 Pod 이 새 catalog 를 커밋했다 — 이 Pod 은 reload 도 planning 도 하지 않았다.
+        new UiCatalogHeadSynchronizer(port, "scenario").reconcile("digest-2", 2_000L);
+
+        assertFalse(guard.inSync(),
+                "§13.11 은 catalog revision mismatch 를 readiness 로 노출하라고 요구합니다 — "
+                        + "캐시된 판정을 돌려주면 mismatch Pod 이 Ready 로 남습니다.");
+    }
+
+    @Test
+    @DisplayName("scenario head 조회가 실패하면 일치로 축약하지 않는다")
+    void scenarioGuardFailsClosedWhenHeadIsUnavailable() {
+        final InMemoryCatalogHeadPort port = new InMemoryCatalogHeadPort();
+        final UiCatalogHeadSynchronizer synchronizer = new UiCatalogHeadSynchronizer(port, "scenario");
+        final CoordinatedUiScenarioCatalogGuard guard = new CoordinatedUiScenarioCatalogGuard(synchronizer);
+        guard.onCatalogApplied("digest-1");
+
+        port.failReads = true;
+
+        assertFalse(guard.inSync(),
+                "Redis 불확실성을 '일치' 로 축약하면 fail-closed 가 깨집니다(§9.3).");
+    }
+
+    @Test
+    @DisplayName("catalog 를 한 번도 적재하지 못한 Pod 은 inSync 가 아니다")
+    void scenarioGuardBeforeFirstLoadIsNotInSync() {
+        final InMemoryCatalogHeadPort port = new InMemoryCatalogHeadPort();
+        final CoordinatedUiScenarioCatalogGuard guard =
+                new CoordinatedUiScenarioCatalogGuard(new UiCatalogHeadSynchronizer(port, "scenario"));
+
+        assertFalse(guard.inSync(), "적재 전 미확정은 Ready 가 아닙니다.");
+    }
+
     // ----------------------------------------------------------- finalization
 
     @Test
@@ -195,6 +236,8 @@ class UiCatalogAndFinalizationTest {
 
         private final Map<String, UiCatalogHeadView> heads = new HashMap<>();
         private int commits;
+        /** Redis 불확실성 재현 — head 조회가 예외를 던지는 상태입니다. */
+        private boolean failReads;
 
         @Override
         public String commitHead(final String catalogType, final long newRevision, final String digest,
@@ -213,6 +256,9 @@ class UiCatalogAndFinalizationTest {
 
         @Override
         public UiCatalogHeadView readHead(final String catalogType) {
+            if (failReads) {
+                throw new IllegalStateException("Redis coordination script execution failed");
+            }
             return heads.getOrDefault(catalogType, new UiCatalogHeadView(catalogType, 0L, null));
         }
     }
