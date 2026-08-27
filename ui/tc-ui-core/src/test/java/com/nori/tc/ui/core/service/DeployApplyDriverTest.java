@@ -25,6 +25,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -194,6 +196,33 @@ class DeployApplyDriverTest {
         verify(fixture.deployStorePort, never()).markTargetCompleted(anyLong(), any());
     }
 
+    @Test
+    @DisplayName("등록이 사라졌고 step deadline 도 지났으면 STEP_TIMEOUT 으로 확정한다")
+    void expiredTraceAfterStepDeadlineFailsWithStepTimeout() {
+        final Fixture fixture = new Fixture();
+        fixture.drive();
+        fixture.currentStepTimeoutAt = OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(1);
+        fixture.traceExpired();
+
+        final UiOperationApplyDriver.Result result = fixture.drive();
+
+        assertEquals(UiOperationApplyDriver.Progress.FAILED, result.progress());
+        assertEquals("STEP_TIMEOUT", result.errorCode());
+    }
+
+    @Test
+    @DisplayName("등록이 사라졌어도 step deadline 전이면 계속 대기한다")
+    void expiredTraceBeforeStepDeadlineKeepsWaiting() {
+        final Fixture fixture = new Fixture();
+        fixture.drive();
+        fixture.currentStepTimeoutAt = OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(5);
+        fixture.traceExpired();
+
+        final UiOperationApplyDriver.Result result = fixture.drive();
+
+        assertEquals(UiOperationApplyDriver.Progress.WAITING, result.progress());
+    }
+
     /**
      * pump 를 돌리는 데 필요한 최소 환경입니다.
      *
@@ -212,6 +241,7 @@ class DeployApplyDriverTest {
         private Integer currentStepOrder;
         private String currentStepCode;
         private DeployStepStatus currentStepStatus = DeployStepStatus.PENDING;
+        private OffsetDateTime currentStepTimeoutAt;
 
         private Fixture() {
             this.driver = new DeployApplyDriver(
@@ -275,6 +305,11 @@ class DeployApplyDriverTest {
                     .when(traceRecorder).completionOf(anyString());
         }
 
+        private void traceExpired() {
+            org.mockito.Mockito.doReturn(DeployTraceRedisLookupResult.expired())
+                    .when(traceRecorder).completionOf(anyString());
+        }
+
         private void traceFailed(final String errorCode, final String errorMessage) {
             org.mockito.Mockito.doAnswer(invocation ->
                             DeployTraceRedisLookupResult.completed(new DeployTraceCompletion(
@@ -288,7 +323,7 @@ class DeployApplyDriverTest {
                     new DeployExecutionTarget(
                             new PersistedDeployTarget(TARGET_KEY, 1, planDraft()),
                             DeployTargetStatus.PENDING,
-                            currentStepOrder, currentStepCode, currentStepStatus)));
+                            currentStepOrder, currentStepCode, currentStepStatus, currentStepTimeoutAt)));
         }
 
         private static DeployTargetPlanDraft planDraft() {

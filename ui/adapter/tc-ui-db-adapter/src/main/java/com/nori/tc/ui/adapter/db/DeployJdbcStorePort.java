@@ -623,6 +623,7 @@ public class DeployJdbcStorePort implements DeployStorePort {
                                s.current_step_order,
                                s.current_step_code,
                                s.current_step_status,
+                               s.current_step_timeout_at,
                                e.comm_interface AS current_interface_type,
                                e.comm_mode AS current_connection_mode,
                                e.eqp_ip AS current_eqp_ip,
@@ -1144,7 +1145,8 @@ public class DeployJdbcStorePort implements DeployStorePort {
                 DeployTargetStatus.valueOf(resultSet.getString("target_status")),
                 nullableInteger(resultSet, "current_step_order"),
                 support.normalizeOptionalText(resultSet.getString("current_step_code")),
-                nullableStepStatus(resultSet, "current_step_status")
+                nullableStepStatus(resultSet, "current_step_status"),
+                resultSet.getObject("current_step_timeout_at", OffsetDateTime.class)
         );
     }
 

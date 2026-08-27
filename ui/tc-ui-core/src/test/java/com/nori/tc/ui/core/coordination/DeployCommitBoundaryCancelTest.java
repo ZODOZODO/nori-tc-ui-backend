@@ -208,7 +208,7 @@ class DeployCommitBoundaryCancelTest {
                 draft.resolvedStepPlanJson(), true);
         return new DeployExecutionTarget(
                 new PersistedDeployTarget(deployTargetKey, changed.target().targetOrder(), noChangeDraft),
-                DeployTargetStatus.NO_CHANGE, null, null, DeployStepStatus.PENDING);
+                DeployTargetStatus.NO_CHANGE, null, null, DeployStepStatus.PENDING, null);
     }
 
     /** 두 설비가 같은 {@code modelVersionKey} 를 공유해 영향 집합이 겹치는 구성입니다. */
@@ -266,7 +266,7 @@ class DeployCommitBoundaryCancelTest {
                 null, null, null, false);
         return new DeployExecutionTarget(
                 new PersistedDeployTarget(deployTargetKey, 1, planDraft),
-                DeployTargetStatus.PENDING, null, null, DeployStepStatus.PENDING);
+                DeployTargetStatus.PENDING, null, null, DeployStepStatus.PENDING, null);
     }
 
     private static EqpQueryPort eqpQueryPort() {

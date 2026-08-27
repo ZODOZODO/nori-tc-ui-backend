@@ -285,7 +285,7 @@ class DeployOperationAcceptanceTest {
                 List.of(step), null, null, null, false);
         return new DeployExecutionTarget(
                 new PersistedDeployTarget(deployTargetKey, 1, planDraft),
-                DeployTargetStatus.PENDING, null, null, DeployStepStatus.PENDING);
+                DeployTargetStatus.PENDING, null, null, DeployStepStatus.PENDING, null);
     }
 
     private static UiResourceHeadPort headPort() {

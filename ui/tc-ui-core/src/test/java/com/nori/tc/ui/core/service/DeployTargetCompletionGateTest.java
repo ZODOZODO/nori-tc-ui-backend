@@ -149,6 +149,6 @@ class DeployTargetCompletionGateTest {
                 null, null, null, false);
         return new DeployExecutionTarget(
                 new PersistedDeployTarget(deployTargetKey, 1, planDraft),
-                status, null, null, DeployStepStatus.PENDING);
+                status, null, null, DeployStepStatus.PENDING, null);
     }
 }

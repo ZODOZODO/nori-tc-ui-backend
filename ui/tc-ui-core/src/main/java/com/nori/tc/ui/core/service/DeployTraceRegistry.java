@@ -136,6 +136,14 @@ public class DeployTraceRegistry {
         if (lookupResult.status() == DeployTraceRedisLookupResult.Status.PENDING) {
             return;
         }
+        if (lookupResult.status() == DeployTraceRedisLookupResult.Status.EXPIRED) {
+            /*
+             * 로컬 future 는 여기서 끝내지 않는다 — 이 경로의 대기자(DeployExecutor)는 자기 timeout 으로
+             * STEP_TIMEOUT 을 확정한다. 여기서 예외로 깨면 그 timeout 코드가 STEP_EXECUTION_FAILED 로 바뀐다.
+             */
+            log.debug("deploy trace 등록이 만료되었습니다. traceId={}", traceId);
+            return;
+        }
         if (lookupResult.status() == DeployTraceRedisLookupResult.Status.INFRA_ERROR) {
             log.error("deploy trace Redis 조회 실패. failureCode=UI_DEPLOY_TRACE_LOOKUP_FAILED, "
                             + "failureCategory=INFRA, failureSeverity=ERROR, traceId={}, error={}",

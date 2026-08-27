@@ -160,14 +160,42 @@ public class DeployApplyDriver implements UiOperationApplyDriver {
             final DeployExecutionTarget target,
             final List<DeployResolvedStepPlan> steps
     ) {
-        final DeployTraceRedisLookupResult lookup = deployTraceRecorder.completionOf(
-                stepTraceId(operationId, target.target().deployTargetKey(), target.currentStepCode()));
+        final String traceId = stepTraceId(
+                operationId, target.target().deployTargetKey(), target.currentStepCode());
+        final DeployTraceRedisLookupResult lookup = deployTraceRecorder.completionOf(traceId);
         return switch (lookup.status()) {
             case PENDING -> Result.of(Progress.WAITING);
+            case EXPIRED -> expiredCurrentStep(operationId, target, traceId);
             case INFRA_ERROR -> Result.failed("DEPLOY_TRACE_UNAVAILABLE",
                     "step 응답 저장소를 조회하지 못했습니다. " + lookup.errorMessage());
             case COMPLETED -> completeCurrentStep(operationId, target, steps, lookup.completion());
         };
+    }
+
+    /**
+     * 등록이 사라진 step 을 판정합니다.
+     *
+     * <p>확정 근거는 <b>영속화된 step deadline</b> 이지 Redis TTL 이 아닙니다 — TTL 만으로 확정하면
+     * 원장 유실이 곧바로 거짓 timeout 이 됩니다. deadline 전이면 계속 대기하고, deadline 을 넘긴
+     * 뒤에만 실패로 확정합니다. 확정 코드는 비조정 경로({@code DeployExecutor})와 같은
+     * {@code STEP_TIMEOUT} 입니다 — 같은 사건을 두 경로가 다르게 부르면 안 됩니다.</p>
+     */
+    private Result expiredCurrentStep(
+            final String operationId,
+            final DeployExecutionTarget target,
+            final String traceId
+    ) {
+        final OffsetDateTime deadline = target.currentStepTimeoutAt();
+        if (deadline == null || OffsetDateTime.now(ZoneOffset.UTC).isBefore(deadline)) {
+            return Result.of(Progress.WAITING);
+        }
+
+        log.error("DEPLOY_APPLY_STEP_TIMEOUT. operationId={}, deployTargetKey={}, step={}, "
+                        + "traceId={}, stepTimeoutAt={}",
+                operationId, target.target().deployTargetKey(), target.currentStepCode(),
+                traceId, deadline);
+        deployTraceRecorder.cancel(traceId);
+        return Result.failed("STEP_TIMEOUT", "step 응답 대기 시간이 초과되었습니다.");
     }
 
     private Result completeCurrentStep(

@@ -133,7 +133,11 @@ public class DeployTraceRedisAdapter implements DeployTraceRedisPort {
             final StoredTraceMetadata metadata = readMetadata(hashOps.get(key, FIELD_META));
             final Set<String> expectedSources = metadata == null ? Set.of() : metadata.expectedSources();
             if (expectedSources.isEmpty()) {
-                return DeployTraceRedisLookupResult.pending();
+                /*
+                 * 등록이 없으면 record() 가 이후 reply 를 전부 버리므로 이 trace 는 완료될 수 없다.
+                 * PENDING 으로 돌려주면 호출자가 영원히 대기한다.
+                 */
+                return DeployTraceRedisLookupResult.expired();
             }
 
             final List<UiCommandReply> replies = new ArrayList<>();

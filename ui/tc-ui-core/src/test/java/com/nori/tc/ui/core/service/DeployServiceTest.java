@@ -2177,7 +2177,8 @@ class DeployServiceTest {
                                 state.targetStatus,
                                 state.currentStepOrder,
                                 state.currentStepCode,
-                                state.currentStepStatus
+                                state.currentStepStatus,
+                                null
                         );
                     })
                     .toList();
@@ -2510,7 +2511,8 @@ class DeployServiceTest {
                                 state.targetStatus,
                                 state.currentStepOrder,
                                 state.currentStepCode,
-                                state.currentStepStatus
+                                state.currentStepStatus,
+                                null
                         );
                     })
                     .toList();
