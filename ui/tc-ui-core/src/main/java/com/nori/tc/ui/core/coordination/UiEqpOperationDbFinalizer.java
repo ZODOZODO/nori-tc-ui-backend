@@ -5,6 +5,8 @@ import com.nori.tc.ui.core.coordination.model.UiOperationRequest;
 import com.nori.tc.ui.core.coordination.port.UiOperationDbFinalizationPort;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;
 import com.nori.tc.ui.core.eqp.EqpManagementSnapshot;
+import com.nori.tc.ui.core.exception.UiBadRequestException;
+import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.service.EqpPersistenceService;
 import com.nori.tc.ui.domain.eqp.UiEqp;
 import org.slf4j.Logger;
@@ -103,8 +105,20 @@ public final class UiEqpOperationDbFinalizer implements UiOperationDbFinalizatio
                     operationId, manifest.eqpId());
             return Outcome.UNEXPECTED_STATE;
         }
-        persistenceService.create(
-                objectMapper.readValue(manifest.dbCommandJson(), EqpManagementCommand.Create.class));
+        try {
+            persistenceService.create(
+                    objectMapper.readValue(manifest.dbCommandJson(), EqpManagementCommand.Create.class));
+        } catch (final UiBadRequestException | UiConflictException rejected) {
+            /*
+             * 어댑터가 이미 "요청이 잘못됐다"(400/409)로 분류한 실패다. 같은 manifest 로 다시 시도해도
+             * 결과가 같으므로 예외로 흘려보내면 reconciler 가 영원히 재시도한다. §7.2 는 커밋 이전의
+             * 검증 실패로 기존 상태가 보존된 경우 직접 FAIL 확정을 허용한다.
+             * 일시적 실패(연결 끊김 등)는 이 두 타입으로 분류되지 않으므로 그대로 전파되어 재시도된다.
+             */
+            log.error("UI_DB_STAGE_REJECTED. operationId={}, eqpId={} — 재시도로 구제되지 않는 요청이라 "
+                            + "커밋 전 abort 합니다.", operationId, manifest.eqpId(), rejected);
+            return Outcome.REJECTED;
+        }
         log.info("UI_DB_STAGED_CREATE. operationId={}, eqpId={} — barrier 가 열릴 때까지 노출되지 않는 임시 행입니다.",
                 operationId, manifest.eqpId());
         return Outcome.FINALIZED;

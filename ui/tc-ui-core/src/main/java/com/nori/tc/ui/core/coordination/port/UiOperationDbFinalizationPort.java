@@ -19,7 +19,16 @@ public interface UiOperationDbFinalizationPort {
          * <p>blind overwrite 하지 않고 {@code REPAIR_REQUIRED} 로 전환합니다 — 알 수 없는 상태를
          * 덮어쓰면 무엇이 유실됐는지 사후에 알 수 없습니다.</p>
          */
-        UNEXPECTED_STATE
+        UNEXPECTED_STATE,
+        /**
+         * 요청 자체가 거부됐습니다 — 같은 입력으로 다시 시도해도 결과가 같습니다.
+         *
+         * <p>{@code UNEXPECTED_STATE} 와 다릅니다. 저쪽은 "DB 가 알 수 없는 상태" 라 사람이 봐야
+         * 하는 것이고, 이쪽은 "요청이 틀렸다" 가 이미 확정된 것입니다. 재시도로 구제되지 않는 실패를
+         * 예외로 흘려보내면 reconciler 가 영원히 재시도하며 리소스 claim 을 붙잡고 pending backlog 를
+         * 키웁니다 — 그 backlog 가 한도를 넘으면 mutation readiness 가 내려갑니다(§13.11).</p>
+         */
+        REJECTED
     }
 
     /**

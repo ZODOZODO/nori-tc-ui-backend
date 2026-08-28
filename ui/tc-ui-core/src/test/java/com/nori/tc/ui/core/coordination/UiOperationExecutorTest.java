@@ -373,6 +373,21 @@ class UiOperationExecutorTest {
         assertFalse(order.contains("publishPrepare"), "어긋난 상태로 명령을 내보내면 안 됩니다.");
     }
 
+    @Test
+    @DisplayName("§7.2 — staging 이 결정적으로 거부되면 무한 재시도하지 않고 커밋 전 abort 한다")
+    void rejectedStagingAbortsBeforeCommitInsteadOfRetryingForever() {
+        final RecordingLedgerPort ledgerPort = new RecordingLedgerPort(UiOperationPhase.ACCEPTED);
+        ledgerPort.manifestJson = CREATE_MANIFEST_JSON;
+        final List<String> order = new ArrayList<>();
+
+        stagingExecutor(ledgerPort, order, UiOperationDbFinalizationPort.Outcome.REJECTED)
+                .advance(OPERATION_ID, 1_000L);
+
+        assertEquals("DB_STAGE_REJECTED", ledgerPort.aborts.get(0));
+        assertTrue(order.contains("unstage"), "abort 는 임시 DB 상태를 남기지 않아야 합니다(§16.1).");
+        assertFalse(order.contains("publishPrepare"), "거부된 요청으로 명령을 내보내면 안 됩니다.");
+    }
+
     private static UiOperationExecutor stagingExecutor(
             final RecordingLedgerPort ledgerPort,
             final List<String> order,

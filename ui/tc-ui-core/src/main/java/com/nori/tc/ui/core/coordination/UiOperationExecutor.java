@@ -202,10 +202,21 @@ public final class UiOperationExecutor {
          * tc_eqp_state_hist 의 참조 무결성). 그래서 PREPARE 명령을 내보내기 전에 임시 행을 만든다.
          * 목표와 다른 행이 이미 있으면 접수 자체가 어긋난 것이므로 커밋 전 abort 로 끝낸다.
          */
-        if (dbFinalizationPort.stageBeforePrepare(operation.operationId(), manifest)
-                == UiOperationDbFinalizationPort.Outcome.UNEXPECTED_STATE) {
+        final UiOperationDbFinalizationPort.Outcome staged =
+                dbFinalizationPort.stageBeforePrepare(operation.operationId(), manifest);
+        if (staged == UiOperationDbFinalizationPort.Outcome.UNEXPECTED_STATE) {
             abortBeforeCommit(operation.operationId(), "DB_STAGE_UNEXPECTED",
                     "생성 대상 설비가 이미 다른 상태로 존재합니다.", nowEpochMs);
+            return true;
+        }
+        if (staged == UiOperationDbFinalizationPort.Outcome.REJECTED) {
+            /*
+             * 재시도해도 같은 결과인 요청이다. 여기서 끝내지 않으면 operation 이 리소스 claim 을 쥔 채
+             * pending 에 영구히 남는다. 상세 사유는 확정기가 서버 로그에 남긴다 — 제약 이름 같은 내부
+             * 정보를 응답으로 내보내지 않는다(§13.3).
+             */
+            abortBeforeCommit(operation.operationId(), "DB_STAGE_REJECTED",
+                    "요청 값이 올바르지 않아 설비를 생성할 수 없습니다.", nowEpochMs);
             return true;
         }
 

@@ -2,6 +2,7 @@ package com.nori.tc.ui.core.coordination;
 
 import com.nori.tc.ui.core.coordination.model.UiCatalogHeadView;
 import com.nori.tc.ui.core.coordination.model.UiOperationManifestView;
+import com.nori.tc.ui.core.exception.UiConflictException;
 import com.nori.tc.ui.core.coordination.model.UiOperationRequest;
 import com.nori.tc.ui.core.coordination.port.UiCatalogHeadPort;
 import com.nori.tc.ui.core.coordination.port.UiOperationDbFinalizationPort;
@@ -27,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -256,6 +258,33 @@ class UiCatalogAndFinalizationTest {
                 finalizer(crudPort).stageBeforePrepare("op-1", manifest(1_002L, 1_001L)));
         verify(crudPort, never()).create(any());
         verify(crudPort, never()).findSnapshotByEqpId(anyString());
+    }
+
+    @Test
+    @DisplayName("어댑터가 잘못된 요청으로 분류한 실패는 REJECTED 로 돌려 재시도를 끊는다")
+    void invalidCreateRequestIsReportedAsRejected() {
+        final EqpCrudPort crudPort = mock(EqpCrudPort.class);
+        when(crudPort.findSnapshotByEqpId(EQP_ID)).thenReturn(Optional.empty());
+        /*
+         * 실제 재현: socketProtocolType 이 참조 테이블에 없어 FK 위반 -> 어댑터가 UiConflictException
+         * 으로 변환. 같은 입력을 다시 넣어도 결과가 같으므로 재시도는 의미가 없다.
+         */
+        doThrow(new UiConflictException("EQP 생성 중 충돌이 발생했습니다."))
+                .when(crudPort).create(any());
+
+        assertEquals(UiOperationDbFinalizationPort.Outcome.REJECTED,
+                finalizer(crudPort).stageBeforePrepare("op-1", createManifest()));
+    }
+
+    @Test
+    @DisplayName("일시적 실패는 REJECTED 로 접지 않고 그대로 전파해 재시도를 남긴다")
+    void transientFailureIsNotSwallowedAsRejected() {
+        final EqpCrudPort crudPort = mock(EqpCrudPort.class);
+        when(crudPort.findSnapshotByEqpId(EQP_ID)).thenReturn(Optional.empty());
+        doThrow(new IllegalStateException("connection reset")).when(crudPort).create(any());
+
+        assertThrows(IllegalStateException.class,
+                () -> finalizer(crudPort).stageBeforePrepare("op-1", createManifest()));
     }
 
     // ------------------------------------------------------------------ fixture
