@@ -3,6 +3,11 @@ stages:
   - publish
   - trigger
 
+# settings-conventions(nori-common/build-logic)는 GitLab Package Registry 를 gitlabBaseUrl|GITLAB_BASE_URL 이 있을 때만
+# 등록·발행한다(종전 TC build-logic 은 이 주소를 코드에 고정했다). 종전과 같은 주소를 CI 입력으로 준다.
+variables:
+  GITLAB_BASE_URL: "https://gitlab.noricloud.org"
+
 pipeline-ok:
   stage: check
   # 비코드(docs 등) 푸시의 placeholder. GitLab.com 공유러너(월 400분 그룹 쿼터)를 쓰지 않도록
@@ -43,7 +48,8 @@ test:
     - nori-msa
   image: harbor.nori.local/library/maven:3.9-eclipse-temurin-21
   script:
-    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.noricloud.org/norisystem/nori-tc/nori-tc-common.git ../nori-tc-common
+    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.noricloud.org/norisystem/nori-tc/nori-common.git ../nori-common
+    - sh ../nori-common/ci/clone-siblings.sh nori-tc-common
     - chmod +x ./gradlew
     - ./gradlew build --no-daemon
   rules:
@@ -69,7 +75,8 @@ openapi-docs:
     - nori-msa
   image: harbor.nori.local/library/maven:3.9-eclipse-temurin-21
   script:
-    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.noricloud.org/norisystem/nori-tc/nori-tc-common.git ../nori-tc-common
+    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.noricloud.org/norisystem/nori-tc/nori-common.git ../nori-common
+    - sh ../nori-common/ci/clone-siblings.sh nori-tc-common
     - chmod +x ./gradlew
     - ./gradlew :ui:adapter:tc-ui-web-adapter:test --tests "com.nori.tc.ui.adapters.web.config.OpenApiDocsGenerationTest" --no-daemon
     - git diff --exit-code docs/api-reference/openapi.json
@@ -91,7 +98,8 @@ publish:
     - nori-msa
   image: harbor.nori.local/library/maven:3.9-eclipse-temurin-21
   script:
-    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.noricloud.org/norisystem/nori-tc/nori-tc-common.git ../nori-tc-common
+    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.noricloud.org/norisystem/nori-tc/nori-common.git ../nori-common
+    - sh ../nori-common/ci/clone-siblings.sh nori-tc-common
     - chmod +x ./gradlew
     - ./gradlew publish --no-daemon
   rules:
