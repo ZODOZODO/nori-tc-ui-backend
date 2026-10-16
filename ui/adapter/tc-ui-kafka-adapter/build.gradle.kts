@@ -41,20 +41,24 @@ dependencies {
     /*
      * Kafka 메시지 계약 (KafkaUiTaskMessage, KafkaUiTaskReplyMessage, KafkaUiTaskReplyEventType)
      * - 기존 tc-messaging-kafka-contract에 이미 정의된 계약을 재사용합니다.
+     * - 이동한 중립 Kafka 타입(KafkaHeaderSupport 등)은 nori-messaging-kafka-support 가 공급합니다
+     *   (SPEC §8.1 #77 SPLIT_BOTH, 유효 version TC 0.0.3·common 0.0.4).
      */
-    implementation("com.nori.tc:tc-messaging-kafka-contract:0.0.1-SNAPSHOT")
+    implementation("com.nori.tc:tc-messaging-kafka-contract:0.0.3")
+    implementation("com.nori.common:nori-messaging-kafka-support:0.0.4")
 
     /*
      * 공통 로깅 유틸리티: helper 외 MDC 직접 호출 금지(W4 ArchUnit) 준수를 위한 traceId 스코프 헬퍼
      */
-    implementation("com.nori.tc:tc-common-logging:0.0.1-SNAPSHOT")
+    implementation("com.nori.tc:tc-common-logging:0.0.3")
 
     /*
      * §13.5 reply ingress 는 조정 원장 접근 실패를 인프라 실패로 분류해 ACK 를 막아야 하므로,
      * 그 예외 타입(CoordinationUnavailableException)을 식별할 수 있어야 합니다.
+     * 이 예외는 nori-delivery-support 로 이동했습니다(SPEC §8.1 #79 REPLACE).
      * Redis 예외 타입 판별에는 spring-data-redis 의 예외 계층을 사용합니다.
      */
-    implementation("com.nori.tc:tc-common-coordination:0.0.1-SNAPSHOT")
+    implementation("com.nori.common:nori-delivery-support:0.0.4")
     implementation(libs.spring.boot.starter.data.redis)
 
     /*

@@ -1,7 +1,7 @@
 package com.nori.tc.ui.adapters.redis.coordination;
 
 import com.nori.tc.common.coordination.CoordinationKeys;
-import com.nori.tc.common.coordination.store.CoordinationOutcome;
+import com.nori.common.delivery.store.CoordinationOutcome;
 import com.nori.tc.common.coordination.store.FencedLeaseRedisStore;
 import com.nori.tc.ui.core.port.redis.DeployExecutionCoordinationPort;
 import org.slf4j.Logger;

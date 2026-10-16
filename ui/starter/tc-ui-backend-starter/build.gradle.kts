@@ -44,17 +44,23 @@ java {
 dependencies {
     /*
      * Starter는 조립 전용 모듈이므로 내부 어댑터와 core를 외부에 재노출하지 않습니다.
+     * KafkaAdminConnectivityHealthIndicator 는 nori-common-runtime-support 가 공급합니다(SPEC §8.1 #85 REPLACE).
      */
     implementation(libs.spring.boot.starter.actuator)
     implementation("org.springframework.boot:spring-boot-actuator")
     implementation(libs.spring.boot.starter.data.redis)
-    implementation("com.nori.tc:tc-common-runtime-support:0.0.1-SNAPSHOT")
+    implementation("com.nori.common:nori-common-runtime-support:0.0.4")
     /*
      * 공유 shard-group 매핑(tc.shard-groups[*]) — 조정 shard lease 조회 빈의 조립 인자입니다.
      * 조정 어댑터의 빈 등록은 module config 가 아니라 이 starter 의 조정 configuration 이 맡습니다
      * (UiRedisAdapterModuleConfiguration 주석 참조 — 같은 포트 후보 2 개로 기동이 깨진 사례).
      */
-    implementation("com.nori.tc:tc-common-shard:0.0.1-SNAPSHOT")
+    implementation("com.nori.tc:tc-common-shard:0.0.3")
+    /*
+     * 조정 configuration 이 직접 쓰는 TC 잔류 CatalogHeadRedisStore 의 main scope 직접 선언입니다
+     * (SPEC §8.1 87행 보강 — 지금까지는 tc-ui-redis-adapter 의 api 전이로만 받았다).
+     */
+    implementation("com.nori.tc:tc-common-coordination:0.0.3")
     implementation(project(":ui:tc-ui-core"))
     implementation(project(":ui:adapter:tc-ui-web-adapter"))
     implementation(project(":ui:adapter:tc-ui-kafka-adapter"))

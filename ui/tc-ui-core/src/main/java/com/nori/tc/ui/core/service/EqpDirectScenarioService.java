@@ -3,7 +3,7 @@ package com.nori.tc.ui.core.service;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
-import com.nori.tc.common.runtime.support.TraceIdGenerator;
+import com.nori.common.runtime.support.TraceIdGenerator;
 import com.nori.tc.ui.core.deploy.DeployTargetPlanDraft;
 import com.nori.tc.ui.core.eqp.EqpCommandResult;
 import com.nori.tc.ui.core.eqp.EqpManagementCommand;

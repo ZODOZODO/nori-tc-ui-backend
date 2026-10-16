@@ -1,6 +1,6 @@
 package com.nori.tc.ui.adapter.db;
 
-import com.nori.tc.common.shard.ShardGroupResolver;
+import com.nori.common.shard.ShardGroupResolver;
 import com.nori.tc.db.core.common.PageRequest;
 import com.nori.tc.db.core.eqp.store.TcEqpHsmsStore;
 import com.nori.tc.db.core.eqp.store.TcEqpLogStore;

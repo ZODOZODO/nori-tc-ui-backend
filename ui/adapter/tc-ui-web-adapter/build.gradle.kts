@@ -4,7 +4,7 @@ plugins {
     `java-library`
     alias(libs.plugins.spring.dependency.management)
     // CoordinationBeanInjectionArchTest 용 archunit-junit5 제공.
-    id("com.nori.tc.archunit-conventions")
+    id("com.nori.common.archunit-conventions")
 }
 
 group = "com.nori.tc"
@@ -12,9 +12,10 @@ version = "0.0.1-SNAPSHOT"
 
 dependencies {
     implementation(project(":ui:tc-ui-core"))
-    implementation("com.nori.tc:tc-common-runtime-support:0.0.1-SNAPSHOT")
+    // TraceIdGenerator 등 중립 runtime 도구(SPEC §8.1 #83 REPLACE, 유효 version common 0.0.4)
+    implementation("com.nori.common:nori-common-runtime-support:0.0.4")
     // 공통 로깅 유틸리티: helper 외 MDC 직접 호출 금지(W4 ArchUnit) 준수를 위한 traceId 스코프 헬퍼
-    implementation("com.nori.tc:tc-common-logging:0.0.1-SNAPSHOT")
+    implementation("com.nori.tc:tc-common-logging:0.0.3")
     implementation(libs.spring.boot.starter.webmvc)
     implementation(libs.spring.boot.starter.security)
     implementation(libs.spring.boot.starter.actuator)

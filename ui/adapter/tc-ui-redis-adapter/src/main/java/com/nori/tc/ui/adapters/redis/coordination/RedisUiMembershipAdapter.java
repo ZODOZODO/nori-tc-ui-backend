@@ -1,9 +1,9 @@
 package com.nori.tc.ui.adapters.redis.coordination;
 
-import com.nori.tc.common.coordination.store.CoordinationOutcome;
+import com.nori.common.delivery.store.CoordinationOutcome;
 import com.nori.tc.common.coordination.store.MembershipRedisStore;
 import com.nori.tc.common.coordination.types.MembershipState;
-import com.nori.tc.common.coordination.types.SessionIdentity;
+import com.nori.common.delivery.types.SessionIdentity;
 import com.nori.tc.ui.core.coordination.model.UiMembershipState;
 import com.nori.tc.ui.core.coordination.port.UiCoordinationMembershipPort;
 

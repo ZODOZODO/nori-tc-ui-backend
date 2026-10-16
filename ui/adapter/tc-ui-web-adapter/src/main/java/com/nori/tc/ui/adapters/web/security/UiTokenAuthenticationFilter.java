@@ -1,7 +1,7 @@
 package com.nori.tc.ui.adapters.web.security;
 
 import tools.jackson.databind.ObjectMapper;
-import com.nori.tc.common.runtime.support.TraceIdGenerator;
+import com.nori.common.runtime.support.TraceIdGenerator;
 import com.nori.tc.logging.TcLogContext;
 import com.nori.tc.ui.adapters.web.dto.response.ApiResponse;
 import com.nori.tc.ui.core.exception.UiAuthenticationException;

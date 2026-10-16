@@ -2,7 +2,7 @@ package com.nori.tc.ui.adapters.redis.coordination;
 
 import com.nori.tc.common.coordination.CoordinationKeys;
 import com.nori.tc.common.coordination.store.FencedLeaseRedisStore;
-import com.nori.tc.common.shard.SharedShardGroup;
+import com.nori.common.shard.SharedShardGroup;
 import com.nori.tc.common.shard.SharedShardGroupProperties;
 import com.nori.tc.ui.core.port.redis.GatewayShardLeasePort;
 

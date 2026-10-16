@@ -17,7 +17,7 @@ plugins {
     `java-library`
     alias(libs.plugins.spring.dependency.management)
     // 캠페인 Phase 4(T02): TestcontainersDockerGuardArchTest 용 archunit-junit5 제공.
-    id("com.nori.tc.archunit-conventions")
+    id("com.nori.common.archunit-conventions")
 }
 
 group = "com.nori.tc"
@@ -40,12 +40,13 @@ dependencies {
      * JPA 구현 모듈(tc-db-jpa-common-schema)은 직접 참조하지 않습니다.
      * 런타임 주입은 tc-ui-backend-app(starter)에서 담당합니다.
      */
-    implementation("com.nori.tc:tc-db-core:0.0.1-SNAPSHOT")
+    implementation("com.nori.tc:tc-db-core:0.0.3")
 
     /*
      * 공유 shard-group 매핑 Resolver — PASSIVE listener-group 검증에서 같은 shard-group 의 partition 들을 허용합니다.
+     * ShardGroupResolver 는 nori-common-foundation 으로 이동했습니다(SPEC §8.1 #75, 유효 version common 0.0.4).
      */
-    implementation("com.nori.tc:tc-common-shard:0.0.1-SNAPSHOT")
+    implementation("com.nori.common:nori-common-foundation:0.0.4")
 
     implementation("org.springframework:spring-jdbc")
     implementation(libs.jackson.databind)
@@ -70,9 +71,9 @@ dependencies {
      * EqpPlcPollGroupAdapter 의 @Version optimistic-lock 동시성(L1344) 검증 전용 test-scope 의존성.
      * - 실 H2 + 공통 JPA store(TcEqpPlcJpaStore)로 단일 트랜잭션 read-modify-write + 충돌 재시도가
      *   동시 GROUP_START lost-update 를 막는지 실 스레드로 증명한다(mock 으로는 @Version 1차캐시 의미를 못 살림).
-     * - production 무영향(test scope only) · common 무변경(이미 publishToMavenLocal 된 좌표 소비).
+     * - production 무영향(test scope only) · common 무변경(고정 TC 잔류 좌표 소비).
      */
-    testImplementation("com.nori.tc:tc-db-jpa-common-schema:0.0.1-SNAPSHOT")
+    testImplementation("com.nori.tc:tc-db-jpa-common-schema:0.0.3")
     testImplementation(libs.spring.boot.starter.data.jpa)
     testImplementation(libs.spring.boot.starter.test)
     testRuntimeOnly("com.h2database:h2")

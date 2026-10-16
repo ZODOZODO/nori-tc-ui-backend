@@ -1,7 +1,7 @@
 package com.nori.tc.ui.adapters.kafka.publish;
 
 import tools.jackson.databind.ObjectMapper;
-import com.nori.tc.messaging.kafka.contract.KafkaHeaderSupport;
+import com.nori.common.messaging.kafka.contract.KafkaHeaderSupport;
 import com.nori.tc.messaging.kafka.contract.KafkaUiTaskEventType;
 import com.nori.tc.messaging.kafka.contract.KafkaUiTaskMessage;
 import com.nori.tc.ui.adapters.kafka.config.UiKafkaPublishProperties;

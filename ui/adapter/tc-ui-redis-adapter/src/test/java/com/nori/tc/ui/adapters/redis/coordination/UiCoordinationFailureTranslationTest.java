@@ -1,6 +1,6 @@
 package com.nori.tc.ui.adapters.redis.coordination;
 
-import com.nori.tc.common.coordination.error.CoordinationUnavailableException;
+import com.nori.common.delivery.error.CoordinationUnavailableException;
 import com.nori.tc.ui.core.coordination.UiCoordinationUnavailableException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

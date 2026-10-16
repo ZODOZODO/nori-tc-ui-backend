@@ -90,7 +90,7 @@ public class JpaModelDetailCommandPort implements ModelDetailCommandPort {
     // plc-group message_name 은 gateway 가 Kafka eventType(metadata.eventType)으로 그대로 발행하고
     // Business 가 KafkaEventTypeNamingPolicy 로 검증한다 — 위반 시 Business 가 폴링 메시지를 거부(silent drop)한다.
     // 그래서 저장 시점에 동일 규칙으로 선검증해 잘못된 이름이 저장되는 것을 막는다.
-    // 원본 패턴: com.nori.tc.messaging.domain.kafka.policy.KafkaEventTypeNamingPolicy.DEFAULT_EVENT_TYPE_PATTERN
+    // 원본 패턴: com.nori.common.messaging.kafka.policy.KafkaEventTypeNamingPolicy.DEFAULT_EVENT_TYPE_PATTERN
     private static final Pattern PLC_GROUP_MESSAGE_NAME_PATTERN =
             Pattern.compile("^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$");
 

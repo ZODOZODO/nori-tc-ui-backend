@@ -1,6 +1,6 @@
 package com.nori.tc.ui.adapters.redis.lease;
 
-import com.nori.tc.common.shard.SharedShardGroup;
+import com.nori.common.shard.SharedShardGroup;
 import com.nori.tc.common.shard.SharedShardGroupProperties;
 import com.nori.tc.ui.adapters.redis.config.UiGatewayLeaseProperties;
 import com.nori.tc.ui.core.port.redis.GatewayShardLeasePort;

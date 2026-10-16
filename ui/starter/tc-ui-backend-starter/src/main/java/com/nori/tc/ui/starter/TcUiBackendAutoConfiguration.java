@@ -1,6 +1,6 @@
 package com.nori.tc.ui.starter;
 
-import com.nori.tc.common.runtime.support.KafkaAdminConnectivityHealthIndicator;
+import com.nori.common.runtime.support.KafkaAdminConnectivityHealthIndicator;
 import com.nori.tc.ui.adapter.db.config.UiDbAdapterAutoConfiguration;
 import com.nori.tc.ui.adapters.kafka.config.UiKafkaAdapterAutoConfiguration;
 import com.nori.tc.ui.adapters.kafka.config.UiKafkaTopicProperties;

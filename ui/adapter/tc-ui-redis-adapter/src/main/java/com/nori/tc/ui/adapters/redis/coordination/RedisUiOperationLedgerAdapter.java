@@ -1,7 +1,7 @@
 package com.nori.tc.ui.adapters.redis.coordination;
 
 import com.nori.tc.common.coordination.CoordinationKeys;
-import com.nori.tc.common.coordination.store.CoordinationOutcome;
+import com.nori.common.delivery.store.CoordinationOutcome;
 import com.nori.tc.common.coordination.store.OperationLedgerRedisStore;
 import com.nori.tc.common.coordination.types.OperationPhase;
 import com.nori.tc.common.coordination.types.OperationRecord;

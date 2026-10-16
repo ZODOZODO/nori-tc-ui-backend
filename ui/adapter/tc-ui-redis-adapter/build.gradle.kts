@@ -23,7 +23,7 @@
 plugins {
     `java-library`
     // Docker 미가용 CI 에서 무가드 Testcontainers 베이스가 빌드를 통째로 막는 재발을 차단합니다.
-    id("com.nori.tc.archunit-conventions")
+    id("com.nori.common.archunit-conventions")
     alias(libs.plugins.spring.dependency.management)
 }
 
@@ -51,20 +51,24 @@ dependencies {
      * - JDK 직렬화 호환성 확인을 위해 gateway/business 어댑터가 저장한 클래스명을 참조합니다.
      * - 단일 의존성으로 gateway/business redis adapter에 대한 역참조를 피합니다.
      */
-    implementation("com.nori.tc:tc-db-domain:0.0.1-SNAPSHOT")
+    implementation("com.nori.tc:tc-db-domain:0.0.3")
 
     /*
      * 공유 shard-group 매핑(tc.shard-groups[*]) — Gateway shard lease 점유 현황 조회에서
      * group id / owned-partitions 정의를 Gateway와 동일한 properties로 읽습니다.
+     * TC 잔류 SharedShardGroupProperties 와 이동한 중립 SharedShardGroup 을 함께 씁니다(SPEC §8.1 #81 SPLIT_BOTH).
      */
-    implementation("com.nori.tc:tc-common-shard:0.0.1-SNAPSHOT")
+    implementation("com.nori.tc:tc-common-shard:0.0.3")
+    implementation("com.nori.common:nori-common-foundation:0.0.4")
 
     /*
      * 클러스터 조정 원장(§8) — operation ledger / resource barrier / membership / fenced lease /
      * catalog head 의 Lua 원자 연산과 canonical digest 를 공통 구현으로 사용합니다.
      * core 는 이 모듈에 의존하지 않고 port 로만 표현하며, 번역은 이 어댑터가 담당합니다.
+     * TC 잔류 store·script 와 이동한 중립 조정 타입을 함께 공개합니다(SPEC §8.1 #82 SPLIT_BOTH).
      */
-    api("com.nori.tc:tc-common-coordination:0.0.1-SNAPSHOT")
+    api("com.nori.tc:tc-common-coordination:0.0.3")
+    api("com.nori.common:nori-delivery-support:0.0.4")
 
     /*
      * Spring Data Redis: RedisTemplate, LettuceConnectionFactory, RedisSerializer 등

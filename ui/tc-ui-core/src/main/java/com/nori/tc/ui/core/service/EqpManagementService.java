@@ -1,7 +1,7 @@
 package com.nori.tc.ui.core.service;
 
 import tools.jackson.databind.JsonNode;
-import com.nori.tc.common.runtime.support.TraceIdGenerator;
+import com.nori.common.runtime.support.TraceIdGenerator;
 import com.nori.tc.ui.core.coordination.UiEqpMutationCoordinator;
 import com.nori.tc.ui.core.coordination.model.UiOperationAcceptance;
 import com.nori.tc.ui.core.eqp.EqpAsyncAcceptResult;

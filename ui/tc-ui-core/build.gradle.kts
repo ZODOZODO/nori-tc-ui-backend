@@ -26,8 +26,8 @@
 
 plugins {
     `java-library`
-    id("com.nori.tc.archunit-conventions")
-    id("com.nori.tc.dependency-matrix-conventions")
+    id("com.nori.common.archunit-conventions")
+    id("com.nori.common.dependency-matrix-conventions")
     alias(libs.plugins.spring.dependency.management)
 }
 
@@ -50,10 +50,12 @@ dependencies {
      * Deploy orchestration T3:
      * - JsonNode 기반 desired state merge / step plan 직렬화를 위해 Jackson을 직접 사용합니다.
      * - scenario YAML 파일을 fail-fast 로딩하기 위해 SnakeYAML을 사용합니다.
+     * - TraceIdGenerator·RuntimeExecutorFactory 등 중립 runtime 도구는 nori-common-runtime-support 가 공급합니다
+     *   (SPEC §8.1 #87, 유효 version common 0.0.4).
      */
     implementation(libs.jackson.databind)
     implementation("org.yaml:snakeyaml:2.2")
-    implementation("com.nori.tc:tc-common-runtime-support:0.0.1-SNAPSHOT")
+    implementation("com.nori.common:nori-common-runtime-support:0.0.4")
 
     /*
      * Phase 4 OPS-01:
@@ -82,7 +84,8 @@ tasks.test {
     useJUnitPlatform()
 }
 
-tcDependencyMatrix {
+// 층 2 금지 목록(SPEC §6.5 tc-ui-core 행): project path 2개 유지, 좌표는 기존 4개 + 이관 후 common 좌표 3개.
+dependencyMatrix {
     forbiddenProjectPaths.addAll(
         listOf(
             ":ui:adapter",
@@ -94,7 +97,10 @@ tcDependencyMatrix {
             "com.nori.tc:tc-db-core",
             "com.nori.tc:tc-db-domain",
             "com.nori.tc:tc-messaging-domain",
-            "com.nori.tc:tc-messaging-kafka-contract"
+            "com.nori.tc:tc-messaging-kafka-contract",
+            "com.nori.common:nori-messaging-contract",
+            "com.nori.common:nori-messaging-kafka-support",
+            "com.nori.common:nori-delivery-support"
         )
     )
 }

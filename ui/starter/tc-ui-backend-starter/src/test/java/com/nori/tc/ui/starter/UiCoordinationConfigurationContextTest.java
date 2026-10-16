@@ -2,14 +2,14 @@ package com.nori.tc.ui.starter;
 
 import com.nori.tc.common.coordination.script.CoordinationScriptExecutor;
 import com.nori.tc.common.coordination.store.CatalogHeadRedisStore;
-import com.nori.tc.common.coordination.store.CoordinationOutcome;
+import com.nori.common.delivery.store.CoordinationOutcome;
 import com.nori.tc.common.coordination.store.ClusterEpochRedisStore;
 import com.nori.tc.common.coordination.store.FencedLeaseRedisStore;
 import com.nori.tc.common.coordination.store.MembershipRedisStore;
 import com.nori.tc.common.coordination.store.OperationLedgerRedisStore;
 import com.nori.tc.common.coordination.store.ResourceBarrierRedisStore;
 import com.nori.tc.common.coordination.types.CatalogHead;
-import com.nori.tc.common.coordination.types.ClusterEpoch;
+import com.nori.common.delivery.types.ClusterEpoch;
 import com.nori.tc.common.shard.SharedShardGroupProperties;
 import com.nori.tc.ui.core.port.redis.GatewayShardLeasePort;
 import com.nori.tc.ui.core.port.redis.RuntimeInstanceQueryPort;

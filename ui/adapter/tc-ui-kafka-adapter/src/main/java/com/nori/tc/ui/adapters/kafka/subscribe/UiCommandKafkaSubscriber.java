@@ -4,7 +4,7 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import com.nori.tc.logging.TcLogContext;
 import com.nori.tc.messaging.kafka.contract.KafkaUiTaskReplyMessage;
-import com.nori.tc.common.coordination.error.CoordinationUnavailableException;
+import com.nori.common.delivery.error.CoordinationUnavailableException;
 import com.nori.tc.ui.core.coordination.UiCoordinationUnavailableException;
 import com.nori.tc.ui.core.logging.UiObservationLogger;
 import com.nori.tc.ui.core.model.UiCommandReply;
